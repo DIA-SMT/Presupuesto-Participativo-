@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.env.local
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+.DS_Path
+Thumbs.db
+/drizzle/meta/_journal.json.bak
+/data/pg/
+/public/maplibre/

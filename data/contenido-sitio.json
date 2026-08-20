@@ -1,0 +1,130 @@
+{
+  "_meta": {
+    "descripcion": "Textos editables del sitio y contenido de referencia. Se cargan a las tablas textos / faq / hitos y desde ahi los edita el backoffice. Los textos del sitio anterior se conservaron y actualizaron donde la redaccion habia quedado atada a la votacion de octubre de 2025.",
+    "fuente": "data/raw/RELEVAMIENTOPPSMT.md secciones 3 y 5"
+  },
+  "textos": {
+    "sitio-nombre": "Presupuesto Participativo",
+    "sitio-titulo": "Presupuesto Participativo de San Miguel de Tucumán",
+    "home-hero-volanta": "Municipalidad de San Miguel de Tucumán",
+    "home-hero-titulo": "Vos decidís en qué se invierte tu barrio",
+    "home-hero-texto": "El Presupuesto Participativo es una herramienta de participación ciudadana que permite a vecinos y vecinas de San Miguel de Tucumán proponer, debatir y decidir de manera directa cómo se invierte una parte del presupuesto municipal.",
+    "home-hero-boton": "Ver los proyectos",
+    "home-bloque1-titulo": "¿Qué es?",
+    "home-bloque1-texto": "El Presupuesto Participativo es una herramienta de participación ciudadana que permite a vecinos y vecinas de San Miguel de Tucumán proponer, debatir y decidir de manera directa cómo se invierte una parte del presupuesto municipal.",
+    "home-bloque2-titulo": "¿Cómo puedo participar?",
+    "home-bloque2-texto": "Presentá tu idea para tu barrio durante la etapa de ideas y después votá el proyecto de tu distrito que más te interese. Para votar necesitás estar empadronado como ciudadano digital (CIDITUC).",
+    "home-bloque3-titulo": "¿Y después qué pasa?",
+    "home-bloque3-texto": "Cerrada la etapa de ideas, las propuestas se evalúan técnica y presupuestariamente. Las que resultan factibles pasan a la votación abierta y el proyecto más votado de cada distrito se incorpora al presupuesto municipal del año siguiente. Desde el sitio podés seguir el avance de cada obra.",
+    "home-mapa-titulo": "Los 20 distritos",
+    "home-mapa-texto": "Cada distrito elige su propio proyecto. Tocá tu distrito en el mapa para ver las ideas presentadas, el proyecto ganador y en qué etapa está la obra.",
+    "home-novedades-titulo": "Novedades y próximos encuentros",
+    "home-novedades-texto": "Agendate la reunión de tu barrio y presentá tus ideas.",
+    "proyectos-titulo": "Proyectos e ideas",
+    "proyectos-subtitulo": "Todas las ideas presentadas por los vecinos, su evaluación técnica y los proyectos ganadores de cada distrito.",
+    "distritos-titulo": "Distritos",
+    "distritos-subtitulo": "San Miguel de Tucumán está dividida en 20 distritos. Cada uno elige su propio proyecto.",
+    "transparencia-titulo": "Transparencia y ejecución",
+    "transparencia-subtitulo": "En qué etapa está cada proyecto ganador y cuánto se ejecutó de su presupuesto.",
+    "votacion-titulo": "Votación del Presupuesto Participativo",
+    "votacion-subtitulo": "Tenés 1 voto disponible y podés votar un proyecto del distrito donde vivís.",
+    "ideas-nueva-titulo": "Presentá tu idea",
+    "ideas-nueva-subtitulo": "Contanos qué problema querés resolver en tu barrio y cómo lo resolverías. Marcá el lugar en el mapa: el distrito se completa solo.",
+    "chat-titulo": "Consultas",
+    "chat-bienvenida": "Hola. Puedo responderte sobre los proyectos del Presupuesto Participativo: qué se presentó en tu distrito, cuál ganó, cuántos votos tuvo, en qué etapa está la obra y cómo participar.",
+    "contacto-organismo": "Municipalidad de San Miguel de Tucumán",
+    "contacto-direccion": "9 de Julio 570, San Miguel de Tucumán, Tucumán T4000IHL, Argentina",
+    "contacto-telefono": "381 451 6500 int. 6517",
+    "reglamento-aviso": "El reglamento general del Presupuesto Participativo todavía no está publicado en este sitio. En el sitio anterior la página figuraba vacía; hay que conseguir el texto oficial y cargarlo desde el backoffice."
+  },
+  "faq": [
+    {
+      "pregunta": "¿Qué es el Presupuesto Participativo?",
+      "respuesta": "Es un mecanismo de participación ciudadana que permite a los vecinos y vecinas proponer y decidir directamente en qué se invierte una parte del presupuesto municipal. Cada uno de los 20 distritos de la ciudad elige su propio proyecto."
+    },
+    {
+      "pregunta": "¿Qué tipo de proyectos se pueden presentar?",
+      "respuesta": "Hay tres categorías. **Espacio socio ambiental**: plazas, espacios verdes y mejoras ambientales. **Espacio cultural deportivo**: centros culturales, bibliotecas, playones y espacios artísticos comunitarios. **Espacio de innovación urbana**: corredores seguros, espacios de encuentro, salones de usos múltiples, entre otros."
+    },
+    {
+      "pregunta": "¿Cómo puedo participar?",
+      "respuesta": "De dos maneras. **Acercando tu idea**: presentás una propuesta para tu barrio, que después puede transformarse en proyecto. **Eligiendo**: participás de la votación de los proyectos que pasaron la evaluación técnica en tu distrito."
+    },
+    {
+      "pregunta": "¿Cómo me empadrono para votar?",
+      "respuesta": "De manera virtual, haciéndote ciudadano digital (CIDITUC) a través de la página oficial de la Municipalidad; o de manera presencial en las asambleas participativas, donde el equipo te ayuda a inscribirte al CIDITUC."
+    },
+    {
+      "pregunta": "¿Cuántas veces puedo votar?",
+      "respuesta": "Tenés un solo voto y lo usás en un proyecto del distrito donde vivís. El sistema no permite votar dos veces ni votar en un distrito que no sea el tuyo."
+    },
+    {
+      "pregunta": "¿Qué pasa con las ideas que no ganan?",
+      "respuesta": "Quedan publicadas en el sitio con su evaluación técnica. Una idea puede ser declarada factible o no factible, o integrarse con otra propuesta parecida para presentarse como un solo proyecto. Todas las ideas de cada edición quedan en el archivo del sitio."
+    },
+    {
+      "pregunta": "¿Cómo sé si la obra de mi barrio se está haciendo?",
+      "respuesta": "En la ficha de cada proyecto ganador se publica la etapa del presupuesto (preparación, contratación, ejecución o finalizado), los montos y el historial de avance. La sección Transparencia muestra el estado de los 19 proyectos juntos."
+    }
+  ],
+  "cronograma2025": [
+    {
+      "titulo": "Lanzamiento del programa",
+      "detalle": "Presentación del Presupuesto Participativo 2025 y difusión en los barrios.",
+      "desde": "2025-05-01",
+      "hasta": "2025-07-31",
+      "etapa": "ideas"
+    },
+    {
+      "titulo": "Presentación de ideas y proyectos",
+      "detalle": "Los vecinos y vecinas presentan sus propuestas en las asambleas participativas y por la web. Se recibieron 100 ideas en los 20 distritos.",
+      "desde": "2025-06-01",
+      "hasta": "2025-09-30",
+      "etapa": "ideas"
+    },
+    {
+      "titulo": "Evaluación técnica y presupuestaria",
+      "detalle": "El equipo municipal evalúa cada idea. Resultado: 47 factibles, 32 no factibles y 2 integradas con otras propuestas.",
+      "desde": "2025-10-01",
+      "hasta": "2025-10-28",
+      "etapa": "evaluacion"
+    },
+    {
+      "titulo": "Votación",
+      "detalle": "Elección pública de los proyectos a implementar, el 29 y 30 de octubre de 2025. Se registraron 2.069 votos en los 19 proyectos ganadores.",
+      "desde": "2025-10-29",
+      "hasta": "2025-10-30",
+      "etapa": "votacion"
+    },
+    {
+      "titulo": "Ejecución de los proyectos ganadores",
+      "detalle": "Los 19 proyectos ganadores se incorporan al presupuesto municipal y comienza su ejecución.",
+      "desde": "2026-01-01",
+      "hasta": null,
+      "etapa": "seguimiento"
+    }
+  ],
+  "categorias": [
+    {
+      "slug": "socio-ambiental",
+      "nombre": "Espacio socio ambiental",
+      "descripcion": "Plazas, espacios verdes y mejoras ambientales.",
+      "color": "#2f9e5f",
+      "orden": 1
+    },
+    {
+      "slug": "cultural-deportivo",
+      "nombre": "Espacio cultural deportivo",
+      "descripcion": "Centros culturales, bibliotecas, playones y espacios artísticos comunitarios.",
+      "color": "#d2621f",
+      "orden": 2
+    },
+    {
+      "slug": "innovacion-urbana",
+      "nombre": "Espacio de innovación urbana",
+      "descripcion": "Corredores seguros, espacios de encuentro, salones de usos múltiples, entre otros.",
+      "color": "#7141a8",
+      "orden": 3
+    }
+  ]
+}

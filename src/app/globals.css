@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/*
+ * Paleta institucional, derivada del isotipo municipal (la flor):
+ * azul #0a63f0, celeste #2fa8fa y amarillo #f2d500. Los tonos oscuros de la
+ * escala existen para que el texto pase contraste AA sobre blanco.
+ */
+@theme {
+  --color-marca-50: #eef6ff;
+  --color-marca-100: #d9ebfe;
+  --color-marca-200: #bcdcfd;
+  --color-marca-300: #8ec7fc;
+  --color-marca-400: #55a9f9;
+  --color-marca-500: #2fa8fa;
+  --color-marca-600: #0a63f0;
+  --color-marca-700: #084fc4;
+  --color-marca-800: #0b429c;
+  --color-marca-900: #0e3a7f;
+  --color-marca-950: #0a2450;
+
+  /* Acento calido, pariente del amarillo del logo. Para llamados a la accion
+     y avisos de atencion; oscurecido para leerse con texto blanco. */
+  --color-acento-500: #d97706;
+  --color-acento-600: #b45309;
+  --color-acento-700: #92400e;
+
+  /* Amarillo del logo: solo decorativo (nunca texto sobre blanco). */
+  --color-sol: #f2d500;
+
+  /* Categorias del programa */
+  --color-cat-ambiental: #2f9e5f;
+  --color-cat-deportivo: #d2621f;
+  --color-cat-urbana: #7141a8;
+
+  /* Estados de una idea */
+  --color-estado-ganador: #b8860b;
+  --color-estado-factible: #0a63f0;
+  --color-estado-nofactible: #6b7280;
+  --color-estado-integrado: #7141a8;
+
+  --font-sans: "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-serif: "Noto Serif", ui-serif, Georgia, serif;
+}
+
+:root {
+  --fondo: #ffffff;
+  --fondo-suave: #f5f8fc;
+  --fondo-tarjeta: #ffffff;
+  --borde: #e2e8f0;
+  --texto: #16202e;
+  --texto-suave: #55627a;
+  --logo-azul: #0a63f0;
+  --logo-celeste: #2fa8fa;
+  --logo-amarillo: #f2d500;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0c141f;
+    --fondo-suave: #111c2b;
+    --fondo-tarjeta: #141f30;
+    --borde: #243449;
+    --texto: #e8eef7;
+    --texto-suave: #9aa9c0;
+    color-scheme: dark;
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--fondo);
+    color: var(--texto);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-wrap: pretty;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.015em;
+  }
+
+  /* Foco visible en todo el sitio: es un sitio publico, se navega con teclado. */
+  :focus-visible {
+    outline: 3px solid var(--color-marca-500);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility superficie {
+  background: var(--fondo-tarjeta);
+  border: 1px solid var(--borde);
+}
+
+@utility contenedor {
+  width: 100%;
+  max-width: 76rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+
+/* Enlace de salto al contenido, visible solo al tabular. */
+.salto-contenido {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+.salto-contenido:focus {
+  left: 1rem;
+  top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-marca-700);
+  color: white;
+  border-radius: 0.5rem;
+}
+
+/* MapLibre: el CSS propio se importa en el componente del mapa. */
+.maplibregl-popup-content {
+  background: var(--fondo-tarjeta) !important;
+  color: var(--texto) !important;
+  border: 1px solid var(--borde);
+  border-radius: 0.75rem !important;
+  padding: 0.875rem 1rem !important;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.18) !important;
+  font-family: var(--font-sans);
+  max-width: 19rem !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--fondo-tarjeta) !important;
+  border-bottom-color: var(--fondo-tarjeta) !important;
+}
+.maplibregl-popup-close-button {
+  color: var(--texto-suave) !important;
+  font-size: 1.25rem !important;
+  padding: 0 0.4rem !important;
+}
+.maplibregl-ctrl-group {
+  background: var(--fondo-tarjeta) !important;
+  border: 1px solid var(--borde) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--borde) !important;
+}
+@media (prefers-color-scheme: dark) {
+  .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}

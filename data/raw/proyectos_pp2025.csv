@@ -1,0 +1,101 @@
+﻿distrito,estado,categoria,titulo,barrio,coordenadas_originales,lat,lon,votos,fecha,cargado_por
+1,factible,Espacio cultural deportivo,PUESTA EN VALOR DEL CENTRO VECINAL- Barrio America,BARRIO AMERICA,"-26.797050, -65.207859",-26.79705,-65.207859,1,2025-10-22,PParticipativo
+1,factible,Espacio socio ambiental,Puesta en Valor el corredor verde del Barrio Oeste II,Barrio Oeste II,"-26.800204, -65.253307",-26.800204,-65.253307,1,2025-09-23,PParticipativo
+1,integrado,Espacio de innovación urbana,"CENTRO VECINAL ""CAPITAN DE LOS ANDES""- BARRIO SAN MARTIN",BARRIO GENERAL SAN MARTIN,"-26.833661, -65.267635",-26.833661,-65.267635,,2025-10-22,PParticipativo
+1,ganador,Espacio de innovación urbana,PUESTA EN VALOR DE LA GRUTA DE LA VIRGEN DEL ROSARIO DE SAN NICOLAS *,OESTE II,"-26.798656, -65.252994",-26.798656,-65.252994,35,2025-11-03,PParticipativo
+1,no-factible,Espacio cultural deportivo,PLAYON DEPORTIVO BARRIO 11 DE ENERO,11 DE ENERO,"-26.793712, -65.257460",-26.793712,-65.25746,,2025-10-31,PParticipativo
+1,integrado,Espacio de innovación urbana,REVALORIZACION Y EXPANSION COMUNITARIA PLAZA TERCER CENTENARIO,VILLA ALEM,,,,,2025-10-13,PParticipativo
+1,factible,Espacio socio ambiental,PUESTA EN VALOR DE LA PLAZOLETA BARRIO OESTE l,OESTE I,"-26.804458, -65.252195",-26.804458,-65.252195,1,2025-10-06,PParticipativo
+1,no-factible,Espacio cultural deportivo,Club de Adultos Mayores,sin identificar,sin identificar,,,,2025-10-08,PParticipativo
+1,factible,Espacio socio ambiental,PUESTA EN VALOR CORREDOR VERDE BARRIO OESTE II *,OESTE II,,,,1,2025-10-31,PParticipativo
+1,no-factible,Espacio de innovación urbana,Revive tu plaza: espacio para todos- Barrio San Nicolas Distrito 1,SAN NICOLAS,"-26.862463, -65.221171",-26.862463,-65.221171,,2025-10-31,PParticipativo
+1,factible,Espacio socio ambiental,PUESTA EN VALOR DEL LA PLAZA DEL BARRIO FARMACEUTICO II,BARRIO FARMACEUTICO,"26.795635, -65.254633",,,1,2025-10-22,PParticipativo
+1,no-factible,Espacio cultural deportivo,SALON DE USOS MULTIPLES S/DATOS,SIN IDENTIFICAR,,,,,2025-10-31,PParticipativo
+1,no-factible,Espacio de innovación urbana,MEJORAMIENTO INTEGRAL DEL BARRIO AMPLIACION CONGRESO,Ampliación Congreso,,,,,2025-10-31,PParticipativo
+1,no-factible,Espacio cultural deportivo,PROYECTO DE CONSTRUCCION DE UNA PISTA DE SALUD DEPORTIVA COMUNITARIA-BARRIO LAS PALMERAS-,La Palmeras,,,,,2025-10-31,PParticipativo
+1,no-factible,Espacio cultural deportivo,ESPACIO SOCIO CULTURAL,S/DATOS,,,,,2025-10-31,PParticipativo
+1,factible,Espacio socio ambiental,PUESTA EN VALOR DE LA PLAZA MARTIN MIGUEL CAMPERO - BARRIO TARCOS II *,LOS TARCOS II,,,,1,2025-10-31,PParticipativo
+1,no-factible,Espacio cultural deportivo,Club de Adulto Mayores- S/DATOS,,,,,,2025-10-24,PParticipativo
+1,factible,Espacio socio ambiental,RECUPERACION INTEGRAL DEL ESPACIO VERDE Y CREACION DE UN CENTRO DE JUBILADOS - BARRIO AGET *,AGET,,,,1,2025-10-31,PParticipativo
+1,factible,Espacio socio ambiental,PUESTA EN VALOR DE LA PLAZA DEL BARRIO AMPLIACION CONGRESO *,Barrio Ampliación Congreso,,,,1,2025-10-31,PParticipativo
+1,no-factible,Espacio cultural deportivo,CENTRO DE CONTENCION DEPORTIVO Y CULTURAL SAN CAYETANO,San Cayetano,"-26.856418, -65.192028",-26.856418,-65.192028,,2025-10-22,PParticipativo
+1,factible,Espacio socio ambiental,Puesta en Valor Plaza America,América,,,,1,2025-10-04,PParticipativo
+2,ganador,Espacio socio ambiental,Puesta en Valor Plaza Democracia- Barrio Casino-Zenón Santillan-,Casino (Zenón Santillan),"-26.800276, -65.236695",-26.800276,-65.236695,25,2025-11-03,PParticipativo
+2,factible,Espacio cultural deportivo,"CENTRO VECINAL DEPORTIVO,SOCIAL Y CULTURAL Bº KENNEDY",barrio kennedy,,,,1,2025-10-24,PParticipativo
+3,factible,Espacio de innovación urbana,PUESTA EN VALOR PLAZA EVA PERON,BARRIO JARDIN,"-26.810307, -65.235445",-26.810307,-65.235445,1,2025-10-14,PParticipativo
+3,no-factible,Espacio socio ambiental,PLAZA BARRIAL-AGUAS CORRIENTES,Aguas Corrientes,"26.788822, -65.232567",,,,2025-10-31,PParticipativo
+3,no-factible,Espacio cultural deportivo,PLAYON DEPORTIVO COMUNITARIO- AGUAS CORRIENTES,Aguas Corrientes,"26.788957, -65.227404",,,,2025-10-31,PParticipativo
+3,factible,Espacio socio ambiental,PUESTA EN VALOR PLAZA BARRIO JARDIN,Barrio Jardín,"-26.810284, -65.235550",-26.810284,-65.23555,1,2025-10-13,PParticipativo
+3,factible,Espacio socio ambiental,Puesta en Valor Plaza Lozano-Barrio Echeverria-,Barrio Echeverria,,,,1,2025-10-24,PParticipativo
+3,ganador,Espacio cultural deportivo,"Playón deportivo para ""Plaza Lozano Munoz"" en B° Echeverria",Echeverria,,,,49,2025-11-03,PParticipativo
+3,no-factible,Espacio cultural deportivo,Playón Deportivo- Barrio Aguas Corrientes,Aguas Corrientes,,,,,2025-10-31,PParticipativo
+4,ganador,Espacio socio ambiental,PUESTA EN VALOR PLAZA CURVA BARRIO JUAN PABLO II.,Barrio Juan Pablo II,,,,172,2025-11-03,PParticipativo
+4,factible,Espacio socio ambiental,"PLAYON DEPORTIVO COMUNITARIO ""POR LOS NIÑOS Y LOS JOVENES"" Barrio Vial",Barrio Vial,,,,1,2025-10-29,MUNICIPALIDAD
+4,factible,Espacio cultural deportivo,Puesta en valor de la Plaza Barrio ATSA,ATSA,,,,1,2025-10-30,PParticipativo
+5,ganador,Espacio cultural deportivo,ESPACIO DEPORTIVO -CULTURAL-CLUB SARGENTO CABRAL-VILLA URQUIZA-,VILLA URQUIZA,"-26.796955750589746, -65.20086511853114",-26.796955750589746,-65.20086511853114,282,2025-11-03,PParticipativo
+5,factible,Espacio cultural deportivo,PLAYON DEPORTIVO COMUNITARIO “PLAZA CASERO”,VILLA URQUIZA,"-26.805248, -65.206172",-26.805248,-65.206172,1,2025-10-14,PParticipativo
+6,ganador,Espacio de innovación urbana,Recuperación Integral del Complejo General Muñoz- Villa 9 de Julio-,VILLA 9 DE JULIO,,,,89,2025-11-03,PParticipativo
+6,factible,Espacio cultural deportivo,Revalorización del entorno del Club Atlético de Tucumán como polo Turístico y Comercial,Villa 9 de Julio,,,,1,2025-10-24,PParticipativo
+7,no-factible,Espacio cultural deportivo,PLAYON DEPORTIVO BARRIO 11 DE FEBRERO,11 de febrero,,,,,2025-10-22,PParticipativo
+7,no-factible,Espacio cultural deportivo,CLUB DE ADULTOS MAYORES Barrio 11 DE Febrero,11 de Febrero,,,,,2025-10-31,PParticipativo
+7,factible,Espacio cultural deportivo,PLAYON DEPORTIVO BARRIO 260 VIVIENDAS,,,,,1,2025-10-27,MUNICIPALIDAD
+7,ganador,Espacio socio ambiental,Plaza Activa – B° Sitravi,,,,,118,2025-11-03,MUNICIPALIDAD
+8,ganador,Espacio cultural deportivo,"Playón deportivo comunitario ""Plaza Viluco""",,,,,137,2025-11-03,PParticipativo
+8,factible,Espacio socio ambiental,PLAZA BARRANCAS DEL SALI- BARRIO AGEF I y II.,AGEF I y II,"-26.822348, -65.165961",-26.822348,-65.165961,1,2025-10-31,PParticipativo
+8,factible,Espacio socio ambiental,Puesta en Valor espacio verde barrancas del Salì,barrio AGET II,,,,6,2025-10-31,PParticipativo
+8,factible,Espacio socio ambiental,Puesta en Vlor Plaza Viluco- Las Brisas- BARRIO AGEF I y II.,Barrio AGEF I y II,,,,1,2025-10-31,PParticipativo
+9,factible,Espacio socio ambiental,Puesta en Valor Plaza Puiyama- Barrio Sitravi I.,Sitravi I,,,,8,2025-10-31,PParticipativo
+9,ganador,Espacio de innovación urbana,PUESTA EN VALOR DE LA PLAZA PEDRO COSSIO PAZ DE BARRIO PADILLA.,,,,,26,2025-11-03,PParticipativo
+10,no-factible,Espacio cultural deportivo,ESPACIO SOCIO CULTURAL- Area Central,,,,,,2025-10-31,PParticipativo
+11,factible,Espacio de innovación urbana,Inclusion y Bienestar a través del Ciclismo Adaptado,PARQUE 9 DE JULIO,"-26.827718, -65.180820",-26.827718,-65.18082,1,2025-10-22,PParticipativo
+11,no-factible,Espacio cultural deportivo,CENTRO DE DEPORTIVO Y SOCIAL PUERTA DE SAN MIGUEL,LOLA MORA,"-26.840815, -65.191961",-26.840815,-65.191961,,2025-10-31,PParticipativo
+11,ganador,Espacio cultural deportivo,"Playón deportivo comunitario ""Cancha Ex Aeropuerto""",Ex-Aeropuerto,,,,231,2025-11-03,PParticipativo
+12,factible,Espacio de innovación urbana,TU PRIMER EMPLEO - FORMACION Y FUTURO,NUEVA VIDA,"-26.849554934694797, -65.26608784593708",-26.849554934694797,-65.26608784593708,1,2025-10-13,PParticipativo
+12,ganador,Espacio cultural deportivo,El Arte Popular en la Plaza Los Platanos,Barrio Los Plátanos,,,,192,2025-11-03,MUNICIPALIDAD
+13,ganador,Espacio de innovación urbana,PLAZA DE JUEGOS Y PISTA DE SALUD “BARRIO LINCOLN”,LINCOLN,"-26.838791, -65.250745",-26.838791,-65.250745,49,2025-11-03,PParticipativo
+14,no-factible,Espacio cultural deportivo,CAC N° 11 Inclusivo- No factible,VICTORIA,"-26.846834, -65.225133",-26.846834,-65.225133,,2025-11-03,PParticipativo
+14,no-factible,Espacio de innovación urbana,“MEJORAMIENTOINTEGRAL DEL BARRIO 23 DE FEBRERO”,23 DE FEBRERO,"-26.862986, -65.231014",-26.862986,-65.231014,,2025-10-31,PParticipativo
+14,no-factible,Espacio de innovación urbana,PASEO ALEM,11 DE MARZO,"-26.863672, -65.233046",-26.863672,-65.233046,,2025-10-31,PParticipativo
+14,no-factible,Espacio de innovación urbana,GRANADEROS VERDE- Barrio 11 de Marzo,11 DE MARZO,"-26.856595, -65.232794",-26.856595,-65.232794,,2025-10-23,PParticipativo
+14,ganador,Espacio cultural deportivo,CAC N° 11 Inclusivo.,Barrio Victoria,,,,40,2025-11-03,MUNICIPALIDAD
+14,factible,Espacio socio ambiental,Puesta en Valor Plaza Almirante Brown,Barrio Victoria,,,,1,2025-10-22,PParticipativo
+14,factible,Espacio de innovación urbana,Paseo Alem- 11 de Marzo,11 de Marzo,,,,1,2025-10-22,PParticipativo
+15,factible,Espacio cultural deportivo,CENTRO VECINAL CULTURAL Y DEPORTIVO -Villa Alem,VILLA ALEM,"-26.849053007301833, -65.2060487524099",-26.849053007301833,-65.2060487524099,1,2025-10-23,PParticipativo
+15,factible,Espacio cultural deportivo,SALON DE USO MULTIPLES PUNTO AMBIENTAL DEL PASAJE PANTALEON FERNANDEZ,AMPLIACION EL GRAFICO,"-26.866409, -65.218131",-26.866409,-65.218131,1,2025-10-22,PParticipativo
+15,no-factible,Espacio cultural deportivo,Puesta en valor plaza santísima Trinidad-villa Alem,Villa alem,"-26.845300, -65.203736",-26.8453,-65.203736,,2025-10-22,PParticipativo
+15,no-factible,Espacio de innovación urbana,PAVIMENTACION CALLE LA RIOJA 2300-2600,SAN NICOLAS,"-26.861116, -65.220319",-26.861116,-65.220319,,2025-10-31,PParticipativo
+15,factible,Espacio socio ambiental,Puesta en valor y mejora integral de la Plaza Leandro N. Alem- Villa Alem-,Villa Alem,"-26.850307, -65.210766",-26.850307,-65.210766,4,2025-11-03,PParticipativo
+15,factible,Espacio socio ambiental,PUESTA EN VALOR INTEGRAL DE LA PLAZA MIGUEL MARTIN DE GUEMES EN VILLA ALEM,,,,,1,2025-10-27,MUNICIPALIDAD
+15,no-factible,Espacio de innovación urbana,Paseo Cultural del Pasaje Pantaleón Fernandez,El Gráfico- Barrio Hipólito Yrigoyen,,,,,2025-10-22,PParticipativo
+15,factible,Espacio socio ambiental,Puesta en Valor Plazoleta Barrio San Nicolas,Barrio San Nicolás,,,,1,2025-10-22,PParticipativo
+15,factible,Espacio socio ambiental,Puesta en valor plaza santísima Trinidad- VILLA ALEM,Villa Alem,"-26.845300, -65.203736",-26.8453,-65.203736,1,2025-10-23,PParticipativo
+15,ganador,Espacio socio ambiental,Centro Cultural y Comunitario DIZA,,,,,67,2025-11-03,PParticipativo
+15,factible,Espacio cultural deportivo,Puesta en Valor cancha 3er Centenario,Villa Alem,,,,1,2025-10-05,PParticipativo
+16,factible,Espacio cultural deportivo,Proyecto de mejoramiento y equipamiento del club social cultural y deportivo Barrio Bienestar,Bienestar,"-26.856990, -65.200375",-26.85699,-65.200375,1,2025-10-22,PParticipativo
+16,ganador,Espacio cultural deportivo,Proyecto de PUESTA EN VALOR CLUB SOCIAL Y DEPORTIVO BARRIO 20 DE JUNIO,,,,,186,2025-11-03,PParticipativo
+16,no-factible,Espacio cultural deportivo,CENTRO DE CONTENCION DEPORTIVO Y CULTURAL SAN CAYETANO,,,,,,2025-10-31,PParticipativo
+16,factible,Espacio cultural deportivo,“Micro Complejo Deportivo Papa Francisco” Cancha multiuso y equipamiento deportivo para el Distrito 16,Barrios D 16,,,,1,2025-10-27,MUNICIPALIDAD
+16,no-factible,Espacio cultural deportivo,Playón deportivo comunitario barrio autopista Sur,Autopista Sur,,,,,2025-10-31,PParticipativo
+16,factible,Espacio cultural deportivo,Micro Complejo Deportivo Pedro G. Sal,Cooperativa 19 de Marzo,,,,1,2025-10-27,AGUSTÍN
+17,no-factible,Espacio de innovación urbana,ADOQUINAMIENTO CALLE BENIGNO VALLEJOS BARRIO SMATA 2 Y 3,SMAA II,"-26.853441, -65.259288",-26.853441,-65.259288,,2025-10-31,PParticipativo
+17,no-factible,Espacio socio ambiental,PAVIMENTACION CALLE SAN GENARO,SAN GENARO,26 51 20.7 S 65 15 21.0 W,,,,2025-10-31,PParticipativo
+17,no-factible,Espacio de innovación urbana,ADOQUINAMIENTO CALLE BENIGNO VALLEJOS BARRIO SMATA II y III,Barrio SMATA II yIII,"-26.853441, -65.259288",-26.853441,-65.259288,,2025-10-31,PParticipativo
+17,factible,Espacio socio ambiental,REVALORIZACION DE PLAZA DE LA INTEGRACION Y EL ENCUENTRO-BARRIO SMATA III,Barrio SMATA II y III,,,,1,2025-10-24,PParticipativo
+17,ganador,Espacio socio ambiental,Revalorización de la Plaza del Barrio San Miguel,San Miguel,,,,28,2025-11-03,PParticipativo
+17,factible,Espacio socio ambiental,Puesta en Valor Plaza 240 viviendas,San Gabriel y entorno,,,,1,2025-10-27,MUNICIPALIDAD
+17,factible,Espacio de innovación urbana,Caminería Segura- Veredas Sanas- Barrio San Miguel,San Miguel,,,,1,2025-10-22,PParticipativo
+18,factible,Espacio cultural deportivo,ESCUELA FORMATIVA DEFENSORES DEL SUR,MANANTIAL SUR,"-26.868851, -65.243100",-26.868851,-65.2431,1,2025-10-13,PParticipativo
+18,factible,Espacio cultural deportivo,ZONA SUR EN ACCION- Barrio Manantial Sur,MANANTIAL SUR,"-26.871478, -65.244223",-26.871478,-65.244223,1,2025-10-22,PParticipativo
+18,factible,Espacio cultural deportivo,COMPLEJO POLIDEPORTIVO MUNICIPAL INCLUSIVO,MANANTIAL SUR,,,,1,2025-10-13,PParticipativo
+18,factible,Espacio cultural deportivo,ESCUELA FORMATIVA DEFENSORES DEL SUR-BARRIO MANANTIAL SUR,Barrio Manantial Sur,"-26.868851, -65.243100",-26.868851,-65.2431,1,2025-10-23,PParticipativo
+18,ganador,Espacio cultural deportivo,Espacio Deportivo Comunitario en Plaza de Chañaritos,,,,,58,2025-11-03,MUNICIPALIDAD
+19,no-factible,Espacio cultural deportivo,PROYECTO DE CONSTRUCCION DE UNA PISTA DE SALUD DEPORTIVA COMUNITARIA,LAS PALMERAS,"3576679.46555, 7028253.17743",,,,2025-10-22,PParticipativo
+19,no-factible,Espacio cultural deportivo,Espacio Deportivo y de Salud San Alberto,ROSAS DEL SUR,,,,,2025-10-13,PParticipativo
+19,factible,Espacio cultural deportivo,Playón deportivo para el B° Crucero Belgrano,,,,,21,2025-11-03,PParticipativo
+19,ganador,Espacio cultural deportivo,PLAYON DEPORTIVO VESTUARIOS PARA EL CLUB SAN ALBERTO.,Barrio San Alberto,,,,210,2025-11-03,PParticipativo
+19,no-factible,Espacio cultural deportivo,SUM-Espacio Cultural- JUJUY 3200,San Alberto,,,,,2025-10-31,PParticipativo
+20,factible,Espacio cultural deportivo,Espacio Deportivo Cultural Barrio Rosas del Sur,Rosas del Sur,,,,1,2025-10-22,PParticipativo
+20,ganador,Espacio cultural deportivo,Centro Deportivo San Miguel- Barrio CGT-,CGT,,,,75,2025-11-03,PParticipativo
+20,factible,Espacio de innovación urbana,"La Inclusión No se Promete, se Diseña- Recuperación y Rediseño de una Plaza Inclusiva-Bº Lapacho Sur.",,,,,1,2025-10-24,PParticipativo
+20,no-factible,Espacio cultural deportivo,PROYECTO DE CONSTRUCCION DE UNA PISTA DE SALUD DEPORTIVA COMUNITARIA-BARRIO LAS PALMERA,Las Palmeras,,,,,2025-10-31,MUNICIPALIDAD
+20,factible,Espacio cultural deportivo,La Revolución Deportiva,Barrio Parque Sur,,,,1,2025-10-04,PParticipativo
