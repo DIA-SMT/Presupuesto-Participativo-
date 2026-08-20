@@ -43,8 +43,11 @@ const globalParaDb = globalThis as unknown as { ppDb?: BaseDatos };
 function crear(): BaseDatos {
   if (usaPostgres) {
     const cliente = postgres(url, {
-      max: process.env.NODE_ENV === "production" ? 10 : 3,
+      // Cada pagina dispara varias consultas en paralelo: un pool chico forma
+      // cola cuando la base esta lejos (Supabase en sa-east-1).
+      max: 10,
       idle_timeout: 20,
+      connect_timeout: 20,
       // El pooler de Supabase (puerto 6543, modo transaccion) no soporta
       // prepared statements: hay que desactivarlos.
       prepare: !/pooler\.supabase\.|:6543\//.test(url),

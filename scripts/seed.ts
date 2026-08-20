@@ -7,10 +7,8 @@
  * No correrlo mientras `npm run dev` esta levantado: PGlite bloquea la carpeta
  * de datos por proceso.
  */
-import { config } from "dotenv";
-
-// Los scripts corren fuera de Next: cargar .env.local (y .env como respaldo).
-config({ path: [".env.local", ".env"] });
+// Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
+import "./cargar-env";
 import { readFileSync } from "node:fs";
 import { and, eq, sql } from "drizzle-orm";
 import { consultar, db } from "../src/db";
