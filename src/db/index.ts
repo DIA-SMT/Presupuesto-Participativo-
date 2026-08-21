@@ -13,9 +13,9 @@
  * `npm run dev` esta levantado (la carpeta de datos queda bloqueada).
  */
 import { PGlite } from "@electric-sql/pglite";
-import postgres from "postgres";
+import { Pool } from "pg";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
-import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
+import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import * as schema from "./schema";
@@ -42,17 +42,21 @@ const globalParaDb = globalThis as unknown as { ppDb?: BaseDatos };
 
 function crear(): BaseDatos {
   if (usaPostgres) {
-    const cliente = postgres(url, {
+    // Driver: node-postgres (pg). Con el pooler de Supabase en modo
+    // transaccion (pgbouncer, puerto 6543), postgres.js entuberaba varias
+    // consultas por conexion y pgbouncer cruzaba los parametros entre ellas
+    // ("invalid input syntax for type integer: f"). pg envia una consulta por
+    // vez por conexion y no usa prepared statements con nombre: es la
+    // combinacion segura para este pooler.
+    const pool = new Pool({
+      connectionString: url,
       // Cada pagina dispara varias consultas en paralelo: un pool chico forma
       // cola cuando la base esta lejos (Supabase en sa-east-1).
       max: 10,
-      idle_timeout: 20,
-      connect_timeout: 20,
-      // El pooler de Supabase (puerto 6543, modo transaccion) no soporta
-      // prepared statements: hay que desactivarlos.
-      prepare: !/pooler\.supabase\.|:6543\//.test(url),
+      idleTimeoutMillis: 20_000,
+      connectionTimeoutMillis: 20_000,
     });
-    return drizzlePostgres(cliente, { schema });
+    return drizzleNodePg(pool, { schema });
   }
   return drizzlePglite(new PGlite(RUTA_PGLITE), { schema });
 }
