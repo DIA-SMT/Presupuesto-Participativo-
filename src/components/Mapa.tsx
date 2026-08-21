@@ -59,8 +59,12 @@ const GEO = "/geo/distritos.geojson";
 const AZUL = "#0a63f0";
 const CELESTE = "#2fa8fa";
 
-/** Estilo minimo con teselas raster. Ver README: cambiar de proveedor en produccion. */
-function estilo(oscuro: boolean): StyleSpecification {
+/**
+ * Estilo minimo con teselas raster, siempre en la cara clara institucional
+ * (el sitio no tiene modo oscuro). Ver README: cambiar de proveedor de
+ * teselas en produccion.
+ */
+function estilo(): StyleSpecification {
   return {
     version: 8,
     sources: {
@@ -78,9 +82,8 @@ function estilo(oscuro: boolean): StyleSpecification {
         id: "base",
         type: "raster",
         source: "base",
-        paint: oscuro
-          ? { "raster-saturation": -0.7, "raster-brightness-max": 0.55, "raster-contrast": 0.1 }
-          : { "raster-saturation": -0.35, "raster-brightness-min": 0.08 },
+        // Teselas apenas desaturadas para que los distritos azules resalten.
+        paint: { "raster-saturation": -0.35, "raster-brightness-min": 0.08 },
       },
     ],
   };
@@ -114,13 +117,9 @@ export default function Mapa({
   useEffect(() => {
     if (!contenedor.current || mapa.current) return;
 
-    const oscuro =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
-
     const instancia = new maplibregl.Map({
       container: contenedor.current,
-      style: estilo(oscuro),
+      style: estilo(),
       center: [-65.21705, -26.84725],
       zoom: 11.4,
       minZoom: 10,

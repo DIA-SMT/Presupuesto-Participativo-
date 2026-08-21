@@ -43,6 +43,11 @@
   --font-serif: "Noto Serif", ui-serif, Georgia, serif;
 }
 
+/*
+ * El sitio tiene una sola cara: la institucional clara. No se adapta al tema
+ * oscuro del sistema a proposito, para que la identidad municipal se vea
+ * igual en cualquier dispositivo.
+ */
 :root {
   --fondo: #ffffff;
   --fondo-suave: #f5f8fc;
@@ -53,19 +58,7 @@
   --logo-azul: #0a63f0;
   --logo-celeste: #2fa8fa;
   --logo-amarillo: #f2d500;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fondo: #0c141f;
-    --fondo-suave: #111c2b;
-    --fondo-tarjeta: #141f30;
-    --borde: #243449;
-    --texto: #e8eef7;
-    --texto-suave: #9aa9c0;
-    color-scheme: dark;
-  }
+  color-scheme: only light;
 }
 
 @layer base {
@@ -160,9 +153,4 @@
 }
 .maplibregl-ctrl-group button + button {
   border-top-color: var(--borde) !important;
-}
-@media (prefers-color-scheme: dark) {
-  .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
-    filter: invert(1) hue-rotate(180deg);
-  }
 }
