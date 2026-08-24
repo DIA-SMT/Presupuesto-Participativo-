@@ -20,6 +20,7 @@ import { eq, sql } from "drizzle-orm";
 import { consultar, db } from "../src/db";
 import { admins, bitacoraEquipo } from "../src/db/schema";
 import { hashearPassword } from "../src/lib/password";
+import { MINIMO_PASSWORD } from "../src/lib/politica-password";
 
 const ROLES = ["admin", "moderador", "lector"] as const;
 type Rol = (typeof ROLES)[number];
@@ -67,9 +68,13 @@ async function main() {
 
   const desdeElEntorno = process.env.ADMIN_PASSWORD?.trim();
   const generada = !desdeElEntorno;
+  // La provisoria que se genera sigue siendo de 16 caracteres al azar: el
+  // minimo corto es para la que despues elige la persona, no para esta.
   const password = desdeElEntorno || randomBytes(12).toString("base64url");
-  if (password.length < 12) {
-    console.error("\nADMIN_PASSWORD tiene menos de 12 caracteres. Elegi una mas larga.\n");
+  if (password.length < MINIMO_PASSWORD) {
+    console.error(
+      `\nADMIN_PASSWORD tiene menos de ${MINIMO_PASSWORD} caracteres. Elegi una mas larga.\n`,
+    );
     process.exit(1);
   }
   const passwordHash = await hashearPassword(password);

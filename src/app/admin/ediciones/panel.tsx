@@ -2,14 +2,16 @@
 
 /**
  * Panel de ediciones: alta de un anio nuevo, fechas y presupuesto de cada
- * edicion, activacion (la base solo tolera una activa) y cronograma de hitos.
+ * edicion, activacion (la base solo tolera una activa), etapa del proceso y
+ * cronograma de hitos.
  *
- * La etapa del proceso NO se toca desde aca: vive en la misma tabla pero se
- * cambia con el selector de la pantalla de Ideas, que es donde el equipo la
- * mira todos los dias.
+ * La etapa se cambia aca, dentro de la edicion activa y con confirmacion
+ * explicita (ver ../selector-etapa). Antes estaba en la cabecera de la pantalla
+ * de Ideas, al lado de un filtro: era la accion mas peligrosa del panel puesta
+ * en el lugar mas cotidiano.
  */
 import { useState, useActionState } from "react";
-import Link from "next/link";
+import SelectorEtapa from "../selector-etapa";
 import {
   activarEdicion,
   borrarHito,
@@ -142,6 +144,24 @@ export default function PanelEdiciones({
                   className="space-y-6 px-5 pb-6"
                   style={{ borderTop: "1px solid var(--borde)" }}
                 >
+                  {/* La etapa solo se ofrece sobre la edicion activa: es la
+                      unica que el sitio publico mira. */}
+                  {edicion.activa ? (
+                    <div className="mt-5">
+                      <SelectorEtapa
+                        edicionId={edicion.id}
+                        etapa={edicion.etapa}
+                        rol={rol}
+                      />
+                    </div>
+                  ) : (
+                    <p className="mt-5 text-xs" style={{ color: "var(--texto-suave)" }}>
+                      Etapa guardada: <strong>{ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}</strong>
+                      . Mientras la edición esté inactiva la etapa no cambia nada en el sitio
+                      público: activala primero y ahí se puede mover.
+                    </p>
+                  )}
+
                   <FormularioEdicion edicion={edicion} soloLectura={!puedeEdiciones} />
 
                   {!edicion.activa && puedeEdiciones && (
@@ -169,13 +189,11 @@ export default function PanelEdiciones({
               edición nueva.
             </li>
             <li>
-              <strong style={{ color: "var(--texto)" }}>La etapa se cambia en otro lado.</strong> La
-              etapa del proceso (presentación de ideas, evaluación técnica, votación, seguimiento o
-              cerrada) se elige con el selector que está arriba de la pantalla de{" "}
-              <Link href="/admin" className="underline" style={{ color: "var(--texto)" }}>
-                Ideas
-              </Link>
-              , sobre la edición activa.
+              <strong style={{ color: "var(--texto)" }}>La etapa se cambia acá.</strong> La etapa
+              del proceso (presentación de ideas, evaluación técnica, votación, seguimiento o
+              cerrada) se elige dentro de la edición activa, en esta misma pantalla. Es lo que abre
+              el formulario de ideas y lo que abre la votación pública, así que antes de guardar el
+              cambio la pantalla te dice, en palabras, qué va a pasar en el sitio.
             </li>
             <li>
               <strong style={{ color: "var(--texto)" }}>Las fechas son informativas.</strong> Se
@@ -426,7 +444,12 @@ function Cronograma({
         <ul className="mt-3 space-y-2">
           {edicion.hitos.map((hito) => (
             <li key={hito.id}>
-              <FilaHito hito={hito} edicionId={edicion.id} soloLectura={soloLectura} />
+              <FilaHito
+                hito={hito}
+                edicionId={edicion.id}
+                soloLectura={soloLectura}
+                publicado={edicion.activa}
+              />
             </li>
           ))}
         </ul>
@@ -485,12 +508,15 @@ function FilaHito({
   hito,
   edicionId,
   soloLectura,
+  publicado,
 }: {
   hito: Hito;
   edicionId: number;
   soloLectura: boolean;
+  publicado: boolean;
 }) {
   const [editando, setEditando] = useState(false);
+  const [borrando, setBorrando] = useState(false);
   const rango = formatearRango(hito.desde, hito.hasta);
 
   return (
@@ -517,10 +543,28 @@ function FilaHito({
             >
               {editando ? "Cerrar" : "Editar"}
             </button>
-            <BotonBorrarHito id={hito.id} titulo={hito.titulo} />
+            <button
+              type="button"
+              onClick={() => setBorrando(!borrando)}
+              className="text-xs underline"
+              style={{ color: "var(--color-acento-600)" }}
+              aria-expanded={borrando}
+            >
+              {borrando ? "Cerrar" : "Borrar"}
+            </button>
           </div>
         )}
       </div>
+
+      {borrando && !soloLectura && (
+        <div className="px-4 pb-4" style={{ borderTop: "1px solid var(--borde)" }}>
+          <ConfirmacionBorrarHito
+            hito={hito}
+            publicado={publicado}
+            alCancelar={() => setBorrando(false)}
+          />
+        </div>
+      )}
 
       {editando && !soloLectura && (
         <div className="px-4 pb-4" style={{ borderTop: "1px solid var(--borde)" }}>
@@ -649,43 +693,61 @@ function FormularioHito({
   );
 }
 
-function BotonBorrarHito({ id, titulo }: { id: number; titulo: string }) {
+/**
+ * Borrado de un hito, con confirmacion. El borrado es definitivo (la fila se
+ * va de la tabla `hitos`, no queda marcada) y, si la edicion esta activa, el
+ * hito desaparece del cronograma que el vecino ve publicado: eso hay que
+ * decirlo antes, no despues.
+ */
+function ConfirmacionBorrarHito({
+  hito,
+  publicado,
+  alCancelar,
+}: {
+  hito: Hito;
+  publicado: boolean;
+  alCancelar: () => void;
+}) {
   const [estado, accion, pendiente] = useActionState(borrarHito, null);
-  const [confirmando, setConfirmando] = useState(false);
-
-  if (!confirmando) {
-    return (
-      <button
-        type="button"
-        onClick={() => setConfirmando(true)}
-        className="text-xs underline"
-        style={{ color: "var(--color-acento-600)" }}
-      >
-        Borrar
-      </button>
-    );
-  }
+  const rango = formatearRango(hito.desde, hito.hasta);
 
   return (
-    <form action={accion} className="flex items-center gap-2 text-xs">
-      <input type="hidden" name="id" value={id} />
-      <span style={{ color: "var(--texto-suave)" }}>¿Borrar “{titulo}”?</span>
-      <button
-        type="submit"
-        disabled={pendiente}
-        className="font-semibold underline disabled:opacity-50"
-        style={{ color: "var(--color-acento-600)" }}
-      >
-        Sí, borrar
-      </button>
-      <button type="button" onClick={() => setConfirmando(false)} className="underline">
-        No
-      </button>
-      {estado && !estado.ok && (
-        <span role="alert" style={{ color: "var(--color-acento-600)" }}>
-          {estado.error}
-        </span>
-      )}
+    <form
+      action={accion}
+      className="mt-3 rounded-xl p-3"
+      style={{
+        background: "color-mix(in srgb, var(--color-acento-600) 8%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--color-acento-600) 40%, transparent)",
+      }}
+    >
+      <input type="hidden" name="id" value={hito.id} />
+      <p className="text-sm font-semibold">Vas a borrar el hito “{hito.titulo}”.</p>
+      <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
+        {publicado
+          ? "La edición está activa: el hito desaparece del cronograma de la portada y de “Cómo participar”, y el chatbot deja de contarlo cuando le preguntan cuándo pasa cada cosa."
+          : "La edición está inactiva, así que este hito todavía no se publica en el sitio."}{" "}
+        No se puede deshacer: si lo necesitás de nuevo hay que cargarlo otra vez
+        {rango ? ` con sus fechas (${rango})` : ""}.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={pendiente}
+          className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          style={{ background: "var(--color-acento-600)" }}
+        >
+          {pendiente ? "Borrando…" : "Sí, borrar el hito"}
+        </button>
+        <button type="button" onClick={alCancelar} className="text-sm underline">
+          Cancelar
+        </button>
+        {estado && !estado.ok && (
+          <span role="alert" className="text-sm" style={{ color: "var(--color-acento-700)" }}>
+            {estado.error}
+          </span>
+        )}
+      </div>
     </form>
   );
 }

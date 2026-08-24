@@ -67,13 +67,20 @@ export const canalCarga = pgEnum("canal_carga", [
 
 export const rolAdmin = pgEnum("rol_admin", ["admin", "moderador", "lector"]);
 
-/** Que se hizo sobre una idea en la bandeja de revision (tabla `revisiones`). */
+/**
+ * Que se hizo sobre una idea en la bandeja de revision (tabla `revisiones`).
+ *
+ * `presupuesto` audita el monto asignado al proyecto (`ideas.presupuesto_total`):
+ * es plata publica, asi que el cambio deja fila con el monto anterior y el
+ * nuevo, igual que un cambio de estado. Valor agregado en la migracion 0003.
+ */
 export const accionRevision = pgEnum("accion_revision", [
   "evaluacion",
   "publicacion",
   "despublicacion",
   "proclamacion",
   "reapertura",
+  "presupuesto",
 ]);
 
 /** Cambios sobre las cuentas del backoffice (tabla `bitacora_equipo`). */

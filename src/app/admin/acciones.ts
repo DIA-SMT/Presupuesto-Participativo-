@@ -34,6 +34,7 @@ import {
   type RolAdmin,
 } from "@/db/queries";
 import { hashearPassword, verificarPassword } from "@/lib/password";
+import { MINIMO_PASSWORD } from "@/lib/politica-password";
 import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
 import { cerrarSesionAdmin, crearSesionAdmin, getSesionAdmin } from "@/lib/sesion";
 import { slugificar } from "@/lib/texto";
@@ -137,6 +138,7 @@ function filaRevision(datos: {
 /** Largo minimo de la devolucion tecnica que el vecino va a leer. */
 const MINIMO_DEVOLUCION = 40;
 
+
 /**
  * Los estados que le dicen "no" a una idea no se pueden guardar sin devolucion:
  * es el texto que explica al vecino por que su propuesta no sigue.
@@ -228,8 +230,11 @@ export async function cambiarMiPassword(
   const nueva = String(formulario.get("nueva") ?? "");
   const repetida = String(formulario.get("repetida") ?? "");
 
-  if (nueva.length < 12) {
-    return { ok: false, error: "La contraseña nueva tiene que tener 12 caracteres o más." };
+  if (nueva.length < MINIMO_PASSWORD) {
+    return {
+      ok: false,
+      error: `La contraseña nueva tiene que tener ${MINIMO_PASSWORD} caracteres o más.`,
+    };
   }
   if (repetida && repetida !== nueva) {
     return { ok: false, error: "Las dos contraseñas nuevas no coinciden." };
@@ -275,139 +280,13 @@ export async function cambiarMiPassword(
 }
 
 // ---------------------------------------------------------------------------
-// Ideas: edicion general
-// ---------------------------------------------------------------------------
-
-const esquemaIdea = z.object({
-  id: z.coerce.number().int().positive(),
-  estado: z.enum(["pendiente", "factible", "no_factible", "integrado", "ganador"]),
-  motivoEstado: z.string().trim().max(5000).optional(),
-  publicada: z.coerce.boolean(),
-  presupuestoTotal: z
-    .union([z.coerce.number().min(0), z.literal(""), z.null()])
-    .optional(),
-  estadoPresupuesto: z.enum([
-    "sin_asignar",
-    "preparacion",
-    "contratacion",
-    "ejecucion",
-    "finalizado",
-  ]),
-});
-
-/**
- * Formulario general de una idea: devolucion, publicacion y presupuesto.
- *
- * Dos cosas que este formulario ya NO puede hacer:
- *  - editar el contador de votos: un contador editable a mano vuelve
- *    indefendible cualquier resultado discutido;
- *  - marcar un ganador: eso lo hace `proclamarGanador`, que valida los votos
- *    del distrito y es el unico escritor de la columna `ganador`.
- */
-export async function actualizarIdea(
-  _previo: Resultado | null,
-  formulario: FormData,
-): Promise<Resultado> {
-  const sesion = await exigirAdmin("moderador");
-  if (!sesion) return sinPermiso("moderador");
-
-  let datos: z.infer<typeof esquemaIdea>;
-  try {
-    datos = esquemaIdea.parse({
-      id: formulario.get("id"),
-      estado: formulario.get("estado"),
-      motivoEstado: formulario.get("motivoEstado") ?? undefined,
-      publicada: formulario.get("publicada") === "on",
-      presupuestoTotal: formulario.get("presupuestoTotal") || null,
-      estadoPresupuesto: formulario.get("estadoPresupuesto"),
-    });
-  } catch {
-    return { ok: false, error: "Datos inválidos." };
-  }
-
-  if (datos.estado === "ganador") {
-    return {
-      ok: false,
-      error:
-        "El estado “ganador” no se elige a mano: se proclama, y la proclamación verifica que sea el proyecto más votado del distrito.",
-    };
-  }
-
-  const [previa] = await db
-    .select({
-      estado: ideas.estado,
-      publicada: ideas.publicada,
-      motivoEstado: ideas.motivoEstado,
-    })
-    .from(ideas)
-    .where(eq(ideas.id, datos.id))
-    .limit(1);
-  if (!previa) return { ok: false, error: "La idea no existe." };
-
-  // La devolucion que va a quedar guardada: la nueva si vino, la anterior si no.
-  const devolucion = datos.motivoEstado || previa.motivoEstado;
-  if (previa.estado !== datos.estado && faltaDevolucion(datos.estado, devolucion)) {
-    return { ok: false, error: ERROR_DEVOLUCION };
-  }
-
-  const ahora = new Date();
-  const cambioEstado = previa.estado !== datos.estado;
-  const cambioPublicacion = previa.publicada !== datos.publicada;
-
-  await db.transaction(async (tx) => {
-    await tx
-      .update(ideas)
-      .set({
-        estado: datos.estado,
-        // La devolucion tecnica es lo que el vecino lee para saber por que su
-        // idea no fue factible: guardar el formulario con el textarea vacio no
-        // la borra. Se corrige escribiendo otra, no vaciandola.
-        ...(datos.motivoEstado ? { motivoEstado: datos.motivoEstado } : {}),
-        publicada: datos.publicada,
-        ...(cambioEstado
-          ? { estadoActualizadoEn: ahora, revisadoPorId: sesion.adminId }
-          : {}),
-        presupuestoTotal:
-          datos.presupuestoTotal === null || datos.presupuestoTotal === ""
-            ? null
-            : String(datos.presupuestoTotal),
-        estadoPresupuesto: datos.estadoPresupuesto,
-        updatedAt: ahora,
-      })
-      .where(eq(ideas.id, datos.id));
-
-    // Ningun cambio de estado o de publicacion queda sin fila en el historial,
-    // venga de este formulario o de la bandeja de revision.
-    if (cambioEstado) {
-      await tx.insert(revisiones).values(
-        filaRevision({
-          ideaId: datos.id,
-          sesion,
-          accion: "evaluacion",
-          estadoAnterior: previa.estado,
-          estadoNuevo: datos.estado,
-          nota: datos.motivoEstado || null,
-        }),
-      );
-    }
-    if (cambioPublicacion) {
-      await tx.insert(revisiones).values(
-        filaRevision({
-          ideaId: datos.id,
-          sesion,
-          accion: datos.publicada ? "publicacion" : "despublicacion",
-          nota: "Cambio hecho desde el formulario de la idea.",
-        }),
-      );
-    }
-  });
-
-  revalidatePath("/", "layout");
-  return { ok: true };
-}
-
-// ---------------------------------------------------------------------------
 // Ideas: bandeja de revision
+//
+// `actualizarIdea` (el viejo formulario general de /admin) se elimino: editaba
+// estado, devolucion y publicacion SIN dejar historial completo y conviviendo
+// con la bandeja, asi que un mismo cambio tenia dos caminos y uno de los dos no
+// dejaba rastro. Todo lo que toca el estado de una idea pasa por las acciones de
+// abajo, que escriben en `revisiones` en la misma transaccion.
 // ---------------------------------------------------------------------------
 
 const esquemaEvaluacion = z.object({
@@ -751,6 +630,146 @@ export async function reabrirRevision(
 
   revalidatePath("/", "layout");
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Presupuesto asignado a un proyecto
+// ---------------------------------------------------------------------------
+
+/** Tope de `ideas.presupuesto_total`: numeric(14, 2), 12 digitos enteros. */
+const MAXIMO_PRESUPUESTO = 999_999_999_999.99;
+
+/** Monto para el historial y los mensajes. `null` es "sin asignar". */
+function montoEnPesos(valor: number | null): string {
+  if (valor === null) return "sin asignar";
+  return valor.toLocaleString("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/**
+ * Presupuesto asignado a UN proyecto (`ideas.presupuesto_total`).
+ *
+ * Rol `admin` y no `moderador`: es el monto de plata publica que el sitio le
+ * muestra al vecino como lo que va a costar su obra.
+ *
+ * El cambio deja fila en `revisiones` con el monto anterior y el nuevo, en la
+ * misma transaccion que el UPDATE: sin eso, el numero se podria mover sin que
+ * quede quien lo movio ni desde cuanto.
+ *
+ * No toca `estadoPresupuesto`: esa columna la escribe `crearAvance` a partir del
+ * ultimo avance cargado. Un select manual la dejaria diciendo "en ejecucion"
+ * sin un solo avance que lo respalde; para retroceder una etapa se carga otro
+ * avance.
+ */
+export async function guardarPresupuestoIdea(
+  _previo: Resultado | null,
+  formulario: FormData,
+): Promise<Resultado> {
+  const sesion = await exigirAdmin("admin");
+  if (!sesion) return sinPermiso("admin");
+
+  const id = Number(formulario.get("id"));
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Idea inválida." };
+
+  const crudo = String(formulario.get("presupuestoTotal") ?? "").trim();
+
+  // El campo vacio es una decision explicita: deja el presupuesto sin asignar.
+  let nuevo: number | null = null;
+  if (crudo !== "") {
+    // Solo un numero en pesos, con hasta dos decimales y coma o punto decimal.
+    // Los separadores de miles se rechazan a proposito: "1.500" es ambiguo
+    // (mil quinientos o uno con cinco) y esto es plata.
+    if (!/^\d{1,12}([.,]\d{1,2})?$/.test(crudo)) {
+      return {
+        ok: false,
+        error:
+          "Escribí el monto en pesos, sin puntos de miles ni símbolos: por ejemplo 1500000 o 1500000,50.",
+      };
+    }
+    nuevo = Number(crudo.replace(",", "."));
+    if (!Number.isFinite(nuevo) || nuevo < 0) {
+      return { ok: false, error: "El presupuesto no puede ser negativo." };
+    }
+    if (nuevo > MAXIMO_PRESUPUESTO) {
+      return {
+        ok: false,
+        error: `El presupuesto no puede pasar de ${montoEnPesos(MAXIMO_PRESUPUESTO)}.`,
+      };
+    }
+  }
+
+  const [previa] = await db
+    .select({ presupuestoTotal: ideas.presupuestoTotal })
+    .from(ideas)
+    .where(eq(ideas.id, id))
+    .limit(1);
+  if (!previa) return { ok: false, error: "La idea no existe." };
+
+  const anterior =
+    previa.presupuestoTotal === null ? null : Number(previa.presupuestoTotal);
+
+  // Sin cambio no se escribe: una fila de auditoria que dice "de X a X" solo
+  // ensucia el historial de la idea.
+  if (anterior === nuevo) {
+    return {
+      ok: false,
+      error:
+        nuevo === null
+          ? "El presupuesto ya estaba sin asignar."
+          : `El presupuesto ya era ${montoEnPesos(nuevo)}.`,
+    };
+  }
+
+  const ahora = new Date();
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(ideas)
+        .set({
+          presupuestoTotal: nuevo === null ? null : nuevo.toFixed(2),
+          estadoActualizadoEn: ahora,
+          revisadoPorId: sesion.adminId,
+          updatedAt: ahora,
+        })
+        .where(eq(ideas.id, id));
+
+      await tx.insert(revisiones).values(
+        filaRevision({
+          ideaId: id,
+          sesion,
+          accion: "presupuesto",
+          nota: `Presupuesto asignado: de ${montoEnPesos(anterior)} a ${montoEnPesos(nuevo)}.`,
+        }),
+      );
+    });
+  } catch (causa) {
+    console.error("[admin] guardarPresupuestoIdea fallo", causa);
+    // Si la base todavia no tiene el valor 'presupuesto' del enum
+    // accion_revision (migracion 0003 sin aplicar), falla el INSERT de
+    // auditoria y la transaccion vuelve atras el monto tambien. Es el
+    // comportamiento correcto: antes que mover plata sin rastro, no moverla.
+    if (/accion_revision/i.test(mensajeDeError(causa))) {
+      return {
+        ok: false,
+        error:
+          "Falta aplicar la migración 0003 en esta base (npm run db:migrate). Sin ella el cambio no queda auditado, así que no se guarda.",
+      };
+    }
+    return { ok: false, error: "No se pudo guardar el presupuesto." };
+  }
+
+  revalidatePath("/", "layout");
+  return {
+    ok: true,
+    mensaje:
+      nuevo === null
+        ? "Presupuesto sin asignar. Quedó registrado en el historial."
+        : `Presupuesto guardado: ${montoEnPesos(nuevo)}. Quedó registrado en el historial.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
