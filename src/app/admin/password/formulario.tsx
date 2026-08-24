@@ -7,6 +7,7 @@
  */
 import { useActionState } from "react";
 import { cambiarMiPassword } from "../acciones";
+import { MINIMO_PASSWORD } from "@/lib/politica-password";
 
 export default function FormularioPassword() {
   const [estado, accion, pendiente] = useActionState(cambiarMiPassword, null);
@@ -33,7 +34,7 @@ export default function FormularioPassword() {
           name="nueva"
           type="password"
           required
-          minLength={12}
+          minLength={MINIMO_PASSWORD}
           autoComplete="new-password"
           className="rounded-xl px-3 py-2.5 text-sm outline-none"
           style={estiloCampo}
@@ -46,7 +47,7 @@ export default function FormularioPassword() {
           name="repetida"
           type="password"
           required
-          minLength={12}
+          minLength={MINIMO_PASSWORD}
           autoComplete="new-password"
           className="rounded-xl px-3 py-2.5 text-sm outline-none"
           style={estiloCampo}
@@ -54,7 +55,11 @@ export default function FormularioPassword() {
       </label>
 
       <ul className="list-disc pl-5 text-xs" style={{ color: "var(--texto-suave)" }}>
-        <li>12 caracteres o más. Una frase larga y fácil de recordar sirve mejor que un jeroglífico.</li>
+        <li>
+          {MINIMO_PASSWORD} caracteres como mínimo. Una frase larga y fácil de recordar protege
+          mucho más que un jeroglífico corto: este panel da acceso al padrón y a los datos de
+          contacto de los vecinos.
+        </li>
         <li>Tiene que ser distinta de la que usabas.</li>
         <li>No la compartas ni la anotes en un archivo compartido.</li>
       </ul>

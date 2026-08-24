@@ -34,6 +34,7 @@ import {
   type RolAdmin,
 } from "@/db/queries";
 import { hashearPassword, verificarPassword } from "@/lib/password";
+import { MINIMO_PASSWORD } from "@/lib/politica-password";
 import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
 import { cerrarSesionAdmin, crearSesionAdmin, getSesionAdmin } from "@/lib/sesion";
 import { slugificar } from "@/lib/texto";
@@ -137,6 +138,7 @@ function filaRevision(datos: {
 /** Largo minimo de la devolucion tecnica que el vecino va a leer. */
 const MINIMO_DEVOLUCION = 40;
 
+
 /**
  * Los estados que le dicen "no" a una idea no se pueden guardar sin devolucion:
  * es el texto que explica al vecino por que su propuesta no sigue.
@@ -228,8 +230,11 @@ export async function cambiarMiPassword(
   const nueva = String(formulario.get("nueva") ?? "");
   const repetida = String(formulario.get("repetida") ?? "");
 
-  if (nueva.length < 12) {
-    return { ok: false, error: "La contraseña nueva tiene que tener 12 caracteres o más." };
+  if (nueva.length < MINIMO_PASSWORD) {
+    return {
+      ok: false,
+      error: `La contraseña nueva tiene que tener ${MINIMO_PASSWORD} caracteres o más.`,
+    };
   }
   if (repetida && repetida !== nueva) {
     return { ok: false, error: "Las dos contraseñas nuevas no coinciden." };
