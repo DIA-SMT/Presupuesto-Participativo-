@@ -29,6 +29,13 @@
       "when": 1787575873396,
       "tag": "0003_sumar_accion_presupuesto",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787578803871,
+      "tag": "0004_bitacora_sistema",
+      "breakpoints": true
     }
   ]
 }

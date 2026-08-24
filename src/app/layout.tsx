@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
+import AccesoPanel from "@/components/AccesoPanel";
 import Chat from "@/components/Chat";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
 import { getEdicionActiva, getTextos } from "@/db/queries";
 import { urlDelSitio } from "@/lib/sitio";
 import { ETIQUETA_ETAPA } from "@/lib/formato";
+import { getSesionAdmin } from "@/lib/sesion";
 
 /**
  * Todo el sitio se renderiza a demanda: los datos (votos, avances de obra,
@@ -48,10 +50,33 @@ const NAVEGACION = [
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const [textos, edicion] = await Promise.all([
+  /*
+   * La sesion del equipo decide cual de los dos accesos al panel se dibuja
+   * (ver src/components/AccesoPanel.tsx). Leer la cookie no cambia el cacheo:
+   * este layout ya es `force-dynamic` por los datos que muestra, y la guia de
+   * Next dice que `cookies()` en un layout solo lleva la ruta a render
+   * dinamico
+   * (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/cookies.md),
+   * que es exactamente donde ya estaba.
+   *
+   * El `.catch` no es decoracion: `getSesionAdmin()` tira si falta
+   * SESSION_SECRET o es corto, y este es el layout raiz de TODO el sitio. Sin
+   * el, una variable de entorno mal puesta apaga hasta la portada. Igual que
+   * las dos consultas de al lado: si el dato no viene, el sitio sigue en pie
+   * sin el acceso.
+   */
+  const [textos, edicion, sesionEquipo] = await Promise.all([
     getTextos().catch(() => ({}) as Record<string, string>),
     getEdicionActiva().catch(() => null),
+    getSesionAdmin().catch(() => null),
   ]);
+
+  /*
+   * Solo el correo, que ya viene firmado en la cookie. El nombre completo
+   * obligaria a consultar la base en cada pagina publica para una etiqueta
+   * decorativa; el panel, adentro, ya muestra nombre, correo y rol.
+   */
+  const cuentaEquipo = sesionEquipo?.email ?? null;
 
   return (
     <html lang="es-AR">
@@ -88,36 +113,43 @@ export default async function RootLayout({
               </span>
             </Link>
 
-            <nav aria-label="Secciones del sitio" className="hidden items-center gap-1 md:flex">
-              {NAVEGACION.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-lg px-3 py-2 text-sm font-medium transition hover:brightness-95"
-                  style={{ color: "var(--texto)" }}
-                >
-                  {item.texto}
-                </Link>
-              ))}
-              {edicion?.etapa === "ideas" && (
-                <Link
-                  href="/ideas/nueva"
-                  className="ml-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
-                  style={{ background: "var(--color-acento-600)" }}
-                >
-                  Presentá tu idea
-                </Link>
-              )}
-              {edicion?.etapa === "votacion" && (
-                <Link
-                  href="/votar"
-                  className="ml-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
-                  style={{ background: "var(--color-acento-600)" }}
-                >
-                  Votar
-                </Link>
-              )}
-            </nav>
+            {/* Las secciones del vecino y, aparte, el atajo del equipo: el
+                atajo queda FUERA del <nav> porque no es una seccion del
+                sitio. */}
+            <div className="flex items-center gap-2">
+              <nav aria-label="Secciones del sitio" className="hidden items-center gap-1 md:flex">
+                {NAVEGACION.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-lg px-3 py-2 text-sm font-medium transition hover:brightness-95"
+                    style={{ color: "var(--texto)" }}
+                  >
+                    {item.texto}
+                  </Link>
+                ))}
+                {edicion?.etapa === "ideas" && (
+                  <Link
+                    href="/ideas/nueva"
+                    className="ml-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+                    style={{ background: "var(--color-acento-600)" }}
+                  >
+                    Presentá tu idea
+                  </Link>
+                )}
+                {edicion?.etapa === "votacion" && (
+                  <Link
+                    href="/votar"
+                    className="ml-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+                    style={{ background: "var(--color-acento-600)" }}
+                  >
+                    Votar
+                  </Link>
+                )}
+              </nav>
+
+              <AccesoPanel lugar="encabezado" cuenta={cuentaEquipo} />
+            </div>
           </div>
 
           {/* Navegacion en telefono: barra desplazable, sin menu hamburguesa. */}
@@ -219,6 +251,10 @@ export default async function RootLayout({
             style={{ borderTop: "1px solid var(--borde)" }}
           >
             <SelloDireccionIA />
+            {/* La puerta del backoffice para quien todavia no entro: al pie,
+                en letra chica y con el equipo nombrado. El por que esta en
+                src/components/AccesoPanel.tsx. */}
+            <AccesoPanel lugar="pie" cuenta={cuentaEquipo} />
           </div>
         </footer>
 

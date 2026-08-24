@@ -92,6 +92,37 @@ export const accionEquipo = pgEnum("accion_equipo", [
   "cambio_password",
 ]);
 
+/**
+ * Cambios que afectan al sistema o al contenido publico (tabla
+ * `bitacora_sistema`). Un valor por cada accion del panel que los produce, para
+ * que el listado se pueda filtrar por lo que la persona fue a hacer.
+ */
+export const accionSistema = pgEnum("accion_sistema", [
+  "cambio_etapa",
+  "edicion_creada",
+  "edicion_editada",
+  "edicion_activada",
+  "hito_guardado",
+  "hito_borrado",
+  "texto_guardado",
+  "novedad_creada",
+  "avance_creado",
+  "avance_borrado",
+]);
+
+/**
+ * Sobre que se actuo. Es un enum y no texto libre para que el filtro del
+ * listado no pueda pedir una entidad que no existe; sumar una entidad nueva
+ * pide una migracion, que es exactamente la friccion que se busca.
+ */
+export const entidadSistema = pgEnum("entidad_sistema", [
+  "edicion",
+  "hito",
+  "texto",
+  "novedad",
+  "avance",
+]);
+
 // ---------------------------------------------------------------------------
 // Geografia y taxonomia
 // ---------------------------------------------------------------------------
@@ -406,6 +437,62 @@ export const bitacoraEquipo = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("bitacora_equipo_fecha_idx").on(t.createdAt)],
+);
+
+/**
+ * Tercera bitacora del backoffice: lo que se le hace al SISTEMA y al contenido
+ * publico. `revisiones` audita una idea y `bitacora_equipo` una cuenta; nada
+ * cubria los cambios mas consecuentes del panel, que no son ni una cosa ni la
+ * otra: la etapa de la edicion activa (define lo que ve todo el sitio y abre o
+ * cierra la votacion publica), las fechas y el presupuesto de una edicion, el
+ * cronograma, los textos, las novedades y los avances de obra. Todo eso se
+ * podia cambiar sin que quedara quien, cuando ni desde que valor.
+ *
+ * Append-only, igual que las otras dos: una bitacora que se puede editar o
+ * borrar no prueba nada. Nada del codigo hace UPDATE ni DELETE sobre esta tabla,
+ * y por eso no tiene `updated_at`.
+ *
+ * `admin_id` queda en null si despues se borra la cuenta (`set null`), pero
+ * `admin_nombre` es una copia de texto: el registro sobrevive al borrado y se
+ * sigue leyendo sin cruzar tablas. Con el mismo criterio se guardan la entidad,
+ * su id y una etiqueta legible ("Edicion 2026", la clave del texto): el id
+ * apunta a una fila que puede no existir mas — un hito borrado, por ejemplo —
+ * asi que la etiqueta es lo que hace legible el registro para siempre.
+ *
+ * `valor_anterior` y `valor_nuevo` son texto ya armado para leer, no JSON: el
+ * valor de una bitacora es poder decir "paso de X a Y" de un vistazo. Van
+ * recortados en el origen (ver `recortarValor` en src/app/admin/acciones.ts):
+ * esto audita QUE cambio, no guarda versiones del contenido.
+ */
+export const bitacoraSistema = pgTable(
+  "bitacora_sistema",
+  {
+    id: serial("id").primaryKey(),
+    /** Quien hizo el cambio. */
+    adminId: integer("admin_id").references(() => admins.id, { onDelete: "set null" }),
+    adminNombre: text("admin_nombre").notNull(),
+    accion: accionSistema("accion").notNull(),
+    /** Sobre que tipo de cosa se actuo. */
+    entidad: entidadSistema("entidad").notNull(),
+    /**
+     * Id de la fila afectada, cuando existe. Sin clave foranea a proposito: la
+     * fila se puede borrar (un hito, un avance) y el registro tiene que quedar
+     * igual. `null` cuando la entidad no se identifica por id, como un texto,
+     * que se identifica por su clave y va en la etiqueta.
+     */
+    entidadId: integer("entidad_id"),
+    /** Como nombrar lo que se toco sin cruzar tablas. */
+    entidadEtiqueta: text("entidad_etiqueta").notNull(),
+    /** Como estaba antes. `null` cuando la fila no existia (un alta). */
+    valorAnterior: text("valor_anterior"),
+    /** Como quedo. `null` cuando la fila se borro. */
+    valorNuevo: text("valor_nuevo"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // El listado del panel siempre sale ordenado por fecha descendente y los
+  // filtros por accion y entidad se aplican sobre esa lectura: el volumen es de
+  // unos cientos de filas por edicion, asi que no necesitan indice propio.
+  (t) => [index("bitacora_sistema_fecha_idx").on(t.createdAt)],
 );
 
 /** Textos editables del sitio, equivalente al /api/text del sitio anterior. */

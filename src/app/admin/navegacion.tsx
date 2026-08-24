@@ -72,6 +72,8 @@ const GRUPOS: Grupo[] = [
     enlaces: [
       { href: "/admin/ediciones", texto: "Ediciones", soloAdmin: true },
       { href: "/admin/equipo", texto: "Equipo", soloAdmin: true },
+      // Sin soloAdmin: la bitacora la puede leer cualquier rol, incluido lector.
+      { href: "/admin/bitacora", texto: "Bitácora" },
     ],
   },
 ];
