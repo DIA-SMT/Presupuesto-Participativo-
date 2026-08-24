@@ -59,9 +59,17 @@ export function hashearIp(ip: string): string {
 
 /** IP del cliente detras del proxy municipal o del hosting. */
 export function ipDe(request: Request): string {
-  const cabeceras = ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"];
-  for (const cabecera of cabeceras) {
-    const valor = request.headers.get(cabecera);
+  return ipDeCabeceras(request.headers);
+}
+
+/**
+ * Lo mismo, para los contextos que no reciben el Request: las server actions
+ * leen las cabeceras con `headers()` de next/headers.
+ */
+export function ipDeCabeceras(cabeceras: Headers): string {
+  const nombres = ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"];
+  for (const nombre of nombres) {
+    const valor = cabeceras.get(nombre);
     if (valor) return valor.split(",")[0].trim();
   }
   return "desconocida";

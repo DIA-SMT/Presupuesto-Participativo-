@@ -37,9 +37,22 @@ en desarrollo — sin Docker) + MapLibre + chatbot con la API de Claude. Leer el
 - La carpeta del proyecto tiene espacios: citar rutas en los comandos.
 - Sin `DATABASE_URL`, la base es PGlite en `./data/pg`: **de proceso único**.
   Cerrar `npm run dev` antes de correr `npm run seed` o `npm run build`.
-  Si la carpeta se corrompe, se borra y se recrea con `db:push` + `seed`.
+  Si la carpeta se corrompe, se borra y se recrea con `db:migrate` + `seed`.
+- El esquema se cambia con migraciones versionadas: se edita `src/db/schema.ts`,
+  se corre `npm run db:generate` y el SQL de `drizzle/` **se lee antes de
+  aplicarlo** con `npm run db:migrate`. `drizzle-kit push` ya no se usa: proponía
+  DROPs de cualquier columna que estuviera en la base y no en el archivo. La
+  migraciones `0000` a `0002` son reaplicables (`IF NOT EXISTS`, bloques `DO`)
+  porque el esquema de Supabase se aplicó por fuera del runner y su registro
+  quedó vacío; correrlas ahí no cambia nada y solo deja el registro al día. **De
+  la `0003` en adelante no se editan a mano y no se usa `drizzle-kit push`**: un
+  `push` deja la base y el registro desincronizados y rompe la migración
+  siguiente.
 - Con `DATABASE_URL` de Supabase (pooler, puerto 6543) el mismo código usa
-  postgres.js con `prepare: false`. No usar extensiones de Postgres: la
+  node-postgres (`Pool` de `pg`), **no** postgres.js: sobre pgbouncer en modo
+  transacción postgres.js entubaba varias consultas por conexión y el pooler
+  cruzaba los parámetros (ver el comentario de `src/db/index.ts`). No usar
+  extensiones de Postgres: la
   geografía y la búsqueda sin tildes se resuelven en la aplicación
   (`src/lib/geo.ts`, columna `barrio_normalizado`).
 - `AUTH_PROVIDER=dev` habilita un login de prueba sin verificación; el código
@@ -48,3 +61,13 @@ en desarrollo — sin Docker) + MapLibre + chatbot con la API de Claude. Leer el
   en variables de entorno; se cambia desde `/admin`.
 - Sin `ANTHROPIC_API_KEY`, `/api/chat` degrada al buscador determinístico de
   `src/lib/chat-sin-ia.ts` — el chat nunca debe romperse por falta de clave.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

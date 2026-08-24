@@ -1,7 +1,7 @@
 /**
  * Carga la base con la edicion 2025 completa.
  *
- * Requiere haber corrido antes:  npm run db:push && npm run etl
+ * Requiere haber corrido antes:  npm run db:migrate && npm run etl
  * Es idempotente: se puede correr muchas veces sin duplicar nada.
  *
  * No correrlo mientras `npm run dev` esta levantado: PGlite bloquea la carpeta
@@ -10,8 +10,8 @@
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
 import "./cargar-env";
 import { readFileSync } from "node:fs";
-import { and, eq, sql } from "drizzle-orm";
-import { consultar, db } from "../src/db";
+import { and, eq, ne, sql } from "drizzle-orm";
+import { consultar, db, RUTA_PGLITE } from "../src/db";
 import {
   admins,
   categorias,
@@ -68,7 +68,7 @@ async function main() {
     console.error(
       "\nNo se pudo abrir la base. Si `npm run dev` esta corriendo, cerralo antes" +
         "\nde correr el seed (PGlite no admite dos procesos a la vez). Si el error" +
-        "\npersiste, borra la carpeta ./data/pg y corre: npm run db:push && npm run seed\n",
+        "\npersiste, borra la carpeta ./data/pg y corre: npm run db:migrate && npm run seed\n",
     );
     process.exit(1);
   }
@@ -135,6 +135,12 @@ async function main() {
   // Ediciones: 2025 (en seguimiento, es la que se muestra) y 2026 (preparada)
   // -------------------------------------------------------------------------
   console.log("Cargando ediciones...");
+  // El indice parcial `ediciones_una_activa_idx` no admite dos ediciones
+  // activas: si el equipo ya activo otra desde /admin/ediciones, se desactiva
+  // antes de marcar la 2025. Sin esto el seed abortaria, y el seed es el camino
+  // de recuperacion documentado en CLAUDE.md.
+  await db.update(ediciones).set({ activa: false }).where(ne(ediciones.anio, 2025));
+
   const [edicion2025] = await db
     .insert(ediciones)
     .values({
@@ -318,7 +324,7 @@ async function main() {
   }).length;
 
   console.log(`
-Base lista (${process.env.DATABASE_URL?.startsWith("postgres") ? "Postgres" : "PGlite en ./data/pg"}):
+Base lista (${process.env.DATABASE_URL?.startsWith("postgres") ? "Postgres" : `PGlite en ${RUTA_PGLITE}`}):
   ideas ........................... ${resumen.ideas} (${resumen.publicadas} publicadas)
   ganadores ....................... ${resumen.ganadores} (${resumen.votos} votos)
   con coordenada propia ........... ${resumen.con_punto}

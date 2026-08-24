@@ -18,19 +18,29 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <nav className="flex flex-wrap gap-1 text-sm font-medium" aria-label="Panel">
             {[
               { href: "/admin", texto: "Ideas" },
+              { href: "/admin/bandeja", texto: "Bandeja" },
+              { href: "/admin/tablero", texto: "Tablero" },
               { href: "/admin/obras", texto: "Obras" },
+              { href: "/admin/ediciones", texto: "Ediciones", soloAdmin: true },
               { href: "/admin/contenido", texto: "Contenido" },
               { href: "/admin/consultas", texto: "Consultas del chat" },
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="rounded-lg px-3 py-1.5 hover:brightness-95"
-                style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
-              >
-                {item.texto}
-              </Link>
-            ))}
+              { href: "/admin/equipo", texto: "Equipo", soloAdmin: true },
+              { href: "/admin/password", texto: "Mi contraseña" },
+            ]
+              // Las pantallas de admin no se le ofrecen a quien no las puede
+              // usar. Esconder el enlace es cosmetico: la autorizacion real la
+              // hace cada pagina y cada accion releyendo el rol de la base.
+              .filter((item) => !item.soloAdmin || sesion.rol === "admin")
+              .map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="rounded-lg px-3 py-1.5 hover:brightness-95"
+                  style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
+                >
+                  {item.texto}
+                </Link>
+              ))}
           </nav>
           <div className="flex items-center gap-3 text-sm">
             <span style={{ color: "var(--texto-suave)" }}>

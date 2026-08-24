@@ -15,6 +15,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "/reglamento",
     "/archivo",
     "/ideas/nueva",
+    "/ideas/seguimiento",
+    "/privacidad",
   ].map((ruta) => ({ url: `${base}${ruta}`, changeFrequency: "weekly" }));
 
   const distritos: MetadataRoute.Sitemap = Array.from({ length: 20 }, (_, i) => ({

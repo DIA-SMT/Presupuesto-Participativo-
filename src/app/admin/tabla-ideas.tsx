@@ -1,8 +1,12 @@
 "use client";
 
 /**
- * Tabla de moderacion de ideas: filtro rapido, edicion en linea del estado,
- * la publicacion, los votos y el presupuesto.
+ * Tabla de moderacion de ideas: filtro rapido y edicion en linea del estado, la
+ * publicacion, la devolucion y el presupuesto.
+ *
+ * La revision con historial vive en /admin/bandeja: ahi cada cambio de estado
+ * queda registrado en la tabla `revisiones` y la devolucion es obligatoria para
+ * las ideas no factibles. Esta tabla es la edicion rapida de los otros campos.
  */
 import { useMemo, useState, useActionState } from "react";
 import { actualizarIdea } from "./acciones";
@@ -24,7 +28,9 @@ export type FilaIdea = {
   motivoEstado: string | null;
 };
 
-const ESTADOS = ["pendiente", "factible", "no_factible", "integrado", "ganador"] as const;
+// Sin "ganador": ese estado no se elige de una lista, se proclama desde
+// /admin/bandeja validando que la idea sea la mas votada de su distrito.
+const ESTADOS = ["pendiente", "factible", "no_factible", "integrado"] as const;
 const ETAPAS = ["sin_asignar", "preparacion", "contratacion", "ejecucion", "finalizado"] as const;
 
 export default function TablaIdeas({
@@ -170,28 +176,22 @@ function FormularioFila({ idea, soloLectura }: { idea: FilaIdea; soloLectura: bo
         />
       </label>
 
-      <label className="grid gap-1.5 text-sm">
-        <span className="font-medium">Votos</span>
-        <input
-          name="votos"
-          type="number"
-          min={0}
-          defaultValue={idea.votos}
-          disabled={soloLectura}
-          style={estiloCampo}
-          className="rounded-xl px-3 py-2"
-        />
-      </label>
-
+      {/*
+        Ni los votos ni la condicion de ganadora se editan desde aca. Los votos
+        no se tocan a mano: un contador editable vuelve indefendible cualquier
+        resultado discutido. La ganadora se proclama desde /admin/bandeja, que
+        valida contra la mas votada del distrito y deja el acto registrado.
+      */}
       <div className="flex items-end gap-5 text-sm">
         <label className="flex items-center gap-2">
           <input type="checkbox" name="publicada" defaultChecked={idea.publicada} disabled={soloLectura} />
           Publicada
         </label>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" name="ganador" defaultChecked={idea.ganador} disabled={soloLectura} />
-          Ganadora
-        </label>
+        {idea.ganador && (
+          <span className="font-medium" style={{ color: "var(--color-estado-ganador)" }}>
+            Proyecto ganador del distrito {idea.distrito}
+          </span>
+        )}
       </div>
 
       <label className="grid gap-1.5 text-sm sm:col-span-2 lg:col-span-3">

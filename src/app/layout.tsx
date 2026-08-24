@@ -170,6 +170,8 @@ export default async function RootLayout({
                   ...NAVEGACION,
                   { href: "/reglamento", texto: "Reglamento" },
                   { href: "/archivo", texto: "Archivo de ediciones" },
+                  { href: "/ideas/seguimiento", texto: "Seguí tu idea" },
+                  { href: "/privacidad", texto: "Política de privacidad" },
                 ].map((item) => (
                   <li key={item.href}>
                     <Link href={item.href} className="hover:underline" style={{ color: "var(--texto-suave)" }}>

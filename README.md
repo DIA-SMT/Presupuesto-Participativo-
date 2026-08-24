@@ -11,6 +11,11 @@ que responde únicamente con los datos publicados.
 MapLibre GL + API de Claude para el chatbot. Pensado para desplegarse en
 **Vercel**.
 
+> El trabajo en curso sobre el backoffice (tablero, revisión de propuestas,
+> aviso al vecino, roles) está planificado en
+> **[PLAN-BACKOFFICE.md](PLAN-BACKOFFICE.md)**, con el orden de las tandas y las
+> decisiones ya tomadas.
+
 ## Qué incluye
 
 | Área | Ruta | Descripción |
@@ -40,7 +45,7 @@ npm run dev                    # http://localhost:3000
 
 > PGlite es de proceso único: **cerrar `npm run dev` antes de correr
 > `npm run seed`** (el seed lo detecta y avisa). Si la base queda inutilizable,
-> se recrea con: borrar `./data/pg` y correr `npm run db:push && npm run seed`.
+> se recrea con: borrar `./data/pg` y correr `npm run db:migrate && npm run seed`.
 
 ### Variables de entorno (`.env.local`)
 
@@ -72,9 +77,10 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
    proyecto: `DATABASE_URL` (la misma de Supabase), `SESSION_SECRET`,
    `ANTHROPIC_API_KEY`, `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
    hasta tener CIDITUC), `SITE_URL` y las `CIDITUC_*` cuando estén.
-4. El mismo código detecta la URL: con Supabase usa el driver de red
-   (con `prepare: false` para el pooler); sin URL usa PGlite. No hay ramas de
-   código distintas entre desarrollo y producción.
+4. El mismo código detecta la URL: con Supabase usa node-postgres (`Pool` de
+   `pg`, una consulta por conexión, que es lo que tolera el pooler en modo
+   transacción); sin URL usa PGlite. No hay ramas de código distintas entre
+   desarrollo y producción.
 
 ## Arquitectura
 
@@ -146,8 +152,9 @@ campo `notasMigracion` de cada idea, visible en la ficha pública):
 | Comando | Qué hace |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm run setup` | `db:push` + `etl` + `seed` en un paso (idempotente) |
-| `npm run db:push` | Aplica el esquema de `src/db/schema.ts` |
+| `npm run setup` | `db:migrate` + `etl` + `seed` en un paso (idempotente) |
+| `npm run db:generate` | Genera la migración SQL a partir de `src/db/schema.ts` |
+| `npm run db:migrate` | Aplica las migraciones pendientes de `drizzle/` |
 | `npm run etl` | Regenera el dataset limpio y el reporte de limpieza |
 | `npm run seed` | Carga/actualiza la base |
 | `npm test` | Pruebas de normalización y point-in-polygon |

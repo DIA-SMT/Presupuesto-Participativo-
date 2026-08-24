@@ -10,6 +10,7 @@ import { eq, sql } from "drizzle-orm";
 import { consultar, db } from "@/db";
 import { categorias, ideas } from "@/db/schema";
 import { distritoDeCoordenada, getEdicionActiva } from "@/db/queries";
+import { codigoSeguimiento, VERSION_CONSENTIMIENTO } from "@/lib/avisos";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 import {
   normalizar,
@@ -21,19 +22,27 @@ import {
 
 export const runtime = "nodejs";
 
-const esquema = z.object({
-  titulo: z.string().trim().min(8).max(140),
-  categoria: z.string().trim().min(1).max(60),
-  barrio: z.string().trim().max(120).nullish(),
-  problema: z.string().trim().min(30).max(3000),
-  solucion: z.string().trim().min(30).max(4000),
-  beneficios: z.string().trim().max(3000).nullish(),
-  lat: z.number().min(-90).max(90),
-  lon: z.number().min(-180).max(180),
-  autorNombre: z.string().trim().max(120).nullish(),
-  autorTelefono: z.string().trim().max(40).nullish(),
-  autorEmail: z.string().trim().email().max(160).nullish().or(z.literal("")),
-});
+const esquema = z
+  .object({
+    titulo: z.string().trim().min(8).max(140),
+    categoria: z.string().trim().min(1).max(60),
+    barrio: z.string().trim().max(120).nullish(),
+    problema: z.string().trim().min(30).max(3000),
+    solucion: z.string().trim().min(30).max(4000),
+    beneficios: z.string().trim().max(3000).nullish(),
+    lat: z.number().min(-90).max(90),
+    lon: z.number().min(-180).max(180),
+    autorNombre: z.string().trim().max(120).nullish(),
+    autorEmail: z.string().trim().email().max(160).nullish().or(z.literal("")),
+    /** Casilla de avisos: sin ella el mail no se guarda (ver el refine). */
+    autorAvisos: z.coerce.boolean().optional(),
+  })
+  // No se acepta un mail sin la casilla marcada: seria un dato personal sin
+  // consentimiento. El formulario no deja llegar hasta aca, esto es el cierre.
+  .refine((datos) => !datos.autorEmail || datos.autorAvisos, {
+    message: "Falta el consentimiento para guardar el correo.",
+    path: ["autorAvisos"],
+  });
 
 export async function POST(request: Request) {
   const ipHash = hashearIp(ipDe(request));
@@ -117,6 +126,10 @@ export async function POST(request: Request) {
   `);
   const slug = Number(tomados) > 0 ? `${base}-${Number(tomados) + 1}` : base;
 
+  // Sin casilla marcada no hay consentimiento, y sin consentimiento no se
+  // guarda el contacto (el zod ya rechaza mail sin casilla).
+  const quiereAvisos = Boolean(datos.autorAvisos && datos.autorEmail);
+
   try {
     const [creada] = await db
       .insert(ideas)
@@ -138,15 +151,29 @@ export async function POST(request: Request) {
         estado: "pendiente",
         canal: "web",
         autorNombre: datos.autorNombre || null,
-        autorTelefono: datos.autorTelefono || null,
-        autorEmail: datos.autorEmail || null,
+        // El contacto entra SOLO con la casilla marcada. Sin consentimiento el
+        // dato no se guarda, y queda registrada la version del texto aceptado.
+        autorEmail: quiereAvisos ? datos.autorEmail || null : null,
+        autorAvisos: quiereAvisos,
+        autorAvisosEn: quiereAvisos ? new Date() : null,
+        autorAvisosVersion: quiereAvisos ? VERSION_CONSENTIMIENTO : null,
         // Se publica cuando el equipo la revisa.
         publicada: false,
         fecha: new Date().toISOString().slice(0, 10),
       })
-      .returning({ numero: ideas.numero });
+      .returning({ id: ideas.id, numero: ideas.numero });
 
-    return Response.json({ numero: creada.numero, distrito }, { status: 201 });
+    // El codigo de seguimiento es lo unico que le permite a la persona ver
+    // despues como sigue su idea: la pantalla de "idea recibida" lo muestra y
+    // pide anotarlo. No se guarda en la base, se recalcula desde el id.
+    return Response.json(
+      {
+        numero: creada.numero,
+        distrito,
+        codigo: codigoSeguimiento(creada.id),
+      },
+      { status: 201 },
+    );
   } catch (causa) {
     console.error("[ideas] alta fallida", causa);
     return Response.json(

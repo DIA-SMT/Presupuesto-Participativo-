@@ -7,6 +7,11 @@
  * marca en el mapa. El formulario manda lat/lon numericos y el servidor deriva
  * el distrito con PostGIS, asi que no hay forma de cargar una coordenada
  * invalida ni de asignar mal el distrito.
+ *
+ * Datos personales: el telefono ya no se pide (la columna no existe) y el
+ * correo es facultativo, detras de una casilla desmarcada. Sin la casilla el
+ * campo del correo ni siquiera se envia, y el aviso de como sigue la idea se
+ * resuelve con el codigo de seguimiento que devuelve /api/ideas.
  */
 import { useState } from "react";
 import Mapa from "@/components/Mapa";
@@ -16,7 +21,7 @@ type Categoria = { slug: string; nombre: string; descripcion: string };
 type Estado =
   | { tipo: "editando" }
   | { tipo: "enviando" }
-  | { tipo: "listo"; numero: number; distrito: number }
+  | { tipo: "listo"; numero: number; distrito: number; codigo: string }
   | { tipo: "error"; mensaje: string };
 
 const LARGOS = {
@@ -37,6 +42,8 @@ export default function FormularioIdea({
   const [distrito, setDistrito] = useState<number | null>(null);
   const [ubicando, setUbicando] = useState(false);
   const [estado, setEstado] = useState<Estado>({ tipo: "editando" });
+  /** Consentimiento para guardar el correo. Arranca en false, siempre. */
+  const [avisos, setAvisos] = useState(false);
 
   /** Al marcar un punto se le pregunta al servidor a que distrito pertenece. */
   async function elegirPunto(nuevo: { lat: number; lon: number }) {
@@ -83,24 +90,27 @@ export default function FormularioIdea({
           lat: punto.lat,
           lon: punto.lon,
           autorNombre: datos.get("autorNombre") || null,
-          autorTelefono: datos.get("autorTelefono") || null,
-          autorEmail: datos.get("autorEmail") || null,
+          // Sin la casilla marcada el correo no viaja: no hay consentimiento.
+          autorEmail: avisos ? datos.get("autorEmail") || null : null,
+          autorAvisos: avisos,
         }),
       });
 
       const cuerpo = (await respuesta.json()) as {
         numero?: number;
         distrito?: number;
+        codigo?: string;
         error?: string;
       };
 
-      if (!respuesta.ok || !cuerpo.numero) {
+      if (!respuesta.ok || !cuerpo.numero || !cuerpo.codigo) {
         throw new Error(cuerpo.error ?? "No se pudo enviar la idea.");
       }
       setEstado({
         tipo: "listo",
         numero: cuerpo.numero,
         distrito: cuerpo.distrito ?? distrito,
+        codigo: cuerpo.codigo,
       });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (causa) {
@@ -119,19 +129,58 @@ export default function FormularioIdea({
         </p>
         <h2 className="mt-2 text-2xl font-bold">Gracias por participar</h2>
         <p className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed">
-          Tu idea quedó registrada con el número <strong>#{estado.numero}</strong> en el{" "}
-          <strong>Distrito {estado.distrito}</strong>. El equipo del Presupuesto Participativo la va
-          a revisar y evaluar técnicamente. Cuando esté publicada vas a poder verla en el listado de
-          proyectos de tu distrito.
+          Tu idea quedó registrada en el <strong>Distrito {estado.distrito}</strong>. El equipo del
+          Presupuesto Participativo la va a revisar y evaluar técnicamente. Cuando esté publicada vas
+          a poder verla en el listado de proyectos de tu distrito.
         </p>
-        <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Guardá el número: sirve para consultar por tu idea.
+
+        {/* Numero y codigo: los dos datos que se necesitan para el seguimiento. */}
+        <div className="mt-6 grid max-w-xl gap-4 sm:grid-cols-2">
+          <div
+            className="rounded-2xl px-5 py-4"
+            style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+          >
+            <p className="text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
+              Número de tu idea
+            </p>
+            <p className="mt-1 font-mono text-2xl font-bold">#{estado.numero}</p>
+          </div>
+          <div
+            className="rounded-2xl px-5 py-4"
+            style={{
+              background: "color-mix(in srgb, var(--color-acento-600) 8%, transparent)",
+              border: "1px solid var(--color-acento-600)",
+            }}
+          >
+            <p className="text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
+              Código de seguimiento
+            </p>
+            <p className="mt-1 font-mono text-2xl font-bold" style={{ letterSpacing: "0.12em" }}>
+              {estado.codigo}
+            </p>
+          </div>
+        </div>
+
+        <p className="mt-4 max-w-prose text-[0.9375rem] font-semibold leading-relaxed">
+          Anotá los dos datos o sacale una foto a esta pantalla.
         </p>
+        <p className="mt-1 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+          El código no se vuelve a mostrar y no lo podés recuperar desde el sitio. Con el número y el
+          código consultás cuando quieras en qué etapa está tu idea y leés la devolución del equipo,
+          sin depender de que te escribamos.
+        </p>
+
         <div className="mt-6 flex flex-wrap gap-3">
           <a
-            href={`/distritos/${estado.distrito}`}
+            href="/ideas/seguimiento"
             className="rounded-xl px-5 py-3 text-sm font-semibold text-white"
             style={{ background: "var(--color-marca-700)" }}
+          >
+            Seguir mi idea
+          </a>
+          <a
+            href={`/distritos/${estado.distrito}`}
+            className="superficie rounded-xl px-5 py-3 text-sm font-semibold"
           >
             Ver el Distrito {estado.distrito}
           </a>
@@ -296,44 +345,69 @@ export default function FormularioIdea({
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-lg font-bold">3. Cómo te contactamos</h2>
+          <h2 className="text-lg font-bold">3. Tus datos (opcionales)</h2>
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-            Todos estos datos son opcionales y no se publican. Solo se usan si el equipo necesita
-            entender mejor tu propuesta.
+            Ninguno de estos datos se publica. Al enviar la idea te vamos a dar un{" "}
+            <strong>código de seguimiento</strong>: con ese código y el número de tu idea podés ver
+            cuando quieras cómo sigue, sin dejarnos ningún dato de contacto.
           </p>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Campo etiqueta="Tu nombre">
-              <input
-                name="autorNombre"
-                maxLength={120}
-                disabled={!abierta || enviando}
-                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={campoEstilo}
-              />
-            </Campo>
-            <Campo etiqueta="Teléfono">
-              <input
-                name="autorTelefono"
-                type="tel"
-                maxLength={40}
-                disabled={!abierta || enviando}
-                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={campoEstilo}
-              />
-            </Campo>
-          </div>
-
-          <Campo etiqueta="Correo electrónico">
+          <Campo etiqueta="Tu nombre" ayuda="Opcional. Solo lo ve el equipo que evalúa la propuesta.">
             <input
-              name="autorEmail"
-              type="email"
-              maxLength={160}
+              name="autorNombre"
+              maxLength={120}
               disabled={!abierta || enviando}
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
           </Campo>
+
+          {/* Consentimiento del correo: casilla desmarcada y finalidad declarada. */}
+          <div
+            className="rounded-xl px-4 py-4"
+            style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+          >
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={avisos}
+                onChange={(evento) => setAvisos(evento.target.checked)}
+                disabled={!abierta || enviando}
+                className="mt-0.5"
+              />
+              <span className="text-sm font-medium">
+                Quiero dejar mi correo para que me avisen cómo sigue mi idea.
+              </span>
+            </label>
+            <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+              Lo usamos solo para contarte cómo sigue tu idea: no lo publicamos, no lo damos a nadie
+              y no te vamos a mandar otra cosa. Es opcional, y{" "}
+              <strong>no dar el correo no afecta la evaluación de tu propuesta</strong>: se evalúa
+              igual. Podés pedir que lo borremos cuando quieras. Cómo tratamos tus datos está
+              explicado en la{" "}
+              <a href="/privacidad" className="underline">
+                política de privacidad
+              </a>
+              .
+            </p>
+
+            {avisos && (
+              <div className="mt-4">
+                <Campo etiqueta="Correo electrónico">
+                  <input
+                    name="autorEmail"
+                    type="email"
+                    required
+                    maxLength={160}
+                    disabled={!abierta || enviando}
+                    placeholder="tunombre@ejemplo.com"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                    style={campoEstilo}
+                  />
+                </Campo>
+              </div>
+            )}
+          </div>
         </section>
 
         {estado.tipo === "error" && (
