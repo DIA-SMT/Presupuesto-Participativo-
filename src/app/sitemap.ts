@@ -1,10 +1,11 @@
 import type { MetadataRoute } from "next";
 import { getEdicionActiva, listarIdeas } from "@/db/queries";
+import { urlDelSitio } from "@/lib/sitio";
 
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = process.env.SITE_URL ?? "http://localhost:3000";
+  const base = urlDelSitio();
 
   const fijas: MetadataRoute.Sitemap = [
     "",
