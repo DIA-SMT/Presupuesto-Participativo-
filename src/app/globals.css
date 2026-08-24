@@ -76,6 +76,20 @@
   --logo-azul: #0166ff;
   --logo-celeste: #2db0ff;
   --logo-amarillo: #f4dc00;
+  /*
+   * Borde de un CONTROL (boton, campo, select, chip navegable), distinto del
+   * borde decorativo --borde.
+   *
+   * El criterio 1.4.11 de WCAG pide 3:1 para lo que no es texto pero delimita
+   * un control. Medido, --borde sobre una tarjeta da 1.23:1 en claro y 1.31:1
+   * en oscuro: alcanza para separar dos superficies, no para que algo se lea
+   * como un boton. Este token sale de --texto, asi que sirve en los dos temas
+   * con una sola definicion.
+   *
+   * El borde de una tarjeta o de un separador sigue usando --borde: son
+   * decoracion y no tienen requisito de contraste.
+   */
+  --borde-control: color-mix(in srgb, var(--texto) 55%, transparent);
   color-scheme: light;
 }
 

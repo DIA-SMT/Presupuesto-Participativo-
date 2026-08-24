@@ -22,6 +22,13 @@
       "when": 1787322496007,
       "tag": "0002_sacar_autor_telefono",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787575873396,
+      "tag": "0003_sumar_accion_presupuesto",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,18 @@
 "use client";
 
 /**
- * Bandeja de revision: la parte interactiva.
+ * Pantalla principal del panel: la bandeja de revision de ideas.
  *
- * Los datos llegan ya consultados desde page.tsx; aca viven los formularios de
+ * El archivo sigue viviendo en bandeja/ pero la ruta que lo usa es /admin
+ * (src/app/admin/page.tsx). /admin/bandeja quedo como redirect permanente para
+ * no romper los enlaces viejos del equipo.
+ *
+ * Los datos llegan ya consultados desde la page; aca viven los formularios de
  * revision (useActionState) y el contador de la devolucion, que avisa antes de
  * enviar cuando el estado elegido exige explicarle al vecino.
+ *
+ * Nada de lo interactivo depende de JavaScript para leer: el filtro es un form
+ * GET, y el orden y la pagina son enlaces comunes que resuelve el servidor.
  *
  * Dato sensible: el mail del autor NUNCA llega a esta pantalla. De la base sale
  * solo `tieneContacto`, asi que la bandeja puede decir si hay con quien
@@ -16,10 +23,12 @@ import { useActionState, useState } from "react";
 import { Chip, ChipEstado } from "@/components/ui";
 import type {
   AccionRevision,
+  DireccionOrden,
   EstadoIdea,
   FilaBandeja,
   FilaRevision,
   IdeaAdmin,
+  OrdenBandeja,
   ResumenBandeja,
   RolAdmin,
 } from "@/db/queries";
@@ -32,6 +41,9 @@ import {
   reabrirRevision,
 } from "../acciones";
 
+/** La bandeja es la pantalla principal del panel. */
+const RUTA = "/admin";
+
 /** Mismo minimo que valida evaluarIdea en el servidor. */
 const MINIMO_DEVOLUCION = 40;
 /** Mismo minimo que piden despublicarIdea y reabrirRevision. */
@@ -40,7 +52,7 @@ const MINIMO_MOTIVO = 10;
 /** Los cuatro estados que se pueden fijar evaluando: "ganador" se proclama. */
 const ESTADOS_EVALUACION: EstadoIdea[] = ["pendiente", "factible", "no_factible", "integrado"];
 
-/** Estados del filtro de la cabecera, en el orden en que se trabajan. */
+/** Estados del filtro, en el orden en que se trabajan. */
 const ESTADOS_FILTRO: EstadoIdea[] = [
   "pendiente",
   "factible",
@@ -50,12 +62,16 @@ const ESTADOS_FILTRO: EstadoIdea[] = [
   "borrador",
 ];
 
+/** Los estados que ya tienen tarjeta propia arriba no se repiten en la fila chica. */
+const ESTADOS_TARJETA: EstadoIdea[] = ESTADOS_FILTRO.filter((estado) => estado !== "pendiente");
+
 const ETIQUETA_ACCION: Record<AccionRevision, string> = {
   evaluacion: "Evaluación",
   publicacion: "Publicación",
   despublicacion: "Despublicación",
   proclamacion: "Proclamación",
   reapertura: "Reapertura",
+  presupuesto: "Presupuesto",
 };
 
 const ETIQUETA_CANAL: Record<IdeaAdmin["canal"], string> = {
@@ -68,7 +84,61 @@ const ETIQUETA_CANAL: Record<IdeaAdmin["canal"], string> = {
 /** Lo que devuelven las server actions. El tipo original vive en acciones.ts. */
 type Resultado = { ok: true; mensaje?: string } | { ok: false; error: string };
 
-type Filtros = { estado: string; distrito: string; q: string };
+/**
+ * Todo lo que define la vista y viaja en el querystring. La page lo arma ya
+ * validado (usa `ordenBandeja` y `direccionBandeja` de queries.ts), asi que acá
+ * solo se dibuja y se rearman enlaces.
+ */
+export type Vista = {
+  estado: string;
+  distrito: string;
+  q: string;
+  /** Solo los "no" sin devolución escrita: la deuda con el vecino. */
+  sinDevolucion: boolean;
+  orden: OrdenBandeja;
+  /** null = la dirección natural del orden elegido. */
+  dir: DireccionOrden | null;
+  /** Página actual, base 1. */
+  pagina: number;
+  /** Id de la idea abierta en la ficha, o "" si no hay ninguna. */
+  idea: string;
+};
+
+/**
+ * Direccion natural de cada orden. Es un espejo del objeto ORDENES de
+ * src/db/queries.ts, que es el que manda: acá solo se usa para dibujar la
+ * flecha del encabezado y calcular el proximo click.
+ */
+const DIRECCION_NATURAL: Record<OrdenBandeja, DireccionOrden> = {
+  prioridad: "asc",
+  reciente: "desc",
+  antigua: "asc",
+  votos: "desc",
+  distrito: "asc",
+  estado: "asc",
+};
+
+/** Columnas de la tabla de trabajo. `clave` null = columna que no ordena. */
+const COLUMNAS: { etiqueta: string; clave: OrdenBandeja | null; alDerecha?: boolean }[] = [
+  { etiqueta: "N°", clave: null },
+  { etiqueta: "Idea", clave: null },
+  { etiqueta: "Estado", clave: "estado" },
+  { etiqueta: "Devolución", clave: null },
+  { etiqueta: "Contacto", clave: null },
+  { etiqueta: "Distrito", clave: "distrito" },
+  { etiqueta: "Barrio", clave: null },
+  { etiqueta: "Ingresó", clave: "antigua" },
+  { etiqueta: "Votos", clave: "votos", alDerecha: true },
+];
+
+/**
+ * La columna "Ingresó" cubre los dos ordenes por fecha: "antigua" (las más
+ * viejas arriba) y "reciente", que es el mismo criterio al revés. Si alguien
+ * llega con orden=reciente en el enlace, la columna se muestra igual activa.
+ */
+function columnaDe(orden: OrdenBandeja): OrdenBandeja {
+  return orden === "reciente" ? "antigua" : orden;
+}
 
 /** Fechas con hora en la zona de Tucumán: el historial se lee por minuto. */
 const fechaHora = new Intl.DateTimeFormat("es-AR", {
@@ -94,28 +164,65 @@ function antiguedad(desde: Date, ahora: number): string {
   return `hace ${meses} meses`;
 }
 
-/** Enlace a la misma pantalla cambiando algunos parametros. */
-function armarEnlace(filtros: Filtros, cambios: Partial<Filtros & { idea: string }>): string {
+/** Enlace a la misma pantalla cambiando algunos parametros de la vista. */
+function armarEnlace(vista: Vista, cambios: Partial<Vista> = {}): string {
+  const proxima = { ...vista, ...cambios };
   const parametros = new URLSearchParams();
-  for (const [clave, valor] of Object.entries({ ...filtros, ...cambios })) {
-    if (valor) parametros.set(clave, valor);
-  }
+  if (proxima.estado) parametros.set("estado", proxima.estado);
+  if (proxima.distrito) parametros.set("distrito", proxima.distrito);
+  if (proxima.q) parametros.set("q", proxima.q);
+  if (proxima.sinDevolucion) parametros.set("sindevolucion", "1");
+  if (proxima.orden !== "prioridad") parametros.set("orden", proxima.orden);
+  if (proxima.dir) parametros.set("dir", proxima.dir);
+  if (proxima.pagina > 1) parametros.set("pagina", String(proxima.pagina));
+  if (proxima.idea) parametros.set("idea", proxima.idea);
   const consulta = parametros.toString();
-  return consulta ? `/admin/bandeja?${consulta}` : "/admin/bandeja";
+  return consulta ? `${RUTA}?${consulta}` : RUTA;
 }
+
+/** Filtros en cero, para el enlace de "Limpiar filtros". */
+const VISTA_LIMPIA: Partial<Vista> = {
+  estado: "",
+  distrito: "",
+  q: "",
+  sinDevolucion: false,
+  pagina: 1,
+  idea: "",
+};
 
 /** Una idea que dice "no" sin devolucion escrita es deuda con el vecino. */
 function faltaDevolucion(estado: EstadoIdea, tieneDevolucion: boolean): boolean {
   return (estado === "no_factible" || estado === "integrado") && !tieneDevolucion;
 }
 
+/**
+ * Numeros de pagina a mostrar: la primera, la ultima y las vecinas de la
+ * actual. Los null son los huecos ("…").
+ */
+function ventanaPaginas(pagina: number, paginas: number): (number | null)[] {
+  const cerca = [1, paginas, pagina - 1, pagina, pagina + 1]
+    .filter((numero) => numero >= 1 && numero <= paginas)
+    .sort((uno, otro) => uno - otro);
+  const salida: (number | null)[] = [];
+  let anterior = 0;
+  for (const numero of cerca) {
+    if (numero === anterior) continue;
+    if (anterior && numero - anterior > 1) salida.push(null);
+    salida.push(numero);
+    anterior = numero;
+  }
+  return salida;
+}
+
 export default function PanelBandeja({
   anio,
   resumen,
   filas,
-  tope,
+  total,
+  porPagina,
+  votosRegistrados,
   distritos,
-  filtros,
+  vista,
   ficha,
   historial,
   rol,
@@ -124,9 +231,12 @@ export default function PanelBandeja({
   anio: number;
   resumen: ResumenBandeja;
   filas: FilaBandeja[];
-  tope: number;
+  /** Ideas que matchean el filtro, sin límite: es el total del paginador. */
+  total: number;
+  porPagina: number;
+  votosRegistrados: number;
   distritos: { numero: number; nombre: string }[];
-  filtros: Filtros;
+  vista: Vista;
   ficha: IdeaAdmin | null;
   historial: FilaRevision[];
   rol: RolAdmin;
@@ -135,79 +245,140 @@ export default function PanelBandeja({
   const soloLectura = rol === "lector";
   const deuda = resumen.noFactiblesSinDevolucion;
 
+  const paginas = Math.max(1, Math.ceil(total / porPagina));
+  const desde = total === 0 ? 0 : (vista.pagina - 1) * porPagina + 1;
+  const hasta = Math.min(total, vista.pagina * porPagina);
+
+  const columnaActiva = columnaDe(vista.orden);
+  const direccionActiva = vista.dir ?? DIRECCION_NATURAL[vista.orden];
+
+  /** Cambiar de filtro siempre vuelve a la primera página y cierra la ficha. */
+  const enlaceFiltro = (cambios: Partial<Vista>) =>
+    armarEnlace(vista, { pagina: 1, idea: "", ...cambios });
+
+  /** Ordenar mantiene el filtro y la ficha abierta, pero vuelve a la página 1. */
+  function enlaceOrden(clave: OrdenBandeja): string {
+    const activa = columnaActiva === clave;
+    return armarEnlace(vista, {
+      orden: clave,
+      // Sobre la columna activa el click invierte; sobre otra se arranca con la
+      // dirección natural de ese orden (null).
+      dir: activa ? (direccionActiva === "asc" ? "desc" : "asc") : null,
+      pagina: 1,
+    });
+  }
+
+  const hayFiltro = Boolean(vista.estado || vista.distrito || vista.q || vista.sinDevolucion);
+
   return (
     <div>
       <header>
-        <h1 className="text-2xl font-bold">Bandeja de revisión · Edición {anio}</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Las pendientes van primero y, dentro de cada grupo, las más antiguas arriba: la fila se
-          atiende por antigüedad. Tocá una idea para abrir su ficha, evaluarla y ver su historial.
+        <h1 className="text-2xl font-bold">Ideas · Edición {anio}</h1>
+        <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
+          La lista arranca por lo que necesita trabajo: primero las que nadie evaluó, después los
+          “no” sin devolución escrita y al final el resto, siempre las más antiguas arriba. Tocá el
+          título de una idea para abrir su ficha, evaluarla y ver su historial; cada cambio queda
+          registrado.
         </p>
       </header>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-        <Contador
-          valor={resumen.total}
-          etiqueta="Ideas de la edición"
-          href={armarEnlace(filtros, { estado: "" })}
-          activo={!filtros.estado}
+      {/* --- Tarjetas accionables: cada una filtra la lista ---------------- */}
+      <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        {deuda > 0 ? (
+          <Link
+            href={enlaceFiltro({ estado: "", sinDevolucion: true })}
+            aria-current={vista.sinDevolucion ? "true" : undefined}
+            className="rounded-2xl px-5 py-4"
+            style={{
+              background: "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
+              border: `1px solid color-mix(in srgb, var(--color-acento-600) ${
+                vista.sinDevolucion ? "80%" : "40%"
+              }, transparent)`,
+            }}
+          >
+            <p className="text-3xl font-bold tracking-tight" style={{ color: "var(--color-acento-700)" }}>
+              {formatearNumero(deuda)}
+            </p>
+            <p className="mt-0.5 text-sm font-semibold" style={{ color: "var(--color-acento-700)" }}>
+              {deuda === 1 ? "idea no factible" : "ideas no factibles"} sin devolución escrita
+            </p>
+            <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+              Es la deuda del equipo con los vecinos: a cada una se le dijo que no sin explicarle
+              por qué. Tocá para trabajar solo esas y escribir el texto que se publica en la ficha.
+            </p>
+          </Link>
+        ) : (
+          <div
+            className="rounded-2xl px-5 py-4"
+            style={{
+              background: "color-mix(in srgb, var(--color-cat-ambiental) 8%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--color-cat-ambiental) 35%, transparent)",
+            }}
+          >
+            <p className="text-sm font-semibold" style={{ color: "var(--color-cat-ambiental)" }}>
+              Todas las ideas no factibles tienen su devolución escrita.
+            </p>
+            <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+              No hay ningún vecino con un “no” sin explicación. Se mantiene así escribiendo la
+              devolución en el mismo momento en que se evalúa.
+            </p>
+          </div>
+        )}
+
+        <Tarjeta
+          valor={resumen.porEstado.pendiente}
+          etiqueta="pendientes de evaluación"
+          detalle="Nadie las miró todavía. Van primero en la lista."
+          href={enlaceFiltro({ estado: "pendiente", sinDevolucion: false })}
+          activo={vista.estado === "pendiente" && !vista.sinDevolucion}
+          color={resumen.porEstado.pendiente > 0 ? "var(--color-acento-600)" : undefined}
         />
-        {/* "Borrador" solo se muestra si existe: casi nunca hay ideas en ese estado. */}
-        {ESTADOS_FILTRO.filter(
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {/* "Borrador" solo se muestra si existe: casi nunca hay ideas asi. */}
+        {ESTADOS_TARJETA.filter(
           (estado) => estado !== "borrador" || resumen.porEstado.borrador > 0,
         ).map((estado) => (
           <Contador
             key={estado}
             valor={resumen.porEstado[estado]}
             etiqueta={ETIQUETA_ESTADO[estado] ?? estado}
-            href={armarEnlace(filtros, { estado })}
-            activo={filtros.estado === estado}
+            href={enlaceFiltro({ estado, sinDevolucion: false })}
+            activo={vista.estado === estado && !vista.sinDevolucion}
           />
         ))}
       </div>
 
-      {deuda > 0 ? (
-        <div
-          className="mt-3 rounded-2xl px-5 py-4"
-          style={{
-            background: "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--color-acento-600) 40%, transparent)",
-          }}
+      {/* --- Metricas de vitrina: van al final y en chico ------------------ */}
+      <p className="mt-3 text-xs" style={{ color: "var(--texto-suave)" }}>
+        Edición completa:{" "}
+        <Link
+          href={enlaceFiltro({ estado: "", distrito: "", q: "", sinDevolucion: false })}
+          className="underline"
         >
-          <p className="text-sm font-semibold" style={{ color: "var(--color-acento-700)" }}>
-            {formatearNumero(deuda)} {deuda === 1 ? "idea no factible" : "ideas no factibles"} sin
-            devolución escrita
-          </p>
-          <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-            Es la deuda del equipo con los vecinos: a cada una se le dijo que no sin explicarle por
-            qué. Abrilas y escribí la devolución, que es el texto que se publica en la ficha del
-            proyecto.
-          </p>
-          <Link
-            href={armarEnlace(filtros, { estado: "no_factible" })}
-            className="mt-2 inline-block text-sm font-medium underline"
-            style={{ color: "var(--color-acento-700)" }}
-          >
-            Ver las no factibles
-          </Link>
-        </div>
-      ) : (
-        <p className="mt-3 text-sm" style={{ color: "var(--color-cat-ambiental)" }}>
-          Todas las ideas no factibles tienen su devolución escrita.
-        </p>
-      )}
+          {formatearNumero(resumen.total)} {resumen.total === 1 ? "idea" : "ideas"}
+        </Link>{" "}
+        · {formatearNumero(votosRegistrados)}{" "}
+        {votosRegistrados === 1 ? "voto registrado" : "votos registrados"} por este sitio.
+      </p>
 
+      {/* --- Filtros ------------------------------------------------------- */}
       <form
         method="get"
-        action="/admin/bandeja"
-        key={`${filtros.estado}|${filtros.distrito}|${filtros.q}`}
+        action={RUTA}
+        key={`${vista.estado}|${vista.distrito}|${vista.q}|${vista.sinDevolucion}`}
         className="mt-5 flex flex-wrap items-end gap-3"
       >
+        {/* El orden elegido sobrevive al filtro; la página vuelve a la primera. */}
+        {vista.orden !== "prioridad" && <input type="hidden" name="orden" value={vista.orden} />}
+        {vista.dir && <input type="hidden" name="dir" value={vista.dir} />}
+
         <label className="grid gap-1 text-sm">
           <span className="font-medium">Estado</span>
           <select
             name="estado"
-            defaultValue={filtros.estado}
+            defaultValue={vista.estado}
             style={estiloCampo}
             className="rounded-xl px-3 py-2"
           >
@@ -224,7 +395,7 @@ export default function PanelBandeja({
           <span className="font-medium">Distrito</span>
           <select
             name="distrito"
-            defaultValue={filtros.distrito}
+            defaultValue={vista.distrito}
             style={estiloCampo}
             className="rounded-xl px-3 py-2"
           >
@@ -242,11 +413,21 @@ export default function PanelBandeja({
           <input
             type="search"
             name="q"
-            defaultValue={filtros.q}
+            defaultValue={vista.q}
             placeholder="Título o barrio (con o sin tildes)…"
             style={estiloCampo}
             className="w-64 rounded-xl px-3 py-2"
           />
+        </label>
+
+        <label className="flex items-center gap-2 pb-2.5 text-sm">
+          <input
+            type="checkbox"
+            name="sindevolucion"
+            value="1"
+            defaultChecked={vista.sinDevolucion}
+          />
+          Solo los “no” sin devolución
         </label>
 
         <button
@@ -256,88 +437,267 @@ export default function PanelBandeja({
         >
           Filtrar
         </button>
-        {(filtros.estado || filtros.distrito || filtros.q) && (
-          <Link href="/admin/bandeja" className="pb-1 text-sm underline">
+        {hayFiltro && (
+          <Link href={armarEnlace(vista, VISTA_LIMPIA)} className="pb-3 text-sm underline">
             Limpiar filtros
           </Link>
         )}
       </form>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.35fr_1fr] lg:items-start">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] xl:items-start">
         <section>
-          <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-            {filas.length === 0
-              ? "Ninguna idea coincide con estos filtros."
-              : `${formatearNumero(filas.length)} ${filas.length === 1 ? "idea" : "ideas"} en el listado`}
-            {filas.length === tope && ` (tope de ${tope}: afiná los filtros)`}
-          </p>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
+              {total === 0
+                ? "Ninguna idea coincide con estos filtros."
+                : `Mostrando ${formatearNumero(desde)}–${formatearNumero(hasta)} de ${formatearNumero(total)} ${
+                    total === 1 ? "idea" : "ideas"
+                  }`}
+            </p>
+            {vista.orden === "prioridad" ? (
+              <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+                Orden de trabajo (pendientes → “no” sin devolución → resto).
+              </p>
+            ) : (
+              <Link
+                href={armarEnlace(vista, { orden: "prioridad", dir: null, pagina: 1 })}
+                scroll={false}
+                className="text-xs underline"
+                style={{ color: "var(--color-marca-600)" }}
+              >
+                Volver al orden de trabajo
+              </Link>
+            )}
+          </div>
 
-          <ul className="mt-3 space-y-2">
-            {filas.map((fila) => {
-              const abierta = ficha?.id === fila.id;
-              return (
-                <li key={fila.id}>
-                  <Link
-                    href={`${armarEnlace(filtros, { idea: String(fila.id) })}#ficha`}
-                    aria-current={abierta ? "true" : undefined}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-4 py-3"
-                    style={
-                      abierta
-                        ? {
-                            background: "var(--fondo-suave)",
-                            border: "1px solid var(--color-marca-500)",
+          {vista.sinDevolucion && (
+            // El contador de la tarjeta mide solo las no factibles (es el numero
+            // con el que el equipo viene midiendo la deuda); el filtro suma
+            // tambien las integradas sin devolucion, asi que puede traer alguna
+            // fila mas. Se aclara para que nadie lo lea como un error.
+            <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+              Filtro activo: solo las ideas con un “no” sin devolución escrita. Incluye las
+              integradas con otra idea, así que puede traer alguna fila más que el número de la
+              tarjeta, que cuenta solo las no factibles.
+            </p>
+          )}
+
+          {filas.length === 0 ? (
+            <div
+              className="mt-3 rounded-2xl px-5 py-6 text-sm"
+              style={{ background: "var(--fondo-suave)", border: "1px dashed var(--borde)" }}
+            >
+              <p style={{ color: "var(--texto-suave)" }}>
+                Probá con menos filtros, buscá el título sin tildes o volvé a{" "}
+                <Link href={armarEnlace(vista, VISTA_LIMPIA)} className="underline">
+                  la lista completa
+                </Link>
+                .
+              </p>
+            </div>
+          ) : (
+            <div className="superficie mt-3 overflow-x-auto rounded-2xl">
+              <table className="w-full min-w-[56rem] border-collapse text-sm">
+                <caption className="sr-only">
+                  Ideas de la edición {anio} con su estado, distrito, barrio, antigüedad, votos, si
+                  tienen devolución escrita y si el autor dejó un dato de contacto
+                </caption>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid var(--borde)" }}>
+                    {COLUMNAS.map((columna) => {
+                      const activa = columna.clave !== null && columna.clave === columnaActiva;
+                      return (
+                        <th
+                          key={columna.etiqueta}
+                          scope="col"
+                          aria-sort={
+                            columna.clave === null
+                              ? undefined
+                              : activa
+                                ? direccionActiva === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
                           }
-                        : { background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }
-                    }
-                  >
-                    <span
-                      className="w-10 shrink-0 text-xs font-semibold"
-                      style={{ color: "var(--texto-suave)" }}
-                    >
-                      {fila.numero === null ? "—" : `#${fila.numero}`}
-                    </span>
-
-                    <span className="min-w-[11rem] flex-1">
-                      <span className="block text-sm font-medium">{fila.titulo}</span>
-                      <span className="mt-0.5 block text-xs" style={{ color: "var(--texto-suave)" }}>
-                        {fila.distrito === null ? "Sin distrito" : `D${fila.distrito}`}
-                        {fila.barrio && ` · ${fila.barrio}`}
-                        {fila.categoria && ` · ${fila.categoria}`}
-                        {` · ingresó ${antiguedad(fila.createdAt, ahora)}`}
-                        {fila.votos > 0 && ` · ${formatearNumero(fila.votos)} votos`}
-                      </span>
-                    </span>
-
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <ChipEstado estado={fila.estado} />
-                      {!fila.publicada && <Chip color="var(--color-acento-600)">sin publicar</Chip>}
-                      {faltaDevolucion(fila.estado, fila.tieneDevolucion) ? (
-                        <Chip color="var(--color-acento-600)">falta devolución</Chip>
-                      ) : fila.tieneDevolucion ? (
-                        <Chip color="var(--color-cat-ambiental)">con devolución</Chip>
-                      ) : null}
-                      <span
-                        title={
-                          fila.tieneContacto
-                            ? "El autor dejó un mail para recibir avisos. La bandeja nunca muestra el dato de contacto."
-                            : "No hay forma de avisarle al autor por mail."
-                        }
+                          className={`px-3 py-3 font-semibold ${
+                            columna.alDerecha ? "text-right" : "text-left"
+                          }`}
+                        >
+                          {columna.clave === null ? (
+                            columna.etiqueta
+                          ) : (
+                            <Link
+                              href={enlaceOrden(columna.clave)}
+                              scroll={false}
+                              className="inline-flex items-center gap-1 hover:underline"
+                              style={{ color: activa ? "var(--color-marca-600)" : "var(--texto)" }}
+                            >
+                              {columna.etiqueta}
+                              <span aria-hidden="true" style={{ opacity: activa ? 1 : 0.35 }}>
+                                {activa ? (direccionActiva === "asc" ? "↑" : "↓") : "↕"}
+                              </span>
+                            </Link>
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((fila) => {
+                    const abierta = ficha?.id === fila.id;
+                    const falta = faltaDevolucion(fila.estado, fila.tieneDevolucion);
+                    return (
+                      <tr
+                        key={fila.id}
+                        style={{
+                          borderBottom: "1px solid var(--borde)",
+                          // Marca al costado: azul la fila abierta, ámbar la que
+                          // le debe una devolución a un vecino.
+                          borderLeft: `3px solid ${
+                            abierta
+                              ? "var(--color-marca-500)"
+                              : falta
+                                ? "var(--color-acento-600)"
+                                : "transparent"
+                          }`,
+                          background: abierta ? "var(--fondo-suave)" : undefined,
+                        }}
                       >
-                        <Chip>{fila.tieneContacto ? "✉ con contacto" : "sin contacto"}</Chip>
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+                        <td
+                          className="px-3 py-2.5 text-xs font-semibold tabular-nums"
+                          style={{ color: "var(--texto-suave)" }}
+                        >
+                          {fila.numero === null ? "—" : `#${fila.numero}`}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <Link
+                            href={`${armarEnlace(vista, { idea: String(fila.id) })}#ficha`}
+                            aria-current={abierta ? "true" : undefined}
+                            className="font-medium hover:underline"
+                            style={{ color: abierta ? "var(--color-marca-600)" : "var(--texto)" }}
+                          >
+                            {fila.titulo}
+                          </Link>
+                          {fila.categoria && (
+                            <span
+                              className="mt-0.5 block text-xs"
+                              style={{ color: "var(--texto-suave)" }}
+                            >
+                              {fila.categoria}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="flex flex-col items-start gap-1">
+                            <ChipEstado estado={fila.estado} />
+                            {!fila.publicada && (
+                              <Chip color="var(--color-acento-600)">sin publicar</Chip>
+                            )}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {falta ? (
+                            <Chip color="var(--color-acento-600)">falta</Chip>
+                          ) : fila.tieneDevolucion ? (
+                            <Chip color="var(--color-cat-ambiental)">escrita</Chip>
+                          ) : (
+                            <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
+                              sin escribir
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {/* Solo el booleano: el mail del autor no sale de la base. */}
+                          {fila.tieneContacto ? (
+                            <span title="El autor dejó un mail para recibir avisos. El panel nunca muestra el dato.">
+                              <Chip color="var(--color-marca-600)">
+                                <span aria-hidden="true">✉</span> sí
+                              </Chip>
+                            </span>
+                          ) : (
+                            <span
+                              className="text-xs"
+                              style={{ color: "var(--texto-suave)" }}
+                              title="No hay forma de avisarle al autor por mail."
+                            >
+                              sin contacto
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums">
+                          {fila.distrito === null ? (
+                            <span style={{ color: "var(--texto-suave)" }}>—</span>
+                          ) : (
+                            `D${fila.distrito}`
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {fila.barrio ?? <span style={{ color: "var(--texto-suave)" }}>—</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span title={fechaHora.format(fila.createdAt)}>
+                            {antiguedad(fila.createdAt, ahora)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {formatearNumero(fila.votos)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {paginas > 1 && (
+            <nav aria-label="Paginación de las ideas" className="mt-4 flex flex-wrap items-center gap-2">
+              <EnlacePagina
+                href={armarEnlace(vista, { pagina: vista.pagina - 1 })}
+                habilitado={vista.pagina > 1}
+              >
+                Anterior
+              </EnlacePagina>
+              {ventanaPaginas(vista.pagina, paginas).map((numero, indice) =>
+                numero === null ? (
+                  <span
+                    key={`hueco-${indice}`}
+                    aria-hidden="true"
+                    className="px-1 text-sm"
+                    style={{ color: "var(--texto-suave)" }}
+                  >
+                    …
+                  </span>
+                ) : (
+                  <EnlacePagina
+                    key={numero}
+                    href={armarEnlace(vista, { pagina: numero })}
+                    habilitado
+                    actual={numero === vista.pagina}
+                  >
+                    {numero}
+                  </EnlacePagina>
+                ),
+              )}
+              <EnlacePagina
+                href={armarEnlace(vista, { pagina: vista.pagina + 1 })}
+                habilitado={vista.pagina < paginas}
+              >
+                Siguiente
+              </EnlacePagina>
+              <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
+                Página {formatearNumero(vista.pagina)} de {formatearNumero(paginas)}
+              </span>
+            </nav>
+          )}
         </section>
 
         {/* La ficha queda fija al costado, con scroll propio: el historial de una
             idea trabajada puede ser mas alto que la pantalla. */}
         <section
           id="ficha"
-          className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+          className="xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
         >
           {ficha ? (
             <Ficha
@@ -365,6 +725,47 @@ export default function PanelBandeja({
   );
 }
 
+/** Tarjeta grande de una acción: número, qué es y por qué importa. */
+function Tarjeta({
+  valor,
+  etiqueta,
+  detalle,
+  href,
+  activo,
+  color,
+}: {
+  valor: number;
+  etiqueta: string;
+  detalle: string;
+  href: string;
+  activo: boolean;
+  color?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={activo ? "true" : undefined}
+      className="rounded-2xl px-5 py-4"
+      style={{
+        background: activo ? "var(--fondo-suave)" : "var(--fondo-tarjeta)",
+        border: `1px solid ${activo ? "var(--color-marca-500)" : "var(--borde)"}`,
+      }}
+    >
+      <p
+        className="text-3xl font-bold tracking-tight"
+        style={color ? { color } : undefined}
+      >
+        {formatearNumero(valor)}
+      </p>
+      <p className="mt-0.5 text-sm font-semibold">{etiqueta}</p>
+      <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+        {detalle}
+      </p>
+    </Link>
+  );
+}
+
+/** Tarjeta chica: la cuenta de un estado, enlazada a su filtro. */
 function Contador({
   valor,
   etiqueta,
@@ -390,6 +791,50 @@ function Contador({
       <p className="mt-0.5 text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
         {etiqueta}
       </p>
+    </Link>
+  );
+}
+
+/** Un paso del paginador. Deshabilitado se dibuja como texto, no como enlace. */
+function EnlacePagina({
+  href,
+  habilitado,
+  actual = false,
+  children,
+}: {
+  href: string;
+  habilitado: boolean;
+  actual?: boolean;
+  children: React.ReactNode;
+}) {
+  const estilo: React.CSSProperties = {
+    background: actual ? "var(--color-marca-700)" : "var(--fondo-tarjeta)",
+    border: `1px solid ${actual ? "var(--color-marca-700)" : "var(--borde)"}`,
+    color: actual ? "#fff" : "var(--texto)",
+  };
+  if (!habilitado) {
+    return (
+      <span
+        aria-hidden="true"
+        className="rounded-xl px-3 py-1.5 text-sm"
+        style={{
+          background: "var(--fondo-suave)",
+          border: "1px solid var(--borde)",
+          color: "var(--texto-suave)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      aria-current={actual ? "page" : undefined}
+      className="rounded-xl px-3 py-1.5 text-sm font-medium hover:brightness-95"
+      style={estilo}
+    >
+      {children}
     </Link>
   );
 }

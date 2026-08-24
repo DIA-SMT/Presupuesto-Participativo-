@@ -5,7 +5,18 @@
  * aca. Es intencional: el chatbot no tiene otra via de acceso a la informacion,
  * asi que no puede responder con datos que el sitio no muestre.
  */
-import { and, asc, desc, eq, ilike, inArray, like, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  like,
+  or,
+  sql,
+  type SQLWrapper,
+} from "drizzle-orm";
 import { consultar, db } from "./index";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import { hashearDni } from "@/lib/empadronamiento";
@@ -632,12 +643,98 @@ export async function getVotosRegistrados(edicionId: number) {
 // salen de la base.
 // ---------------------------------------------------------------------------
 
+/**
+ * Ordenes que la bandeja acepta. Es una LISTA BLANCA: el valor que llega por
+ * querystring se busca aca (ver `ordenBandeja`) y nunca se interpola dentro del
+ * tag `sql`, asi que no hay forma de ordenar por algo que no este en `ORDENES`.
+ */
+export const ORDENES_BANDEJA = [
+  "prioridad",
+  "reciente",
+  "antigua",
+  "votos",
+  "distrito",
+  "estado",
+] as const;
+
+export type OrdenBandeja = (typeof ORDENES_BANDEJA)[number];
+
+export type DireccionOrden = "asc" | "desc";
+
 export type FiltroBandeja = {
   edicionId: number;
   estado?: EstadoIdea | EstadoIdea[];
   distrito?: number;
   texto?: string;
+  /**
+   * Solo los "no" sin devolucion escrita (`no_factible` o `integrado` con
+   * `motivo_estado` vacio): la deuda del equipo con el vecino.
+   */
+  sinDevolucion?: boolean;
+  /** Por defecto "prioridad": primero lo que necesita trabajo del equipo. */
+  orden?: OrdenBandeja;
+  /** Sin esto, cada orden usa su direccion natural (ver `ORDENES`). */
+  dir?: DireccionOrden;
   limite?: number;
+  /** Filas a saltear (OFFSET). Va con `limite` para paginar. */
+  desplazamiento?: number;
+};
+
+/**
+ * Valida contra la lista blanca el orden que llega por querystring. Lo que no
+ * este en la lista cae al orden de trabajo por defecto.
+ */
+export function ordenBandeja(valor: string | null | undefined): OrdenBandeja {
+  return ORDENES_BANDEJA.includes(valor as OrdenBandeja)
+    ? (valor as OrdenBandeja)
+    : "prioridad";
+}
+
+/** Direccion pedida, o undefined para dejar la propia de cada orden. */
+export function direccionBandeja(
+  valor: string | null | undefined,
+): DireccionOrden | undefined {
+  return valor === "asc" || valor === "desc" ? valor : undefined;
+}
+
+/**
+ * Un "no" sin devolucion escrita. Mismo criterio que `faltaDevolucion` en las
+ * acciones del panel: los dos estados que le dicen "no" a una idea exigen
+ * explicarle al vecino por que.
+ *
+ * Nota: `getResumenBandeja.noFactiblesSinDevolucion` cuenta solo `no_factible`
+ * (es el numero historico que el equipo viene mirando), asi que el filtro puede
+ * traer alguna fila mas si hay integradas sin devolucion. No es un error.
+ */
+const SIN_DEVOLUCION = sql`(${ideas.estado} IN ('no_factible', 'integrado')
+  AND coalesce(btrim(${ideas.motivoEstado}), '') = '')`;
+
+/**
+ * Grupo de trabajo de una idea, para el orden "prioridad":
+ *  0 pendientes (nadie las miro todavia),
+ *  1 los "no" sin devolucion escrita (la deuda con el vecino),
+ *  2 el resto.
+ */
+const GRUPO_PRIORIDAD = sql`CASE
+  WHEN ${ideas.estado} = 'pendiente' THEN 0
+  WHEN ${SIN_DEVOLUCION} THEN 1
+  ELSE 2 END`;
+
+/**
+ * Columna (o expresion) de cada orden permitido, con la direccion que tiene
+ * sentido por defecto para ese orden. `estado` ordena por el orden del enum
+ * `estado_idea`, que ya viene del mas crudo al mas resuelto.
+ */
+const ORDENES: Record<
+  OrdenBandeja,
+  { columna: SQLWrapper; porDefecto: DireccionOrden }
+> = {
+  prioridad: { columna: GRUPO_PRIORIDAD, porDefecto: "asc" },
+  reciente: { columna: ideas.createdAt, porDefecto: "desc" },
+  antigua: { columna: ideas.createdAt, porDefecto: "asc" },
+  votos: { columna: ideas.votos, porDefecto: "desc" },
+  distrito: { columna: distritos.numero, porDefecto: "asc" },
+  estado: { columna: ideas.estado, porDefecto: "asc" },
 };
 
 export type FilaBandeja = {
@@ -661,7 +758,21 @@ export type FilaBandeja = {
   revisadoPor: string | null;
 };
 
-export async function listarIdeasBandeja(filtro: FiltroBandeja): Promise<FilaBandeja[]> {
+/**
+ * Una pagina de la bandeja mas el total que matchea el filtro.
+ *
+ * El total NO es `filas.length`: es la cuenta completa sin `limite` ni
+ * `desplazamiento`, que es lo que necesita el paginador para saber cuantas
+ * paginas hay y para decir "35 de 100".
+ */
+export type PaginaBandeja = {
+  filas: FilaBandeja[];
+  total: number;
+};
+
+export async function listarIdeasBandeja(
+  filtro: FiltroBandeja,
+): Promise<PaginaBandeja> {
   const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
 
   if (filtro.estado) {
@@ -669,6 +780,7 @@ export async function listarIdeasBandeja(filtro: FiltroBandeja): Promise<FilaBan
     if (estados.length) condiciones.push(inArray(ideas.estado, estados));
   }
   if (filtro.distrito) condiciones.push(eq(distritos.numero, filtro.distrito));
+  if (filtro.sinDevolucion) condiciones.push(SIN_DEVOLUCION);
   if (filtro.texto?.trim()) {
     const texto = filtro.texto.trim();
     const patron = `%${texto}%`;
@@ -687,6 +799,9 @@ export async function listarIdeasBandeja(filtro: FiltroBandeja): Promise<FilaBan
     );
     if (busqueda) condiciones.push(busqueda);
   }
+
+  const { columna, porDefecto } = ORDENES[filtro.orden ?? "prioridad"];
+  const ordenar = (filtro.dir ?? porDefecto) === "asc" ? asc : desc;
 
   const consulta = db
     .select({
@@ -714,35 +829,50 @@ export async function listarIdeasBandeja(filtro: FiltroBandeja): Promise<FilaBan
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .leftJoin(admins, eq(admins.id, ideas.revisadoPorId))
     .where(and(...condiciones))
-    // Orden de trabajo de la bandeja: primero las pendientes y, dentro de cada
-    // grupo, las mas antiguas arriba. Asi la fila se atiende por antiguedad y
-    // no a dedo.
-    .orderBy(
-      desc(sql`${ideas.estado} = 'pendiente'`),
-      asc(ideas.createdAt),
-      asc(ideas.id),
-    );
+    // Despues del orden elegido, siempre las mas antiguas arriba y el id como
+    // ultimo criterio: sin un desempate estable, dos paginas del mismo filtro
+    // pueden repetir o saltear filas (las ideas migradas comparten createdAt).
+    .orderBy(ordenar(columna), asc(ideas.createdAt), asc(ideas.id));
 
-  const filas = await (filtro.limite ? consulta.limit(filtro.limite) : consulta);
+  // El total se cuenta aparte, con las MISMAS condiciones y sin limite: es lo
+  // que hace posible paginar. Solo necesita el join de distritos, que es el
+  // unico que participa de un filtro.
+  const consultaTotal = db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(ideas)
+    .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(and(...condiciones));
 
-  return filas.map((f) => ({
-    id: Number(f.id),
-    numero: f.numero === null ? null : Number(f.numero),
-    titulo: f.titulo,
-    slug: f.slug,
-    distrito: f.distrito === null ? null : Number(f.distrito),
-    distritoNombre: f.distritoNombre,
-    categoria: f.categoria,
-    barrio: f.barrio,
-    estado: f.estado,
-    tieneDevolucion: Number(f.tieneDevolucion) === 1,
-    tieneContacto: Number(f.tieneContacto) === 1,
-    publicada: Boolean(f.publicada),
-    votos: Number(f.votos ?? 0),
-    createdAt: f.createdAt,
-    estadoActualizadoEn: f.estadoActualizadoEn,
-    revisadoPor: f.revisadoPor,
-  }));
+  const desplazamiento = Math.max(0, Math.trunc(filtro.desplazamiento ?? 0));
+  const pagina = filtro.limite
+    ? consulta.limit(filtro.limite).offset(desplazamiento)
+    : desplazamiento
+      ? consulta.offset(desplazamiento)
+      : consulta;
+
+  const [filas, [conteo]] = await Promise.all([pagina, consultaTotal]);
+
+  return {
+    filas: filas.map((f) => ({
+      id: Number(f.id),
+      numero: f.numero === null ? null : Number(f.numero),
+      titulo: f.titulo,
+      slug: f.slug,
+      distrito: f.distrito === null ? null : Number(f.distrito),
+      distritoNombre: f.distritoNombre,
+      categoria: f.categoria,
+      barrio: f.barrio,
+      estado: f.estado,
+      tieneDevolucion: Number(f.tieneDevolucion) === 1,
+      tieneContacto: Number(f.tieneContacto) === 1,
+      publicada: Boolean(f.publicada),
+      votos: Number(f.votos ?? 0),
+      createdAt: f.createdAt,
+      estadoActualizadoEn: f.estadoActualizadoEn,
+      revisadoPor: f.revisadoPor,
+    })),
+    total: Number(conteo?.total ?? 0),
+  };
 }
 
 export type IdeaAdmin = IdeaVista & {
@@ -818,7 +948,9 @@ export type AccionRevision =
   | "publicacion"
   | "despublicacion"
   | "proclamacion"
-  | "reapertura";
+  | "reapertura"
+  /** Cambio del presupuesto asignado al proyecto (migracion 0003). */
+  | "presupuesto";
 
 export type FilaRevision = {
   id: number;
@@ -853,6 +985,11 @@ export type ResumenBandeja = {
   /**
    * No factibles sin devolucion escrita. Es la deuda del equipo: cada una es un
    * vecino al que se le dijo "no" sin explicarle por que.
+   *
+   * Cuenta solo `no_factible`, a proposito: es el numero con el que el equipo
+   * viene midiendo la deuda. El filtro `sinDevolucion` de la bandeja es un poco
+   * mas amplio (suma las integradas sin devolucion), asi que puede traer alguna
+   * fila mas que este contador.
    */
   noFactiblesSinDevolucion: number;
 };
@@ -1388,6 +1525,30 @@ export async function listarAdmins(): Promise<FilaAdmin[]> {
     })
     .from(admins)
     .orderBy(asc(admins.nombre));
+}
+
+/**
+ * Una sola cuenta por id, para la cabecera del panel.
+ *
+ * Existe para no traer la tabla entera con `listarAdmins()` en cada render de
+ * cada pantalla de /admin solo para mostrar el nombre de quien entro. Nunca
+ * devuelve `passwordHash`.
+ */
+export async function getAdminPorId(id: number): Promise<FilaAdmin | null> {
+  const [fila] = await db
+    .select({
+      id: admins.id,
+      email: admins.email,
+      nombre: admins.nombre,
+      rol: admins.rol,
+      activo: admins.activo,
+      ultimoIngreso: admins.ultimoIngreso,
+      createdAt: admins.createdAt,
+    })
+    .from(admins)
+    .where(eq(admins.id, id))
+    .limit(1);
+  return fila ?? null;
 }
 
 export type FilaBitacora = {

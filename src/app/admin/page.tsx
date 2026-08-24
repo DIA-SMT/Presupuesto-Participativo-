@@ -1,58 +1,148 @@
 import { redirect } from "next/navigation";
-import { getEdicionActiva, listarIdeas } from "@/db/queries";
+import {
+  direccionBandeja,
+  getDistritos,
+  getEdicionActiva,
+  getIdeaAdmin,
+  getResumenBandeja,
+  getRevisiones,
+  getVotosRegistrados,
+  listarIdeasBandeja,
+  ordenBandeja,
+  type EstadoIdea,
+  type PaginaBandeja,
+} from "@/db/queries";
 import { getSesionAdmin } from "@/lib/sesion";
-import { getVotosRegistrados } from "@/db/queries";
-import TablaIdeas from "./tabla-ideas";
-import SelectorEtapa from "./selector-etapa";
+import PanelBandeja from "./bandeja/panel";
 
-export default async function AdminIdeas() {
+/**
+ * Pantalla principal del panel: la bandeja de revision, el listado de trabajo
+ * del equipo tecnico. Antes vivia en /admin/bandeja, que hoy es un redirect
+ * permanente a esta ruta; la tabla vieja de edicion en linea (sin historial) se
+ * borro: todo cambio de estado pasa por las acciones que escriben en
+ * `revisiones`.
+ *
+ * Todo lo que se ve sale de src/db/queries.ts. Los filtros, el orden, la pagina
+ * y la idea abierta viajan en el querystring (no en estado del cliente) por dos
+ * razones: el enlace de una busqueda se puede compartir dentro del equipo, y
+ * despues de cada accion la ficha y el historial se releen de la base.
+ *
+ * El selector de etapa no se renderiza aca a proposito: es la accion mas
+ * peligrosa del panel (cambia lo que ve todo el sitio) y vive en
+ * /admin/ediciones.
+ */
+
+/** Estados que se pueden pedir por querystring. Se valida contra esta lista. */
+const ESTADOS: EstadoIdea[] = [
+  "pendiente",
+  "factible",
+  "no_factible",
+  "integrado",
+  "ganador",
+  "borrador",
+];
+
+/** Filas por pagina. Una edicion trae ~100 ideas: 25 entran sin scroll eterno. */
+const POR_PAGINA = 25;
+
+type Props = {
+  searchParams: Promise<{
+    estado?: string;
+    distrito?: string;
+    q?: string;
+    sindevolucion?: string;
+    orden?: string;
+    dir?: string;
+    pagina?: string;
+    idea?: string;
+  }>;
+};
+
+export default async function AdminIdeas({ searchParams }: Props) {
   const sesion = await getSesionAdmin();
   if (!sesion) redirect("/admin/ingresar");
 
+  const parametros = await searchParams;
   const edicion = await getEdicionActiva();
   if (!edicion) {
-    return <p>No hay una edición activa. Corré el seed.</p>;
+    return <p>No hay una edición activa. Activá una edición antes de revisar ideas.</p>;
   }
 
-  const [lista, votosNuevos] = await Promise.all([
-    listarIdeas({ edicionId: edicion.id, incluirNoPublicadas: true }),
+  const estado = ESTADOS.includes(parametros.estado as EstadoIdea)
+    ? (parametros.estado as EstadoIdea)
+    : undefined;
+  const pedido = Number(parametros.distrito);
+  const distrito = Number.isInteger(pedido) && pedido >= 1 && pedido <= 20 ? pedido : undefined;
+  const texto = parametros.q?.trim() ? parametros.q.trim() : undefined;
+  const sinDevolucion = parametros.sindevolucion === "1";
+  // Las dos funciones validan contra la lista blanca de queries.ts: lo que no
+  // esta en la lista cae al orden de trabajo y a su direccion natural.
+  const orden = ordenBandeja(parametros.orden);
+  const dir = direccionBandeja(parametros.dir);
+
+  const paginaPedida = Number(parametros.pagina);
+  const primera = Number.isInteger(paginaPedida) && paginaPedida > 0 ? paginaPedida : 1;
+
+  const consultarPagina = (pagina: number): Promise<PaginaBandeja> =>
+    listarIdeasBandeja({
+      edicionId: edicion.id,
+      estado,
+      distrito,
+      texto,
+      sinDevolucion,
+      orden,
+      dir,
+      limite: POR_PAGINA,
+      desplazamiento: (pagina - 1) * POR_PAGINA,
+    });
+
+  const [resumen, votosRegistrados, distritosEdicion] = await Promise.all([
+    getResumenBandeja(edicion.id),
     getVotosRegistrados(edicion.id),
+    getDistritos(edicion.id),
   ]);
 
-  const pendientes = lista.filter((i) => i.estado === "pendiente").length;
-  const ocultas = lista.filter((i) => !i.publicada).length;
+  // Una pagina fuera de rango (un marcador viejo, o un filtro que se achico)
+  // se corrige mostrando la ultima que existe, no una tabla vacia.
+  let pagina = primera;
+  let resultado = await consultarPagina(pagina);
+  const paginas = Math.max(1, Math.ceil(resultado.total / POR_PAGINA));
+  if (pagina > paginas) {
+    pagina = paginas;
+    resultado = await consultarPagina(pagina);
+  }
+
+  // La ficha se pide por id y se descarta si es de otra edicion: la bandeja
+  // trabaja siempre sobre la edicion activa.
+  const idPedido = Number(parametros.idea);
+  const candidata =
+    Number.isInteger(idPedido) && idPedido > 0 ? await getIdeaAdmin(idPedido) : null;
+  const ficha = candidata && candidata.anio === edicion.anio ? candidata : null;
+  const historial = ficha ? await getRevisiones(ficha.id) : [];
 
   return (
-    <div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Ideas · Edición {edicion.anio}</h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-            {lista.length} ideas en total · {pendientes} pendientes de evaluación · {ocultas} sin
-            publicar · {votosNuevos} votos registrados por este sitio
-          </p>
-        </div>
-        <SelectorEtapa edicionId={edicion.id} etapa={edicion.etapa} rol={sesion.rol} />
-      </div>
-
-      <TablaIdeas
-        ideas={lista.map((idea) => ({
-          id: idea.id,
-          slug: idea.slug,
-          titulo: idea.titulo,
-          distrito: idea.distrito,
-          barrio: idea.barrio,
-          categoria: idea.categoriaNombre,
-          estado: idea.estado,
-          ganador: idea.ganador,
-          votos: idea.votos,
-          publicada: idea.publicada,
-          presupuestoTotal: idea.presupuestoTotal,
-          estadoPresupuesto: idea.estadoPresupuesto,
-          motivoEstado: idea.motivoEstado,
-        }))}
-        soloLectura={sesion.rol === "lector"}
-      />
-    </div>
+    <PanelBandeja
+      anio={edicion.anio}
+      resumen={resumen}
+      filas={resultado.filas}
+      total={resultado.total}
+      porPagina={POR_PAGINA}
+      votosRegistrados={votosRegistrados}
+      distritos={distritosEdicion.map((d) => ({ numero: d.numero, nombre: d.nombre }))}
+      vista={{
+        estado: estado ?? "",
+        distrito: distrito ? String(distrito) : "",
+        q: texto ?? "",
+        sinDevolucion,
+        orden,
+        dir: dir ?? null,
+        pagina,
+        idea: ficha ? String(ficha.id) : "",
+      }}
+      ficha={ficha}
+      historial={historial}
+      rol={sesion.rol}
+      ahora={Date.now()}
+    />
   );
 }
