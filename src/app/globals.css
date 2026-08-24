@@ -1,9 +1,15 @@
 @import "tailwindcss";
 
 /*
- * Paleta institucional, derivada del isotipo municipal (la flor):
- * azul #0a63f0, celeste #2fa8fa y amarillo #f2d500. Los tonos oscuros de la
- * escala existen para que el texto pase contraste AA sobre blanco.
+ * Paleta institucional, derivada del isotipo municipal (la flor). Los colores
+ * OFICIALES, muestreados de public/marca/logo-muni-iso.png, son:
+ * azul #0166ff, celeste #2db0ff y amarillo #f4dc00 (ver los tokens --logo-*).
+ *
+ * La escala --color-marca-* se armo antes, sobre una aproximacion de esos tres
+ * colores, y se dejo como estaba a proposito: cambiarla mueve el color de todo
+ * el sitio (botones, mapa, portada, estados) y es una decision de diseno, no
+ * una correccion. Los tonos oscuros existen para que el texto pase contraste
+ * AA sobre blanco.
  */
 @theme {
   --color-marca-50: #eef6ff;
@@ -24,8 +30,8 @@
   --color-acento-600: #b45309;
   --color-acento-700: #92400e;
 
-  /* Amarillo del logo: solo decorativo (nunca texto sobre blanco). */
-  --color-sol: #f2d500;
+  /* Amarillo oficial del logo: solo decorativo (nunca texto sobre blanco). */
+  --color-sol: #f4dc00;
 
   /* Categorias del programa */
   --color-cat-ambiental: #2f9e5f;
@@ -50,9 +56,14 @@
   --borde: #e2e8f0;
   --texto: #16202e;
   --texto-suave: #55627a;
-  --logo-azul: #0a63f0;
-  --logo-celeste: #2fa8fa;
-  --logo-amarillo: #f2d500;
+  /* Colores del isotipo OFICIAL, muestreados de
+     public/marca/logo-muni-iso.png (antes eran una aproximacion: #0a63f0,
+     #2fa8fa, #f2d500). Hoy el logo se sirve como imagen, asi que ningun
+     componente los consume: quedan como referencia de marca y son los que hay
+     que usar cuando llegue el logo en vector desde el manual de marca. */
+  --logo-azul: #0166ff;
+  --logo-celeste: #2db0ff;
+  --logo-amarillo: #f4dc00;
   color-scheme: light;
 }
 

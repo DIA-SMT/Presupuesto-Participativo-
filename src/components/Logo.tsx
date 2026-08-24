@@ -1,18 +1,24 @@
 /**
  * Identidad visual.
  *
- * `LogoFlor` es el isotipo municipal (dos petalos anchos y el sol) redibujado
- * como SVG para que escale nitido en el header, el favicon y el pie.
- * `SelloDireccionIA` es el bloque de autoria de la Direccion de IA que cierra
- * todas las paginas del sitio.
+ * `LogoFlor` es el isotipo municipal (dos hojas y el sol) y `SelloDireccionIA`
+ * el bloque de autoria de la Direccion de IA que cierra todas las paginas.
+ *
+ * Los dos salen de los archivos OFICIALES de `public/marca/`, entregados por el
+ * municipio. Antes eran un SVG redibujado a ojo, y estaba mal en la forma (las
+ * hojas eran medialunas y el sol quedaba corrido a la derecha) y en los tres
+ * colores. Habia ademas tres copias divergentes del dibujo: este archivo,
+ * `src/app/icon.svg` y una marca de agua inline en `src/app/page.tsx`.
+ *
+ * Pendiente: el municipio tiene el logo en vector (SVG o AI) en su manual de
+ * marca. Cuando llegue se cambia el `<Image>` por el SVG y se gana nitidez a
+ * cualquier tamano; el resto del codigo no se toca. Mientras tanto el PNG
+ * oficial es fiel, y a 30-40 px se ve nitido incluso en pantallas retina: la
+ * fuente son 235 px de lado.
  */
-
-/** Trazos de los petalos, compartidos por el logo y el sello. */
-const PETALO_IZQUIERDO =
-  "M38 5 C 13 17, 1 46, 9 69 C 15 85, 26 93, 41 97 C 33 66, 32 33, 38 5 Z";
-const PETALO_DERECHO =
-  "M74 18 C 96 33, 102 62, 89 81 C 81 91, 70 95, 58 97 C 58 68, 63 40, 74 18 Z";
-const SOL = { cx: 60, cy: 13, r: 11.5 };
+import Image from "next/image";
+import isotipo from "../../public/marca/logo-muni-iso.png";
+import selloIA from "../../public/marca/logo-ia.png";
 
 export function LogoFlor({
   tamano = 40,
@@ -22,25 +28,43 @@ export function LogoFlor({
   titulo?: string;
 }) {
   return (
-    <svg
+    <Image
+      src={isotipo}
+      alt={titulo ?? ""}
       width={tamano}
       height={tamano}
-      viewBox="0 0 100 100"
-      role={titulo ? "img" : "presentation"}
-      aria-label={titulo}
+      // El isotipo es chico y aparece en el encabezado de todas las paginas:
+      // conviene que no espere al lazy load.
+      priority
       aria-hidden={titulo ? undefined : true}
-    >
-      <path d={PETALO_IZQUIERDO} fill="var(--logo-azul, #0a63f0)" />
-      <path d={PETALO_DERECHO} fill="var(--logo-celeste, #2fa8fa)" />
-      <circle {...SOL} fill="var(--logo-amarillo, #f2d500)" />
-    </svg>
+      style={{ width: tamano, height: tamano }}
+    />
   );
 }
 
 /**
- * Sello de autoria: se muestra al pie de todas las paginas.
- * La flor en celeste degrade y el texto gris replican el lockup oficial de la
- * Direccion de IA.
+ * El isotipo como marca de agua de la portada: la misma forma oficial, pasada
+ * a silueta blanca con un filtro CSS (`brightness(0) invert(1)` deja todo el
+ * pixel opaco en blanco y respeta la transparencia). Se usa asi, y no en
+ * color, porque va sobre el degrade azul oscuro de la portada, donde los
+ * azules del logo desaparecerian.
+ */
+export function MarcaDeAguaFlor({ className }: { className?: string }) {
+  return (
+    <Image
+      src={isotipo}
+      alt=""
+      aria-hidden="true"
+      className={className}
+      style={{ filter: "brightness(0) invert(1)" }}
+    />
+  );
+}
+
+/**
+ * Sello de autoria: se muestra al pie de todas las paginas. Es el lockup
+ * oficial completo (isotipo mas "Direccion de IA"), asi que no hace falta
+ * componer el texto a mano como antes.
  */
 export function SelloDireccionIA() {
   return (
@@ -48,28 +72,16 @@ export function SelloDireccionIA() {
       <a
         href="https://smt.gob.ar"
         rel="noreferrer"
-        className="flex items-center gap-3.5"
+        className="inline-flex items-center"
         aria-label="Dirección de Inteligencia Artificial, Municipalidad de San Miguel de Tucumán"
       >
-        <svg width="52" height="52" viewBox="0 0 100 100" aria-hidden="true">
-          <defs>
-            <linearGradient id="ia-petalo" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#4db4fb" />
-              <stop offset="1" stopColor="#1173e8" />
-            </linearGradient>
-          </defs>
-          <path d={PETALO_IZQUIERDO} fill="url(#ia-petalo)" />
-          <path d={PETALO_DERECHO} fill="url(#ia-petalo)" opacity="0.88" />
-          <circle {...SOL} fill="#f2d500" />
-        </svg>
-        <span className="text-left leading-none" style={{ color: "#8b9096" }}>
-          <span className="block text-sm font-bold uppercase tracking-[0.28em]">
-            Dirección
-          </span>
-          <span className="mt-1 block text-2xl font-extrabold uppercase tracking-[0.12em]">
-            de IA
-          </span>
-        </span>
+        <Image
+          src={selloIA}
+          alt="Dirección de Inteligencia Artificial"
+          width={166}
+          height={69}
+          className="h-[3.25rem] w-auto"
+        />
       </a>
       <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
         Sitio desarrollado por la Dirección de Inteligencia Artificial
