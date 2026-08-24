@@ -113,7 +113,7 @@ export default async function Proyectos({ searchParams }: Props) {
               distrito: idea.distrito,
               lat: idea.lat!,
               lon: idea.lon!,
-              color: idea.categoriaColor ?? "#0a63f0",
+              color: idea.categoriaColor ?? "var(--color-marca-600)",
               estado: idea.estado,
               ganador: idea.ganador,
               aproximada: idea.ubicacionAproximada,
