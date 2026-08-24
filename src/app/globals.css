@@ -1,9 +1,19 @@
 @import "tailwindcss";
 
 /*
- * Paleta institucional, derivada del isotipo municipal (la flor):
- * azul #0a63f0, celeste #2fa8fa y amarillo #f2d500. Los tonos oscuros de la
- * escala existen para que el texto pase contraste AA sobre blanco.
+ * Paleta institucional, anclada en el isotipo municipal (la flor). Los colores
+ * OFICIALES, muestreados de public/marca/logo-muni-iso.png, son:
+ * azul #0166ff, celeste #2db0ff y amarillo #f4dc00 (ver los tokens --logo-*).
+ *
+ * La escala se armo primero sobre una aproximacion de esos colores. Al medirla
+ * quedo claro que el tono ya era el correcto (marca-600 estaba en 217° y el
+ * azul oficial esta en 216°; marca-500 en 204° y el celeste en 203°) y que lo
+ * unico que difería era la saturacion: 92% contra 100%. Asi que no hubo que
+ * regenerar los once pasos: alcanzo con anclar el 600 en el azul oficial. El
+ * 500 quedo como estaba, por el motivo que explica su propio comentario.
+ *
+ * Los tonos oscuros (700 a 950) existen para que el texto blanco encima pase
+ * contraste AA: van de 7.18:1 a 15.21:1 y no se tocan sin volver a medirlos.
  */
 @theme {
   --color-marca-50: #eef6ff;
@@ -11,8 +21,16 @@
   --color-marca-200: #bcdcfd;
   --color-marca-300: #8ec7fc;
   --color-marca-400: #55a9f9;
+  /*
+   * El 500 NO es el celeste oficial (#2db0ff) a proposito: medido, el celeste
+   * oficial es mas claro que el paso 400 de esta rampa (2.40:1 contra 2.49:1
+   * sobre blanco), asi que ponerlo aca rompe el orden de claridad y la rampa
+   * deja de servir como escala. El celeste oficial vive en --logo-celeste y en
+   * los distritos del mapa, que es donde representa a la marca.
+   */
   --color-marca-500: #2fa8fa;
-  --color-marca-600: #0a63f0;
+  /* El 600 SI es el azul oficial del isotipo. */
+  --color-marca-600: #0166ff;
   --color-marca-700: #084fc4;
   --color-marca-800: #0b429c;
   --color-marca-900: #0e3a7f;
@@ -24,8 +42,8 @@
   --color-acento-600: #b45309;
   --color-acento-700: #92400e;
 
-  /* Amarillo del logo: solo decorativo (nunca texto sobre blanco). */
-  --color-sol: #f2d500;
+  /* Amarillo oficial del logo: solo decorativo (nunca texto sobre blanco). */
+  --color-sol: #f4dc00;
 
   /* Categorias del programa */
   --color-cat-ambiental: #2f9e5f;
@@ -34,7 +52,7 @@
 
   /* Estados de una idea */
   --color-estado-ganador: #b8860b;
-  --color-estado-factible: #0a63f0;
+  --color-estado-factible: #0166ff;
   --color-estado-nofactible: #6b7280;
   --color-estado-integrado: #7141a8;
 
@@ -50,9 +68,14 @@
   --borde: #e2e8f0;
   --texto: #16202e;
   --texto-suave: #55627a;
-  --logo-azul: #0a63f0;
-  --logo-celeste: #2fa8fa;
-  --logo-amarillo: #f2d500;
+  /* Colores del isotipo OFICIAL, muestreados de
+     public/marca/logo-muni-iso.png (antes eran una aproximacion: #0a63f0,
+     #2fa8fa, #f2d500). Hoy el logo se sirve como imagen, asi que ningun
+     componente los consume: quedan como referencia de marca y son los que hay
+     que usar cuando llegue el logo en vector desde el manual de marca. */
+  --logo-azul: #0166ff;
+  --logo-celeste: #2db0ff;
+  --logo-amarillo: #f4dc00;
   color-scheme: light;
 }
 
@@ -88,9 +111,14 @@
     letter-spacing: -0.015em;
   }
 
-  /* Foco visible en todo el sitio: es un sitio publico, se navega con teclado. */
+  /*
+   * Foco visible en todo el sitio: es un sitio publico, se navega con teclado.
+   * Usa marca-600 y no marca-500: el criterio 1.4.11 de WCAG pide 3:1 para los
+   * indicadores que no son texto, y el celeste solo llega a 2.40:1 sobre
+   * blanco. El azul da 4.83:1.
+   */
   :focus-visible {
-    outline: 3px solid var(--color-marca-500);
+    outline: 3px solid var(--color-marca-600);
     outline-offset: 2px;
     border-radius: 3px;
   }

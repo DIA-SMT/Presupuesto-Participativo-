@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Mapa from "@/components/Mapa";
+import { MarcaDeAguaFlor } from "@/components/Logo";
 import { Boton, Dato, Seccion, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
   getDistritos,
@@ -37,16 +38,8 @@ export default async function Home() {
             "linear-gradient(150deg, var(--color-marca-950) 0%, var(--color-marca-800) 45%, var(--color-marca-600) 100%)",
         }}
       >
-        {/* La flor del logo como marca de agua. */}
-        <svg
-          viewBox="0 0 100 100"
-          aria-hidden="true"
-          className="pointer-events-none absolute -right-16 -top-24 h-[26rem] w-[26rem] opacity-[0.14] sm:h-[34rem] sm:w-[34rem]"
-        >
-          <path d="M37 4 C 8 26, 2 60, 27 93 C 40 72, 45 38, 37 4 Z" fill="#ffffff" />
-          <path d="M72 18 C 97 42, 94 74, 60 92 C 51 68, 55 42, 72 18 Z" fill="#ffffff" opacity="0.8" />
-          <circle cx="63" cy="11" r="11" fill="var(--color-sol)" opacity="0.9" />
-        </svg>
+        {/* El isotipo oficial como marca de agua (ver src/components/Logo.tsx). */}
+        <MarcaDeAguaFlor className="pointer-events-none absolute -right-16 -top-24 h-[26rem] w-[26rem] opacity-[0.14] sm:h-[34rem] sm:w-[34rem]" />
         <div className="contenedor relative grid gap-10 py-16 sm:py-20 lg:grid-cols-[1.15fr_1fr] lg:items-center">
           <div className="text-white">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/75">

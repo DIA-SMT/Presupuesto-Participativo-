@@ -4,6 +4,7 @@ import "./globals.css";
 import Chat from "@/components/Chat";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
 import { getEdicionActiva, getTextos } from "@/db/queries";
+import { urlDelSitio } from "@/lib/sitio";
 import { ETIQUETA_ETAPA } from "@/lib/formato";
 
 /**
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
   },
   description:
     "Vecinos y vecinas de San Miguel de Tucumán proponen, eligen y siguen las obras del Presupuesto Participativo. Mapa de los 20 distritos, proyectos ganadores y avance de cada obra.",
-  metadataBase: new URL(process.env.SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(urlDelSitio()),
   openGraph: {
     type: "website",
     locale: "es_AR",
@@ -170,6 +171,8 @@ export default async function RootLayout({
                   ...NAVEGACION,
                   { href: "/reglamento", texto: "Reglamento" },
                   { href: "/archivo", texto: "Archivo de ediciones" },
+                  { href: "/ideas/seguimiento", texto: "Seguí tu idea" },
+                  { href: "/privacidad", texto: "Política de privacidad" },
                 ].map((item) => (
                   <li key={item.href}>
                     <Link href={item.href} className="hover:underline" style={{ color: "var(--texto-suave)" }}>
