@@ -4,9 +4,14 @@
  * Server actions del backoffice.
  *
  * Toda accion empieza por `exigirAdmin(<rol minimo>)`: no hay ninguna via de
- * escritura sin ese chequeo. Las que cambian el estado de una idea o una cuenta
- * dejan siempre una fila de auditoria (`revisiones` / `bitacora_equipo`) en la
- * MISMA transaccion que el cambio, para que no exista un cambio sin rastro.
+ * escritura sin ese chequeo. Las que tienen consecuencias dejan siempre una fila
+ * de auditoria en la MISMA transaccion que el cambio, para que no exista un
+ * cambio sin rastro. Hay tres bitacoras, una por tipo de cosa auditada:
+ *  - `revisiones`: lo que se le hace a UNA idea;
+ *  - `bitacora_equipo`: lo que se le hace a UNA cuenta del backoffice;
+ *  - `bitacora_sistema`: lo que cambia el sistema o el contenido publico (la
+ *    etapa de la edicion, las ediciones, el cronograma, los textos, las
+ *    novedades y los avances de obra).
  */
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
@@ -19,6 +24,7 @@ import {
   admins,
   avances,
   bitacoraEquipo,
+  bitacoraSistema,
   distritos,
   ediciones,
   hitos,
@@ -30,6 +36,8 @@ import {
 import {
   getVotosPorIdea,
   type AccionRevision,
+  type AccionSistema,
+  type EntidadSistema,
   type EstadoIdea,
   type RolAdmin,
 } from "@/db/queries";
@@ -133,6 +141,139 @@ function filaRevision(datos: {
     estadoNuevo: datos.estadoNuevo ?? null,
     nota: datos.nota ?? null,
   };
+}
+
+/**
+ * Tope del ANTES y del DESPUES de `bitacora_sistema`. El valor de un texto del
+ * sitio puede ser un cuerpo entero: la bitacora audita QUE cambio, no guarda
+ * versiones del contenido, asi que lo que pase el tope se recorta y se marca con
+ * el largo real.
+ */
+const MAXIMO_VALOR_BITACORA = 400;
+
+/** Tope de la etiqueta legible de la entidad (un titulo, una clave). */
+const MAXIMO_ETIQUETA_BITACORA = 200;
+
+/** Recorta por puntos de codigo (no por unidades UTF-16) para no partir un emoji. */
+function recortarValor(
+  valor: string | null | undefined,
+  tope = MAXIMO_VALOR_BITACORA,
+): string | null {
+  if (valor === null || valor === undefined) return null;
+  const limpio = valor.trim();
+  const letras = [...limpio];
+  if (letras.length <= tope) return limpio;
+  return `${letras.slice(0, tope).join("")}… (recortado: ${letras.length} caracteres en total)`;
+}
+
+/**
+ * Fila de auditoria del sistema o del contenido publico. Se inserta en la misma
+ * transaccion del cambio, igual que `filaRevision`.
+ *
+ * `antes` va en null cuando la fila no existia (un alta) y `despues` en null
+ * cuando la fila se borro: son los dos unicos casos legitimos de valor vacio.
+ */
+function filaSistema(datos: {
+  sesion: Autorizacion;
+  accion: AccionSistema;
+  entidad: EntidadSistema;
+  /** null cuando la entidad no se identifica por id, como un texto por clave. */
+  entidadId?: number | null;
+  etiqueta: string;
+  antes?: string | null;
+  despues?: string | null;
+}) {
+  return {
+    adminId: datos.sesion.adminId,
+    adminNombre: datos.sesion.nombre,
+    accion: datos.accion,
+    entidad: datos.entidad,
+    entidadId: datos.entidadId ?? null,
+    entidadEtiqueta:
+      recortarValor(datos.etiqueta, MAXIMO_ETIQUETA_BITACORA) || "(sin nombre)",
+    valorAnterior: recortarValor(datos.antes),
+    valorNuevo: recortarValor(datos.despues),
+  };
+}
+
+/** Fecha ISO tal como esta guardada, o el texto que la reemplaza si falta. */
+function fechaOTexto(valor: string | null): string {
+  return valor ?? "sin fecha";
+}
+
+/** Fechas y presupuesto de una edicion, en una linea comparable y legible. */
+function resumenEdicion(edicion: {
+  ideasDesde: string | null;
+  ideasHasta: string | null;
+  votacionDesde: string | null;
+  votacionHasta: string | null;
+  presupuestoTotal: string | null;
+}): string {
+  return [
+    `Ideas: ${fechaOTexto(edicion.ideasDesde)} → ${fechaOTexto(edicion.ideasHasta)}`,
+    `Votación: ${fechaOTexto(edicion.votacionDesde)} → ${fechaOTexto(edicion.votacionHasta)}`,
+    `Presupuesto: ${montoEnPesos(
+      edicion.presupuestoTotal === null ? null : Number(edicion.presupuestoTotal),
+    )}`,
+  ].join(" · ");
+}
+
+/** Un hito del cronograma en una linea. */
+function resumenHito(hito: {
+  titulo: string;
+  orden: number;
+  detalle: string | null;
+  desde: string | null;
+  hasta: string | null;
+  etapa: string | null;
+}): string {
+  return [
+    `“${hito.titulo}”`,
+    `orden ${hito.orden}`,
+    `${fechaOTexto(hito.desde)} → ${fechaOTexto(hito.hasta)}`,
+    `etapa: ${hito.etapa ?? "ninguna"}`,
+    hito.detalle ? `detalle: ${hito.detalle}` : "sin detalle",
+  ].join(" · ");
+}
+
+/**
+ * Un avance de obra en una linea. Incluye la descripcion porque este resumen es
+ * lo unico que queda de un avance borrado.
+ */
+function resumenAvance(avance: {
+  fecha: string;
+  etapa: string;
+  titulo: string;
+  descripcion: string | null;
+  monto: string | null;
+  porcentaje: number | null;
+}): string {
+  return [
+    `“${avance.titulo}”`,
+    `fecha ${avance.fecha}`,
+    `etapa ${avance.etapa}`,
+    `monto ${montoEnPesos(avance.monto === null ? null : Number(avance.monto))}`,
+    avance.porcentaje === null ? "sin porcentaje" : `${avance.porcentaje}% de avance`,
+    avance.descripcion ? `descripción: ${avance.descripcion}` : "sin descripción",
+  ].join(" · ");
+}
+
+/**
+ * Campo numerico que puede venir vacio de un formulario: el vacio significa
+ * "sin asignar" y se guarda como null.
+ *
+ * OJO, este es un pozo de zod y ya nos costo un dato mal guardado: NO sirve
+ * `z.union([z.coerce.number().min(0), z.literal("")])`, porque `Number("")` es
+ * 0 y entonces la rama del coerce matchea el vacio. El campo terminaba
+ * guardado como 0 en lugar de quedar sin asignar, y el chequeo `=== ""` de mas
+ * abajo era codigo muerto. Aca el vacio se resuelve ANTES de coercionar.
+ */
+function opcional<T extends z.ZodType<number>>(esquema: T) {
+  return z.preprocess(
+    (valor) =>
+      valor === "" || valor === null || valor === undefined ? null : valor,
+    esquema.nullable(),
+  );
 }
 
 /** Largo minimo de la devolucion tecnica que el vecino va a leer. */
@@ -782,15 +923,24 @@ const esquemaAvance = z.object({
   etapa: z.enum(["preparacion", "contratacion", "ejecucion", "finalizado"]),
   titulo: z.string().trim().min(3).max(200),
   descripcion: z.string().trim().max(3000).optional(),
-  monto: z.union([z.coerce.number().min(0), z.literal("")]).optional(),
-  porcentaje: z.union([z.coerce.number().int().min(0).max(100), z.literal("")]).optional(),
+  monto: opcional(z.coerce.number().min(0)),
+  porcentaje: opcional(z.coerce.number().int().min(0).max(100)),
 });
 
+/**
+ * Carga un avance de obra: es lo que el vecino ve como el estado de su proyecto.
+ *
+ * Las tres escrituras (el avance, la etapa del proyecto y la fila de bitacora)
+ * van en UNA transaccion. Antes el INSERT y el UPDATE eran dos operaciones
+ * separadas: si la segunda fallaba, el avance quedaba publicado con el proyecto
+ * en otra etapa.
+ */
 export async function crearAvance(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("moderador"))) return sinPermiso("moderador");
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
 
   let datos: z.infer<typeof esquemaAvance>;
   try {
@@ -807,35 +957,104 @@ export async function crearAvance(
     return { ok: false, error: "Revisá los campos del avance." };
   }
 
-  await db.insert(avances).values({
+  // El proyecto se lee antes de escribir: da la etapa anterior (el ANTES del
+  // registro, que despues del UPDATE ya no existe) y el titulo para la etiqueta,
+  // y ademas avisa con un mensaje si el id no existe en lugar de dejar explotar
+  // la clave foranea.
+  const [idea] = await db
+    .select({ titulo: ideas.titulo, estadoPresupuesto: ideas.estadoPresupuesto })
+    .from(ideas)
+    .where(eq(ideas.id, datos.ideaId))
+    .limit(1);
+  if (!idea) return { ok: false, error: "El proyecto no existe." };
+
+  const valores = {
     ideaId: datos.ideaId,
     fecha: datos.fecha,
     etapa: datos.etapa,
     titulo: datos.titulo,
     descripcion: datos.descripcion || null,
-    monto: datos.monto === "" || datos.monto === undefined ? null : String(datos.monto),
+    monto: datos.monto === null ? null : String(datos.monto),
     porcentaje:
-      datos.porcentaje === "" || datos.porcentaje === undefined ? null : datos.porcentaje,
-  });
+      datos.porcentaje,
+  };
 
-  // El estado del presupuesto acompaña al ultimo avance publicado.
-  await db
-    .update(ideas)
-    .set({ estadoPresupuesto: datos.etapa, updatedAt: new Date() })
-    .where(eq(ideas.id, datos.ideaId));
+  await db.transaction(async (tx) => {
+    const [creado] = await tx.insert(avances).values(valores).returning({ id: avances.id });
+
+    // El estado del presupuesto acompaña al ultimo avance publicado.
+    await tx
+      .update(ideas)
+      .set({ estadoPresupuesto: datos.etapa, updatedAt: new Date() })
+      .where(eq(ideas.id, datos.ideaId));
+
+    await tx.insert(bitacoraSistema).values(
+      filaSistema({
+        sesion,
+        accion: "avance_creado",
+        entidad: "avance",
+        entidadId: creado.id,
+        etiqueta: `${datos.titulo} — ${idea.titulo}`,
+        antes: `Etapa del proyecto: ${idea.estadoPresupuesto} (sin este avance)`,
+        despues: `Etapa del proyecto: ${datos.etapa} · ${resumenAvance(valores)}`,
+      }),
+    );
+  });
 
   revalidatePath("/", "layout");
   return { ok: true };
 }
 
+/**
+ * Borra un avance de obra. La pantalla no pregunta nada antes, asi que la
+ * bitacora es lo unico que queda: guarda el avance completo en el ANTES para
+ * poder volver a cargarlo si el borrado fue un error.
+ *
+ * No recalcula `ideas.estado_presupuesto`: la etapa del proyecto la fija el
+ * ultimo avance CARGADO, y para retroceder se carga otro avance (ver
+ * `crearAvance` y el comentario de `guardarPresupuestoIdea`).
+ */
 export async function borrarAvance(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("moderador"))) return sinPermiso("moderador");
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
+
   const id = Number(formulario.get("id"));
-  if (!Number.isInteger(id)) return { ok: false, error: "Avance inválido." };
-  await db.delete(avances).where(eq(avances.id, id));
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Avance inválido." };
+
+  const [previo] = await db
+    .select({
+      fecha: avances.fecha,
+      etapa: avances.etapa,
+      titulo: avances.titulo,
+      descripcion: avances.descripcion,
+      monto: avances.monto,
+      porcentaje: avances.porcentaje,
+      ideaTitulo: ideas.titulo,
+    })
+    .from(avances)
+    .innerJoin(ideas, eq(ideas.id, avances.ideaId))
+    .where(eq(avances.id, id))
+    .limit(1);
+  if (!previo) return { ok: false, error: "El avance no existe." };
+
+  await db.transaction(async (tx) => {
+    await tx.delete(avances).where(eq(avances.id, id));
+    await tx.insert(bitacoraSistema).values(
+      filaSistema({
+        sesion,
+        accion: "avance_borrado",
+        entidad: "avance",
+        entidadId: id,
+        etiqueta: `${previo.titulo} — ${previo.ideaTitulo}`,
+        antes: resumenAvance(previo),
+        despues: null,
+      }),
+    );
+  });
+
   revalidatePath("/", "layout");
   return { ok: true };
 }
@@ -846,32 +1065,72 @@ export async function borrarAvance(
 
 const ETAPAS = ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const;
 
+type Etapa = (typeof ETAPAS)[number];
+
+/**
+ * Cambia la etapa de una edicion.
+ *
+ * Es la accion mas consecuente del panel: define lo que ve todo el sitio y al
+ * pasar a "votacion" abre la votacion publica. La etapa anterior se lee ANTES
+ * del UPDATE, porque despues no queda en ningun lado, y la fila de bitacora va
+ * en la misma transaccion: no hay forma de mover la etapa sin que quede quien la
+ * movio, cuando y desde donde.
+ */
 export async function cambiarEtapa(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("admin"))) return sinPermiso("admin");
+  const sesion = await exigirAdmin("admin");
+  if (!sesion) return sinPermiso("admin");
 
   const id = Number(formulario.get("edicionId"));
   const etapa = String(formulario.get("etapa"));
-  if (!Number.isInteger(id) || !ETAPAS.includes(etapa as (typeof ETAPAS)[number])) {
+  if (!Number.isInteger(id) || id <= 0 || !ETAPAS.includes(etapa as Etapa)) {
     return { ok: false, error: "Etapa inválida." };
   }
+  const destino = etapa as Etapa;
 
-  await db
-    .update(ediciones)
-    .set({ etapa: etapa as (typeof ETAPAS)[number] })
-    .where(eq(ediciones.id, id));
+  const [edicion] = await db
+    .select({ anio: ediciones.anio, etapa: ediciones.etapa })
+    .from(ediciones)
+    .where(eq(ediciones.id, id))
+    .limit(1);
+  if (!edicion) return { ok: false, error: "La edición no existe." };
+
+  // Sin cambio no se escribe: una fila de bitacora que dice "de X a X" no
+  // audita nada. La pantalla ya deshabilita el boton en este caso.
+  if (edicion.etapa === destino) {
+    return {
+      ok: true,
+      mensaje: `La edición ${edicion.anio} ya estaba en la etapa “${destino}”.`,
+    };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.update(ediciones).set({ etapa: destino }).where(eq(ediciones.id, id));
+    await tx.insert(bitacoraSistema).values(
+      filaSistema({
+        sesion,
+        accion: "cambio_etapa",
+        entidad: "edicion",
+        entidadId: id,
+        etiqueta: `Edición ${edicion.anio}`,
+        antes: `Etapa ${edicion.etapa}`,
+        despues: `Etapa ${destino}`,
+      }),
+    );
+  });
 
   revalidatePath("/", "layout");
-  return { ok: true };
+  return { ok: true, mensaje: `Edición ${edicion.anio}: etapa “${destino}”.` };
 }
 
 export async function crearEdicion(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("admin"))) return sinPermiso("admin");
+  const sesion = await exigirAdmin("admin");
+  if (!sesion) return sinPermiso("admin");
 
   const anio = Number(formulario.get("anio"));
   if (!Number.isInteger(anio) || anio < 2020 || anio > 2100) {
@@ -888,7 +1147,24 @@ export async function crearEdicion(
   try {
     // La edicion nace inactiva: se activa aparte, en una transaccion que apaga
     // las demas (ver activarEdicion).
-    await db.insert(ediciones).values({ anio, etapa: "ideas", activa: false });
+    await db.transaction(async (tx) => {
+      const [creada] = await tx
+        .insert(ediciones)
+        .values({ anio, etapa: "ideas", activa: false })
+        .returning({ id: ediciones.id });
+
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "edicion_creada",
+          entidad: "edicion",
+          entidadId: creada.id,
+          etiqueta: `Edición ${anio}`,
+          // No hay ANTES: la edicion no existia.
+          despues: "Etapa ideas · inactiva · sin fechas ni presupuesto cargados",
+        }),
+      );
+    });
   } catch (causa) {
     console.error("[admin] crearEdicion fallo", causa);
     if (esViolacionDeUnico(causa)) {
@@ -907,14 +1183,20 @@ const esquemaEdicion = z.object({
   ideasHasta: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
   votacionDesde: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
   votacionHasta: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
-  presupuestoTotal: z.union([z.coerce.number().min(0), z.literal("")]),
+  presupuestoTotal: opcional(z.coerce.number().min(0)),
 });
 
+/**
+ * Fechas y presupuesto de una edicion. Son los datos que el sitio publica como
+ * el calendario del programa y la plata comprometida, asi que el cambio deja
+ * fila con el resumen anterior y el nuevo, en la misma transaccion.
+ */
 export async function guardarEdicion(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("admin"))) return sinPermiso("admin");
+  const sesion = await exigirAdmin("admin");
+  if (!sesion) return sinPermiso("admin");
 
   let datos: z.infer<typeof esquemaEdicion>;
   try {
@@ -942,24 +1224,53 @@ export async function guardarEdicion(
     return { ok: false, error: "La votación no puede terminar antes de empezar." };
   }
 
+  // Los valores anteriores se leen antes de escribir: son la mitad del registro
+  // y el UPDATE los pisa.
   const [edicion] = await db
-    .select({ id: ediciones.id })
+    .select({
+      anio: ediciones.anio,
+      ideasDesde: ediciones.ideasDesde,
+      ideasHasta: ediciones.ideasHasta,
+      votacionDesde: ediciones.votacionDesde,
+      votacionHasta: ediciones.votacionHasta,
+      presupuestoTotal: ediciones.presupuestoTotal,
+    })
     .from(ediciones)
     .where(eq(ediciones.id, datos.id))
     .limit(1);
   if (!edicion) return { ok: false, error: "La edición no existe." };
 
-  await db
-    .update(ediciones)
-    .set({
-      ideasDesde: datos.ideasDesde || null,
-      ideasHasta: datos.ideasHasta || null,
-      votacionDesde: datos.votacionDesde || null,
-      votacionHasta: datos.votacionHasta || null,
-      presupuestoTotal:
-        datos.presupuestoTotal === "" ? null : String(datos.presupuestoTotal),
-    })
-    .where(eq(ediciones.id, datos.id));
+  const valores = {
+    ideasDesde: datos.ideasDesde || null,
+    ideasHasta: datos.ideasHasta || null,
+    votacionDesde: datos.votacionDesde || null,
+    votacionHasta: datos.votacionHasta || null,
+    presupuestoTotal:
+      datos.presupuestoTotal === null ? null : String(datos.presupuestoTotal),
+  };
+
+  // Los dos resumenes se comparan ya formateados: asi "1500000" y "1500000.00"
+  // (el mismo monto escrito distinto) no cuentan como un cambio.
+  const antes = resumenEdicion(edicion);
+  const despues = resumenEdicion(valores);
+  if (antes === despues) {
+    return { ok: true, mensaje: "No hubo cambios para guardar." };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.update(ediciones).set(valores).where(eq(ediciones.id, datos.id));
+    await tx.insert(bitacoraSistema).values(
+      filaSistema({
+        sesion,
+        accion: "edicion_editada",
+        entidad: "edicion",
+        entidadId: datos.id,
+        etiqueta: `Edición ${edicion.anio}`,
+        antes,
+        despues,
+      }),
+    );
+  });
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -974,22 +1285,49 @@ export async function activarEdicion(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("admin"))) return sinPermiso("admin");
+  const sesion = await exigirAdmin("admin");
+  if (!sesion) return sinPermiso("admin");
 
   const id = Number(formulario.get("id"));
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Edición inválida." };
 
   const [edicion] = await db
-    .select({ id: ediciones.id, anio: ediciones.anio })
+    .select({ id: ediciones.id, anio: ediciones.anio, activa: ediciones.activa })
     .from(ediciones)
     .where(eq(ediciones.id, id))
     .limit(1);
   if (!edicion) return { ok: false, error: "La edición no existe." };
+  // Ya activa: no hay nada que cambiar, asi que tampoco hay nada que registrar.
+  if (edicion.activa) {
+    return { ok: true, mensaje: `Edición ${edicion.anio} activa.` };
+  }
 
   try {
     await db.transaction(async (tx) => {
+      // Cual se apaga se lee DENTRO de la transaccion y antes del UPDATE: es el
+      // ANTES del registro y despues del primer UPDATE ya no hay ninguna activa.
+      const [saliente] = await tx
+        .select({ anio: ediciones.anio })
+        .from(ediciones)
+        .where(eq(ediciones.activa, true))
+        .limit(1);
+
       await tx.update(ediciones).set({ activa: false }).where(ne(ediciones.id, id));
       await tx.update(ediciones).set({ activa: true }).where(eq(ediciones.id, id));
+
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "edicion_activada",
+          entidad: "edicion",
+          entidadId: id,
+          etiqueta: `Edición ${edicion.anio}`,
+          antes: saliente
+            ? `Edición activa: ${saliente.anio}`
+            : "Ninguna edición activa",
+          despues: `Edición activa: ${edicion.anio}`,
+        }),
+      );
     });
   } catch (causa) {
     console.error("[admin] activarEdicion fallo", causa);
@@ -1017,11 +1355,13 @@ const esquemaHito = z.object({
   etapa: z.union([z.enum(ETAPAS), z.literal("")]),
 });
 
+/** Alta o edicion de un hito del cronograma, que es contenido publico. */
 export async function guardarHito(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("moderador"))) return sinPermiso("moderador");
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
 
   let datos: z.infer<typeof esquemaHito>;
   try {
@@ -1053,24 +1393,118 @@ export async function guardarHito(
     etapa: datos.etapa || null,
   };
 
+  // El anio de la edicion hace legible la etiqueta ("… (Edición 2026)") y de
+  // paso avisa con un mensaje si la edicion no existe, en lugar de dejar
+  // explotar la clave foranea.
+  const [edicion] = await db
+    .select({ anio: ediciones.anio })
+    .from(ediciones)
+    .where(eq(ediciones.id, datos.edicionId))
+    .limit(1);
+  if (!edicion) return { ok: false, error: "La edición del hito no existe." };
+
+  const etiqueta = `${datos.titulo} (Edición ${edicion.anio})`;
+  const despues = resumenHito(valores);
+
   if (typeof datos.id === "number") {
-    await db.update(hitos).set(valores).where(eq(hitos.id, datos.id));
+    const hitoId = datos.id;
+    const [anterior] = await db
+      .select({
+        titulo: hitos.titulo,
+        orden: hitos.orden,
+        detalle: hitos.detalle,
+        desde: hitos.desde,
+        hasta: hitos.hasta,
+        etapa: hitos.etapa,
+      })
+      .from(hitos)
+      .where(eq(hitos.id, hitoId))
+      .limit(1);
+    if (!anterior) return { ok: false, error: "El hito no existe." };
+
+    const antes = resumenHito(anterior);
+    if (antes === despues) return { ok: true, mensaje: "No hubo cambios para guardar." };
+
+    await db.transaction(async (tx) => {
+      await tx.update(hitos).set(valores).where(eq(hitos.id, hitoId));
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "hito_guardado",
+          entidad: "hito",
+          entidadId: hitoId,
+          etiqueta,
+          antes,
+          despues,
+        }),
+      );
+    });
   } else {
-    await db.insert(hitos).values(valores);
+    await db.transaction(async (tx) => {
+      const [creado] = await tx.insert(hitos).values(valores).returning({ id: hitos.id });
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "hito_guardado",
+          entidad: "hito",
+          entidadId: creado.id,
+          etiqueta,
+          // No hay ANTES: el hito no existia.
+          despues,
+        }),
+      );
+    });
   }
 
   revalidatePath("/", "layout");
   return { ok: true };
 }
 
+/**
+ * Borra un hito del cronograma. El hito completo queda en el ANTES de la
+ * bitacora: es lo unico que permite reponerlo si el borrado fue un error.
+ */
 export async function borrarHito(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("moderador"))) return sinPermiso("moderador");
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
+
   const id = Number(formulario.get("id"));
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Hito inválido." };
-  await db.delete(hitos).where(eq(hitos.id, id));
+
+  const [previo] = await db
+    .select({
+      titulo: hitos.titulo,
+      orden: hitos.orden,
+      detalle: hitos.detalle,
+      desde: hitos.desde,
+      hasta: hitos.hasta,
+      etapa: hitos.etapa,
+      anio: ediciones.anio,
+    })
+    .from(hitos)
+    .innerJoin(ediciones, eq(ediciones.id, hitos.edicionId))
+    .where(eq(hitos.id, id))
+    .limit(1);
+  if (!previo) return { ok: false, error: "El hito no existe." };
+
+  await db.transaction(async (tx) => {
+    await tx.delete(hitos).where(eq(hitos.id, id));
+    await tx.insert(bitacoraSistema).values(
+      filaSistema({
+        sesion,
+        accion: "hito_borrado",
+        entidad: "hito",
+        entidadId: id,
+        etiqueta: `${previo.titulo} (Edición ${previo.anio})`,
+        antes: resumenHito(previo),
+        despues: null,
+      }),
+    );
+  });
+
   revalidatePath("/", "layout");
   return { ok: true };
 }
@@ -1079,30 +1513,69 @@ export async function borrarHito(
 // Contenido editable
 // ---------------------------------------------------------------------------
 
+/**
+ * Guarda un texto del sitio (la tabla `textos`, lo que el sitio anterior servia
+ * por /api/text sin autenticacion).
+ *
+ * El valor anterior se lee antes del upsert: la tabla no tiene historial, asi
+ * que despues de escribir la version vieja no existe mas en ningun lado. En la
+ * bitacora el ANTES y el DESPUES van recortados (`MAXIMO_VALOR_BITACORA`): un
+ * texto puede ser un parrafo entero y esto audita que cambio, no guarda
+ * versiones.
+ */
 export async function guardarTexto(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("moderador"))) return sinPermiso("moderador");
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
 
   const clave = String(formulario.get("clave") ?? "").trim();
   const valor = String(formulario.get("valor") ?? "").trim();
   if (!clave || clave.length > 100) return { ok: false, error: "Clave inválida." };
 
-  await db
-    .insert(textos)
-    .values({ clave, valor })
-    .onConflictDoUpdate({ target: textos.clave, set: { valor, updatedAt: new Date() } });
+  const [anterior] = await db
+    .select({ valor: textos.valor })
+    .from(textos)
+    .where(eq(textos.clave, clave))
+    .limit(1);
+
+  // Guardar dos veces el mismo texto no es un cambio: no deja fila.
+  if (anterior && anterior.valor === valor) {
+    return { ok: true, mensaje: "El texto ya estaba así: no se registró ningún cambio." };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(textos)
+      .values({ clave, valor })
+      .onConflictDoUpdate({ target: textos.clave, set: { valor, updatedAt: new Date() } });
+
+    await tx.insert(bitacoraSistema).values(
+      filaSistema({
+        sesion,
+        accion: "texto_guardado",
+        entidad: "texto",
+        // Un texto se identifica por su clave, no por un id: va en la etiqueta.
+        entidadId: null,
+        etiqueta: clave,
+        antes: anterior ? anterior.valor || "(vacío)" : null,
+        despues: valor || "(vacío)",
+      }),
+    );
+  });
 
   revalidatePath("/", "layout");
   return { ok: true };
 }
 
+/** Publica una novedad en la portada del sitio. */
 export async function crearNovedad(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  if (!(await exigirAdmin("moderador"))) return sinPermiso("moderador");
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
 
   const titulo = String(formulario.get("titulo") ?? "").trim();
   const cuerpo = String(formulario.get("cuerpo") ?? "").trim();
@@ -1112,12 +1585,25 @@ export async function crearNovedad(
     return { ok: false, error: "Completá título, fecha y cuerpo." };
   }
 
-  await db.insert(novedades).values({
-    titulo,
-    slug: `${slugificar(titulo)}-${Date.now().toString(36)}`,
-    copete: copete || null,
-    cuerpo,
-    fecha,
+  const slug = `${slugificar(titulo)}-${Date.now().toString(36)}`;
+
+  await db.transaction(async (tx) => {
+    const [creada] = await tx
+      .insert(novedades)
+      .values({ titulo, slug, copete: copete || null, cuerpo, fecha })
+      .returning({ id: novedades.id });
+
+    await tx.insert(bitacoraSistema).values(
+      filaSistema({
+        sesion,
+        accion: "novedad_creada",
+        entidad: "novedad",
+        entidadId: creada.id,
+        etiqueta: titulo,
+        // No hay ANTES: la novedad no existia.
+        despues: `Fecha ${fecha} · publicada · ${slug} · ${copete || cuerpo}`,
+      }),
+    );
   });
 
   revalidatePath("/", "layout");

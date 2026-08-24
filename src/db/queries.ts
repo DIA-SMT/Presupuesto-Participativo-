@@ -25,6 +25,7 @@ import {
   admins,
   avances,
   bitacoraEquipo,
+  bitacoraSistema,
   categorias,
   distritos,
   ediciones,
@@ -1575,6 +1576,170 @@ export async function getBitacoraEquipo(limite = 100): Promise<FilaBitacora[]> {
     .from(bitacoraEquipo)
     .orderBy(desc(bitacoraEquipo.createdAt), desc(bitacoraEquipo.id))
     .limit(limite);
+}
+
+// ---------------------------------------------------------------------------
+// Bitacora del sistema y del contenido publico
+//
+// Tercera bitacora del backoffice (tabla `bitacora_sistema`): lo que no es ni
+// una idea (`revisiones`) ni una cuenta (`bitacora_equipo`). La tabla es
+// append-only, asi que de aca solo salen lecturas.
+//
+// No devuelve ningun dato personal de vecinos: las filas guardan el nombre de
+// quien hizo el cambio (rendicion de cuentas del equipo, igual que
+// `bitacora_equipo`) y una etiqueta de lo que se toco, que es contenido
+// publicable del sitio.
+// ---------------------------------------------------------------------------
+
+/**
+ * Acciones que la bitacora del sistema registra. Es una LISTA BLANCA: el valor
+ * que llega por querystring se busca aca (ver `accionSistemaValida`) y nunca se
+ * interpola dentro del tag `sql`. Mismo orden que el enum `accion_sistema`.
+ */
+export const ACCIONES_SISTEMA = [
+  "cambio_etapa",
+  "edicion_creada",
+  "edicion_editada",
+  "edicion_activada",
+  "hito_guardado",
+  "hito_borrado",
+  "texto_guardado",
+  "novedad_creada",
+  "avance_creado",
+  "avance_borrado",
+] as const;
+
+export type AccionSistema = (typeof ACCIONES_SISTEMA)[number];
+
+/** Sobre que se actuo. Lista blanca, igual que `ACCIONES_SISTEMA`. */
+export const ENTIDADES_SISTEMA = [
+  "edicion",
+  "hito",
+  "texto",
+  "novedad",
+  "avance",
+] as const;
+
+export type EntidadSistema = (typeof ENTIDADES_SISTEMA)[number];
+
+/** La accion pedida por querystring, o undefined (que es "no filtrar"). */
+export function accionSistemaValida(
+  valor: string | null | undefined,
+): AccionSistema | undefined {
+  return ACCIONES_SISTEMA.includes(valor as AccionSistema)
+    ? (valor as AccionSistema)
+    : undefined;
+}
+
+/** La entidad pedida por querystring, o undefined (que es "no filtrar"). */
+export function entidadSistemaValida(
+  valor: string | null | undefined,
+): EntidadSistema | undefined {
+  return ENTIDADES_SISTEMA.includes(valor as EntidadSistema)
+    ? (valor as EntidadSistema)
+    : undefined;
+}
+
+export type FiltroBitacoraSistema = {
+  accion?: AccionSistema;
+  entidad?: EntidadSistema;
+  limite?: number;
+  /** Filas a saltear (OFFSET). Va con `limite` para paginar. */
+  desplazamiento?: number;
+};
+
+export type FilaBitacoraSistema = {
+  id: number;
+  accion: AccionSistema;
+  entidad: EntidadSistema;
+  /** Puede apuntar a una fila que ya no existe (un hito o un avance borrado). */
+  entidadId: number | null;
+  /** Como se llama lo que se toco, sin cruzar tablas. */
+  entidadEtiqueta: string;
+  valorAnterior: string | null;
+  valorNuevo: string | null;
+  /** Copia del nombre de quien hizo el cambio. Nunca el mail ni el id. */
+  adminNombre: string;
+  createdAt: Date;
+};
+
+/**
+ * Una pagina de la bitacora mas el total que matchea el filtro.
+ *
+ * El total NO es `filas.length`: es la cuenta completa sin `limite` ni
+ * `desplazamiento`, que es lo que necesita el paginador.
+ */
+export type PaginaBitacoraSistema = {
+  filas: FilaBitacoraSistema[];
+  total: number;
+};
+
+/** Filas por pagina por defecto, y tope duro de lo que una pantalla puede pedir. */
+export const LIMITE_BITACORA_SISTEMA = 50;
+const MAXIMO_BITACORA_SISTEMA = 200;
+
+/**
+ * Bitacora del sistema paginada, mas nueva primero. Los filtros llegan ya
+ * validados contra las listas blancas de arriba y se aplican como parametros
+ * (`eq`), no como texto armado.
+ */
+export async function listarBitacoraSistema(
+  filtro: FiltroBitacoraSistema = {},
+): Promise<PaginaBitacoraSistema> {
+  const condiciones: SQLWrapper[] = [];
+  if (filtro.accion) condiciones.push(eq(bitacoraSistema.accion, filtro.accion));
+  if (filtro.entidad) condiciones.push(eq(bitacoraSistema.entidad, filtro.entidad));
+  const donde = condiciones.length ? and(...condiciones) : undefined;
+
+  const limite = Math.min(
+    MAXIMO_BITACORA_SISTEMA,
+    Math.max(1, Math.trunc(filtro.limite ?? LIMITE_BITACORA_SISTEMA)),
+  );
+  const desplazamiento = Math.max(0, Math.trunc(filtro.desplazamiento ?? 0));
+
+  const pagina = db
+    .select({
+      id: bitacoraSistema.id,
+      accion: bitacoraSistema.accion,
+      entidad: bitacoraSistema.entidad,
+      entidadId: bitacoraSistema.entidadId,
+      entidadEtiqueta: bitacoraSistema.entidadEtiqueta,
+      valorAnterior: bitacoraSistema.valorAnterior,
+      valorNuevo: bitacoraSistema.valorNuevo,
+      adminNombre: bitacoraSistema.adminNombre,
+      createdAt: bitacoraSistema.createdAt,
+    })
+    .from(bitacoraSistema)
+    .where(donde)
+    // El id como ultimo criterio: dos filas del mismo cambio pueden compartir
+    // `created_at` (default now() dentro de una transaccion) y sin desempate
+    // estable dos paginas del mismo filtro repiten o saltean filas.
+    .orderBy(desc(bitacoraSistema.createdAt), desc(bitacoraSistema.id))
+    .limit(limite)
+    .offset(desplazamiento);
+
+  // El total se cuenta aparte, con las MISMAS condiciones y sin limite.
+  const consultaTotal = db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(bitacoraSistema)
+    .where(donde);
+
+  const [filas, [conteo]] = await Promise.all([pagina, consultaTotal]);
+
+  return {
+    filas: filas.map((f) => ({
+      id: Number(f.id),
+      accion: f.accion,
+      entidad: f.entidad,
+      entidadId: f.entidadId === null ? null : Number(f.entidadId),
+      entidadEtiqueta: f.entidadEtiqueta,
+      valorAnterior: f.valorAnterior,
+      valorNuevo: f.valorNuevo,
+      adminNombre: f.adminNombre,
+      createdAt: f.createdAt,
+    })),
+    total: Number(conteo?.total ?? 0),
+  };
 }
 
 // ---------------------------------------------------------------------------
