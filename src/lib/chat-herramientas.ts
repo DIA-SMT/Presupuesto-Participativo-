@@ -324,6 +324,7 @@ export async function ejecutarHerramienta(
           FROM ideas i
           JOIN distritos d ON d.id = i.distrito_id
          WHERE i.edicion_id = ${edicion.id}
+           AND i.publicada
            AND i.barrio IS NOT NULL
            AND i.barrio_normalizado LIKE ${patron}
          GROUP BY d.numero, i.barrio

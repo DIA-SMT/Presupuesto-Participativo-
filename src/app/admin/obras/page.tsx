@@ -6,6 +6,14 @@ import { getEdicionActiva, listarIdeas } from "@/db/queries";
 import { getSesionAdmin } from "@/lib/sesion";
 import PanelObras from "./panel";
 
+/**
+ * Pantalla de obras del backoffice: los proyectos ganadores de la edicion
+ * activa con su presupuesto asignado y sus avances.
+ *
+ * El listado de ganadores y los datos de cada idea salen de src/db/queries.ts;
+ * el historial de avances es la unica consulta armada aca (no hay todavia una
+ * funcion de queries.ts que traiga los avances de varias ideas de una vez).
+ */
 export default async function AdminObras() {
   const sesion = await getSesionAdmin();
   if (!sesion) redirect("/admin/ingresar");
@@ -29,7 +37,10 @@ export default async function AdminObras() {
 
   return (
     <PanelObras
-      soloLectura={sesion.rol === "lector"}
+      // El rol completo, no un booleano: el monto del presupuesto lo edita solo
+      // un admin (guardarPresupuestoIdea), mientras los avances los carga
+      // cualquier moderador.
+      rol={sesion.rol}
       proyectos={ganadores.map((idea) => ({
         id: idea.id,
         titulo: idea.titulo,

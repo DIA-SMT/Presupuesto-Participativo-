@@ -11,6 +11,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   date,
   index,
@@ -66,6 +67,62 @@ export const canalCarga = pgEnum("canal_carga", [
 
 export const rolAdmin = pgEnum("rol_admin", ["admin", "moderador", "lector"]);
 
+/**
+ * Que se hizo sobre una idea en la bandeja de revision (tabla `revisiones`).
+ *
+ * `presupuesto` audita el monto asignado al proyecto (`ideas.presupuesto_total`):
+ * es plata publica, asi que el cambio deja fila con el monto anterior y el
+ * nuevo, igual que un cambio de estado. Valor agregado en la migracion 0003.
+ */
+export const accionRevision = pgEnum("accion_revision", [
+  "evaluacion",
+  "publicacion",
+  "despublicacion",
+  "proclamacion",
+  "reapertura",
+  "presupuesto",
+]);
+
+/** Cambios sobre las cuentas del backoffice (tabla `bitacora_equipo`). */
+export const accionEquipo = pgEnum("accion_equipo", [
+  "alta",
+  "cambio_rol",
+  "desactivacion",
+  "reactivacion",
+  "cambio_password",
+]);
+
+/**
+ * Cambios que afectan al sistema o al contenido publico (tabla
+ * `bitacora_sistema`). Un valor por cada accion del panel que los produce, para
+ * que el listado se pueda filtrar por lo que la persona fue a hacer.
+ */
+export const accionSistema = pgEnum("accion_sistema", [
+  "cambio_etapa",
+  "edicion_creada",
+  "edicion_editada",
+  "edicion_activada",
+  "hito_guardado",
+  "hito_borrado",
+  "texto_guardado",
+  "novedad_creada",
+  "avance_creado",
+  "avance_borrado",
+]);
+
+/**
+ * Sobre que se actuo. Es un enum y no texto libre para que el filtro del
+ * listado no pueda pedir una entidad que no existe; sumar una entidad nueva
+ * pide una migracion, que es exactamente la friccion que se busca.
+ */
+export const entidadSistema = pgEnum("entidad_sistema", [
+  "edicion",
+  "hito",
+  "texto",
+  "novedad",
+  "avance",
+]);
+
 // ---------------------------------------------------------------------------
 // Geografia y taxonomia
 // ---------------------------------------------------------------------------
@@ -96,18 +153,24 @@ export const categorias = pgTable("categorias", {
   orden: smallint("orden").notNull().default(0),
 });
 
-export const ediciones = pgTable("ediciones", {
-  id: serial("id").primaryKey(),
-  anio: smallint("anio").notNull().unique(),
-  etapa: etapaEdicion("etapa").notNull().default("ideas"),
-  /** Monto total del programa para esa edicion, en pesos. */
-  presupuestoTotal: numeric("presupuesto_total", { precision: 14, scale: 2 }),
-  ideasDesde: date("ideas_desde"),
-  ideasHasta: date("ideas_hasta"),
-  votacionDesde: date("votacion_desde"),
-  votacionHasta: date("votacion_hasta"),
-  activa: boolean("activa").notNull().default(false),
-});
+export const ediciones = pgTable(
+  "ediciones",
+  {
+    id: serial("id").primaryKey(),
+    anio: smallint("anio").notNull().unique(),
+    etapa: etapaEdicion("etapa").notNull().default("ideas"),
+    /** Monto total del programa para esa edicion, en pesos. */
+    presupuestoTotal: numeric("presupuesto_total", { precision: 14, scale: 2 }),
+    ideasDesde: date("ideas_desde"),
+    ideasHasta: date("ideas_hasta"),
+    votacionDesde: date("votacion_desde"),
+    votacionHasta: date("votacion_hasta"),
+    activa: boolean("activa").notNull().default(false),
+  },
+  // Invariante del sitio: hay como maximo una edicion activa. El indice
+  // parcial lo garantiza en la base y no solo en el codigo que la activa.
+  (t) => [uniqueIndex("ediciones_una_activa_idx").on(t.activa).where(sql`${t.activa}`)],
+);
 
 // ---------------------------------------------------------------------------
 // Ideas y proyectos
@@ -150,7 +213,14 @@ export const ideas = pgTable(
     /** Devolucion tecnica publica: por que es factible o no. */
     motivoEstado: text("motivo_estado"),
     /** Cuando la idea se fusiono con otra, apunta a la idea final. */
-    integradaEnId: integer("integrada_en_id"),
+    integradaEnId: integer("integrada_en_id").references((): AnyPgColumn => ideas.id, {
+      onDelete: "set null",
+    }),
+    /** Cuando cambio el estado por ultima vez, y quien lo cambio. */
+    estadoActualizadoEn: timestamp("estado_actualizado_en", { withTimezone: true }),
+    revisadoPorId: integer("revisado_por_id").references(() => admins.id, {
+      onDelete: "set null",
+    }),
 
     votos: integer("votos").notNull().default(0),
     ganador: boolean("ganador").notNull().default(false),
@@ -172,8 +242,20 @@ export const ideas = pgTable(
 
     canal: canalCarga("canal").notNull().default("web"),
     autorNombre: text("autor_nombre"),
-    autorTelefono: text("autor_telefono"),
+    /**
+     * Contacto del autor. Se guarda SOLO si la persona marco la casilla de
+     * avisos, con la finalidad declarada de contarle como sigue su idea. No es
+     * un dato publico: ninguna consulta del sitio ni del chatbot lo devuelve.
+     * `autorTelefono` se elimino: se pedia y no lo leia nadie.
+     */
     autorEmail: text("autor_email"),
+    /** Consentimiento explicito para recibir avisos, y cuando se dio. */
+    autorAvisos: boolean("autor_avisos").notNull().default(false),
+    autorAvisosEn: timestamp("autor_avisos_en", { withTimezone: true }),
+    /** Version del texto de consentimiento que la persona acepto. */
+    autorAvisosVersion: varchar("autor_avisos_version", { length: 20 }),
+    /** Cuando se borro el contacto (al cerrar la edicion). */
+    contactoPurgadoEn: timestamp("contacto_purgado_en", { withTimezone: true }),
     /** Usuario del sistema anterior o del backoffice que cargo la idea. */
     cargadoPor: text("cargado_por"),
 
@@ -198,7 +280,38 @@ export const ideas = pgTable(
     index("ideas_distrito_idx").on(t.distritoId),
     index("ideas_estado_idx").on(t.estado),
     index("ideas_edicion_idx").on(t.edicionId),
+    // Orden de la bandeja de revision: por edicion, estado y antiguedad.
+    index("ideas_bandeja_idx").on(t.edicionId, t.estado, t.createdAt),
+    // El numero es el identificador que el vecino ve: no puede repetirse
+    // dentro de una edicion. Verificado: las 100 ideas de 2025 ya lo cumplen.
+    uniqueIndex("ideas_edicion_numero_idx").on(t.edicionId, t.numero),
   ],
+);
+
+/**
+ * Historial de la revision de cada idea. Es append-only: no se edita ni se
+ * borra. Existe para poder responder quien cambio un estado, cuando y con que
+ * devolucion, que es lo que hace defendible el proceso frente al vecino.
+ */
+export const revisiones = pgTable(
+  "revisiones",
+  {
+    id: serial("id").primaryKey(),
+    ideaId: integer("idea_id")
+      .notNull()
+      .references(() => ideas.id, { onDelete: "cascade" }),
+    /** Queda en null si despues se borra la cuenta: el registro no se pierde. */
+    adminId: integer("admin_id").references(() => admins.id, { onDelete: "set null" }),
+    /** Copia del nombre de quien reviso, para que el historial se lea solo. */
+    adminNombre: text("admin_nombre").notNull(),
+    accion: accionRevision("accion").notNull(),
+    estadoAnterior: estadoIdea("estado_anterior"),
+    estadoNuevo: estadoIdea("estado_nuevo"),
+    /** La devolucion tal como quedo, o el motivo de publicar/despublicar. */
+    nota: text("nota"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("revisiones_idea_idx").on(t.ideaId, t.createdAt)],
 );
 
 /** Historial publico de ejecucion de un proyecto ganador. */
@@ -274,6 +387,9 @@ export const votos = pgTable(
     // Regla del reglamento: 1 voto por persona por edicion.
     unique("votos_una_persona_un_voto").on(t.edicionId, t.votanteId),
     index("votos_idea_idx").on(t.ideaId),
+    // Series y participacion del tablero: por fecha y por distrito.
+    index("votos_edicion_fecha_idx").on(t.edicionId, t.createdAt),
+    index("votos_edicion_distrito_idx").on(t.edicionId, t.distritoId),
   ],
 );
 
@@ -289,10 +405,95 @@ export const admins = pgTable("admins", {
   passwordHash: text("password_hash").notNull(),
   rol: rolAdmin("rol").notNull().default("moderador"),
   activo: boolean("activo").notNull().default(true),
+  /**
+   * true cuando la contrasena la eligio otra persona al crear la cuenta: el
+   * panel obliga a cambiarla antes de dejar hacer cualquier otra cosa.
+   */
+  debeCambiarPassword: boolean("debe_cambiar_password").notNull().default(false),
+  ultimoIngreso: timestamp("ultimo_ingreso", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
+
+/**
+ * Bitacora de las cuentas del backoffice: quien dio de alta, cambio de rol o
+ * desactivo a quien. Separada de `revisiones` porque audita otra cosa y tiene
+ * otra retencion. Tambien append-only.
+ */
+export const bitacoraEquipo = pgTable(
+  "bitacora_equipo",
+  {
+    id: serial("id").primaryKey(),
+    /** Quien hizo el cambio. */
+    adminId: integer("admin_id").references(() => admins.id, { onDelete: "set null" }),
+    adminNombre: text("admin_nombre").notNull(),
+    /** Sobre que cuenta. Se guarda el mail para que el registro sobreviva. */
+    objetivoId: integer("objetivo_id").references(() => admins.id, { onDelete: "set null" }),
+    objetivoEmail: varchar("objetivo_email", { length: 200 }).notNull(),
+    accion: accionEquipo("accion").notNull(),
+    rolAnterior: rolAdmin("rol_anterior"),
+    rolNuevo: rolAdmin("rol_nuevo"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("bitacora_equipo_fecha_idx").on(t.createdAt)],
+);
+
+/**
+ * Tercera bitacora del backoffice: lo que se le hace al SISTEMA y al contenido
+ * publico. `revisiones` audita una idea y `bitacora_equipo` una cuenta; nada
+ * cubria los cambios mas consecuentes del panel, que no son ni una cosa ni la
+ * otra: la etapa de la edicion activa (define lo que ve todo el sitio y abre o
+ * cierra la votacion publica), las fechas y el presupuesto de una edicion, el
+ * cronograma, los textos, las novedades y los avances de obra. Todo eso se
+ * podia cambiar sin que quedara quien, cuando ni desde que valor.
+ *
+ * Append-only, igual que las otras dos: una bitacora que se puede editar o
+ * borrar no prueba nada. Nada del codigo hace UPDATE ni DELETE sobre esta tabla,
+ * y por eso no tiene `updated_at`.
+ *
+ * `admin_id` queda en null si despues se borra la cuenta (`set null`), pero
+ * `admin_nombre` es una copia de texto: el registro sobrevive al borrado y se
+ * sigue leyendo sin cruzar tablas. Con el mismo criterio se guardan la entidad,
+ * su id y una etiqueta legible ("Edicion 2026", la clave del texto): el id
+ * apunta a una fila que puede no existir mas — un hito borrado, por ejemplo —
+ * asi que la etiqueta es lo que hace legible el registro para siempre.
+ *
+ * `valor_anterior` y `valor_nuevo` son texto ya armado para leer, no JSON: el
+ * valor de una bitacora es poder decir "paso de X a Y" de un vistazo. Van
+ * recortados en el origen (ver `recortarValor` en src/app/admin/acciones.ts):
+ * esto audita QUE cambio, no guarda versiones del contenido.
+ */
+export const bitacoraSistema = pgTable(
+  "bitacora_sistema",
+  {
+    id: serial("id").primaryKey(),
+    /** Quien hizo el cambio. */
+    adminId: integer("admin_id").references(() => admins.id, { onDelete: "set null" }),
+    adminNombre: text("admin_nombre").notNull(),
+    accion: accionSistema("accion").notNull(),
+    /** Sobre que tipo de cosa se actuo. */
+    entidad: entidadSistema("entidad").notNull(),
+    /**
+     * Id de la fila afectada, cuando existe. Sin clave foranea a proposito: la
+     * fila se puede borrar (un hito, un avance) y el registro tiene que quedar
+     * igual. `null` cuando la entidad no se identifica por id, como un texto,
+     * que se identifica por su clave y va en la etiqueta.
+     */
+    entidadId: integer("entidad_id"),
+    /** Como nombrar lo que se toco sin cruzar tablas. */
+    entidadEtiqueta: text("entidad_etiqueta").notNull(),
+    /** Como estaba antes. `null` cuando la fila no existia (un alta). */
+    valorAnterior: text("valor_anterior"),
+    /** Como quedo. `null` cuando la fila se borro. */
+    valorNuevo: text("valor_nuevo"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // El listado del panel siempre sale ordenado por fecha descendente y los
+  // filtros por accion y entidad se aplican sobre esa lectura: el volumen es de
+  // unos cientos de filas por edicion, asi que no necesitan indice propio.
+  (t) => [index("bitacora_sistema_fecha_idx").on(t.createdAt)],
+);
 
 /** Textos editables del sitio, equivalente al /api/text del sitio anterior. */
 export const textos = pgTable("textos", {

@@ -7,8 +7,16 @@
  * partir de un markdown muy reducido (negritas, listas y enlaces internos). No
  * se usa dangerouslySetInnerHTML en ningun punto: la respuesta de un modelo es
  * contenido no confiable y no debe poder inyectar HTML en la pagina.
+ *
+ * El widget se puede mover: estaba fijo abajo a la derecha y tapaba contenido
+ * (en el panel de administracion, justo los botones de las fichas). El lanzador
+ * cerrado y la cabecera del panel abierto son zonas de agarre; el resto del
+ * panel no arrastra, asi que escribir y scrollear la conversacion siguen igual.
+ * Toda la mecanica vive en usar-arrastre.ts, que tambien explica que se hace en
+ * pantallas angostas y con prefers-reduced-motion.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usarArrastre } from "./usar-arrastre";
 
 type Referencia = { titulo: string; url: string };
 
@@ -27,6 +35,12 @@ const SUGERENCIAS = [
 ];
 
 const CLAVE_SESION = "pp-chat";
+/** Donde queda la posicion elegida. La conversacion vive en sessionStorage; el
+ *  lugar del widget en localStorage, porque es una preferencia y se recuerda
+ *  entre visitas. */
+const CLAVE_POSICION = "pp-chat-posicion";
+/** Instrucciones para lector de pantalla, compartidas por las dos zonas de agarre. */
+const ID_AYUDA_MOVER = "pp-chat-ayuda-mover";
 
 export default function Chat({ bienvenida }: { bienvenida: string }) {
   const [abierto, setAbierto] = useState(false);
@@ -37,8 +51,11 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
 
   const fin = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
   const abortar = useRef<AbortController | null>(null);
+
+  // El lanzador y el panel se mueven juntos: los dos se registran en el hook,
+  // que mide la caja de los dos para no dejar nada fuera de la pantalla.
+  const arrastre = usarArrastre({ clave: CLAVE_POSICION, abierto });
 
   // Recupera la conversacion al volver a abrir el sitio en la misma pestaña.
   useEffect(() => {
@@ -168,14 +185,39 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
 
   return (
     <>
+      {/* Una sola explicacion para las dos zonas de agarre: las dos la apuntan
+          con aria-describedby, asi que el lector de pantalla la lee al enfocar. */}
+      <p id={ID_AYUDA_MOVER} className="sr-only">
+        Podés mover el chat de consultas: arrastralo desde acá, o con este control enfocado usá las
+        flechas del teclado (con Shift, pasos más grandes) y la tecla Inicio para devolverlo a su
+        lugar.
+      </p>
+
       <button
         type="button"
-        onClick={() => setAbierto((v) => !v)}
+        ref={arrastre.registrar}
+        {...arrastre.propsAgarre}
+        onClick={() => {
+          // Si el gesto fue un arrastre no abre ni cierra: el umbral del hook ya
+          // distinguio el clic del movimiento.
+          if (arrastre.fueArrastre()) return;
+          setAbierto((v) => !v);
+        }}
         aria-expanded={abierto}
         aria-controls="pp-chat-panel"
+        aria-label={abierto ? "Cerrar las consultas" : "Consultas"}
+        aria-describedby={ID_AYUDA_MOVER}
+        title="Arrastrame para moverme"
         className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full px-5 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 focus-visible:outline-offset-4"
-        style={{ background: "var(--color-marca-700)" }}
+        style={{
+          background: "var(--color-marca-700)",
+          ...arrastre.estiloMovil,
+          ...arrastre.estiloAgarre,
+        }}
       >
+        <span className="opacity-60" aria-hidden="true">
+          <IconoAgarre />
+        </span>
         <IconoChat />
         <span className="hidden sm:inline">{abierto ? "Cerrar" : "Consultas"}</span>
       </button>
@@ -183,22 +225,45 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
       {abierto && (
         <div
           id="pp-chat-panel"
-          ref={panel}
+          ref={arrastre.registrar}
           role="dialog"
           aria-modal="false"
           aria-label="Consultas sobre el Presupuesto Participativo"
           className="fixed inset-x-3 bottom-20 z-40 flex max-h-[min(34rem,78vh)] flex-col overflow-hidden rounded-2xl shadow-2xl sm:inset-x-auto sm:right-5 sm:w-[26rem]"
-          style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
+          style={{
+            background: "var(--fondo-tarjeta)",
+            border: "1px solid var(--borde)",
+            ...arrastre.estiloMovil,
+          }}
         >
           <header
-            className="flex items-center justify-between gap-3 px-4 py-3"
+            className="flex items-start justify-between gap-3 px-4 py-3"
             style={{ borderBottom: "1px solid var(--borde)" }}
           >
-            <div>
-              <p className="text-sm font-semibold">Consultas</p>
-              <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                Sobre proyectos, distritos y cómo participar
-              </p>
+            {/* Zona de agarre del panel abierto: el asa y el titulo. El boton de
+                limpiar queda afuera, y el resto del panel tampoco arrastra. Las
+                teclas del asa llegan hasta aca por burbujeo. */}
+            <div
+              {...arrastre.propsAgarre}
+              style={arrastre.estiloAgarre}
+              className="-my-1 flex min-w-0 flex-1 items-center gap-2 py-1"
+            >
+              <button
+                type="button"
+                aria-label="Mover el chat de consultas"
+                aria-describedby={ID_AYUDA_MOVER}
+                title="Arrastrá para mover el chat; con el teclado, las flechas"
+                className="shrink-0 rounded-lg p-1 opacity-60 transition hover:opacity-100"
+                style={{ color: "var(--texto-suave)", cursor: "inherit" }}
+              >
+                <IconoAgarre />
+              </button>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Consultas</p>
+                <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+                  Sobre proyectos, distritos y cómo participar
+                </p>
+              </div>
             </div>
             {mensajes.length > 0 && (
               <button
@@ -211,7 +276,7 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
                     /* sin persistencia */
                   }
                 }}
-                className="rounded-lg px-2 py-1 text-xs underline"
+                className="shrink-0 rounded-lg px-2 py-1 text-xs underline"
                 style={{ color: "var(--texto-suave)" }}
               >
                 Limpiar
@@ -461,6 +526,24 @@ function enLinea(texto: string): ReactNode[] {
   }
   if (ultimo < texto.length) partes.push(texto.slice(ultimo));
   return partes;
+}
+
+/**
+ * Asa de arrastre: los seis puntos de siempre. Es el unico adorno nuevo del
+ * widget y usa currentColor, asi que hereda el color de donde este (blanco en el
+ * lanzador, --texto-suave en la cabecera) y no suma colores al tema.
+ */
+function IconoAgarre() {
+  return (
+    <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+      {[3, 8, 13].map((y) => (
+        <g key={y}>
+          <circle cx="3" cy={y} r="1.3" />
+          <circle cx="7" cy={y} r="1.3" />
+        </g>
+      ))}
+    </svg>
+  );
 }
 
 function IconoChat() {

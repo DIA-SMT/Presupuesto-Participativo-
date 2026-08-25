@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1787320910419,
+      "tag": "0000_esquema_inicial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787322436485,
+      "tag": "0001_revision_ediciones_equipo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787322496007,
+      "tag": "0002_sacar_autor_telefono",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787575873396,
+      "tag": "0003_sumar_accion_presupuesto",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787578803871,
+      "tag": "0004_bitacora_sistema",
+      "breakpoints": true
+    }
+  ]
+}

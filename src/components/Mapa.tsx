@@ -55,9 +55,13 @@ type Props = {
 };
 
 const GEO = "/geo/distritos.geojson";
-/** Colores institucionales del isotipo, aplicados a todos los distritos. */
-const AZUL = "#0a63f0";
-const CELESTE = "#2fa8fa";
+/**
+ * Colores oficiales del isotipo, aplicados a todos los distritos. Van
+ * literales porque MapLibre no resuelve variables CSS dentro del estilo del
+ * mapa; son los mismos valores que --color-marca-600 y --color-marca-500.
+ */
+const AZUL = "#0166ff";
+const CELESTE = "#2db0ff";
 
 /**
  * Estilo minimo con teselas raster, siempre en la cara clara institucional
@@ -484,7 +488,7 @@ const estilosMarcadores = `
   height: 0.9rem;
   border-radius: 999px;
   border: 2px solid #fff;
-  background: var(--punto-color, #0a63f0);
+  background: var(--punto-color, #0166ff);
   cursor: pointer;
   box-shadow: 0 1px 6px rgb(0 0 0 / 0.4);
   transition: transform 120ms ease;
