@@ -11,15 +11,18 @@
  * revision (useActionState) y el contador de la devolucion, que avisa antes de
  * enviar cuando el estado elegido exige explicarle al vecino.
  *
- * Nada de lo interactivo depende de JavaScript para leer: el filtro es un form
- * GET, y el orden y la pagina son enlaces comunes que resuelve el servidor.
+ * Nada de lo interactivo depende de JavaScript para leer: el orden y la pagina
+ * son enlaces comunes que resuelve el servidor, y el filtro sigue siendo un
+ * form GET. Con JavaScript ese form filtra en vivo (ver usarFiltrosEnVivo) y el
+ * boton "Filtrar" ni se dibuja; sin JavaScript aparece y funciona como antes.
  *
  * Dato sensible: el mail del autor NUNCA llega a esta pantalla. De la base sale
  * solo `tieneContacto`, asi que la bandeja puede decir si hay con quien
  * comunicarse, pero no cual es el dato.
  */
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Chip, ChipEstado } from "@/components/ui";
 import type {
   AccionRevision,
@@ -180,6 +183,106 @@ function armarEnlace(vista: Vista, cambios: Partial<Vista> = {}): string {
   return consulta ? `${RUTA}?${consulta}` : RUTA;
 }
 
+/** Lo que se espera a que la persona deje de escribir, en milisegundos. */
+const DEMORA_BUSQUEDA = 350;
+
+/**
+ * Filtros que buscan solos, sin apretar un boton.
+ *
+ * Los selects y la casilla navegan apenas cambian; el buscador espera a que la
+ * persona deje de escribir, para no disparar una consulta por tecla.
+ *
+ * Detalles que hacen la diferencia entre "anda" y "no molesta":
+ *  - `router.replace` y no `push`: si cada tecla dejara una entrada, el boton
+ *    de atras del navegador tendria que deshacer letra por letra en vez de
+ *    salir de la bandeja.
+ *  - cambiar un filtro vuelve SIEMPRE a la pagina 1: si estabas en la 4 de 100
+ *    ideas y filtras a 3 resultados, la pagina 4 no existe.
+ *  - la URL sigue siendo la fuente de verdad, asi que la vista se puede
+ *    compartir por enlace y el boton de atras funciona.
+ *  - mientras la persona escribe, la URL va atras del texto por la demora: por
+ *    eso el buscador no se sincroniza desde las props en ese momento, o le
+ *    comeria letras.
+ */
+function usarFiltrosEnVivo(vista: Vista) {
+  const router = useRouter();
+  const [pendiente, iniciarTransicion] = useTransition();
+  const [montado, setMontado] = useState(false);
+  const [estado, setEstado] = useState(vista.estado);
+  const [distrito, setDistrito] = useState(vista.distrito);
+  const [q, setQ] = useState(vista.q);
+  const [sinDevolucion, setSinDevolucion] = useState(vista.sinDevolucion);
+  const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ultimaVista = useRef(vista);
+  ultimaVista.current = vista;
+
+  // Sin JavaScript el formulario sigue siendo un GET con su boton "Filtrar":
+  // el boton se esconde recien cuando este componente monto y puede navegar.
+  useEffect(() => setMontado(true), []);
+
+  // La vista tambien cambia por fuera de estos campos: "Limpiar filtros", el
+  // boton de atras, o el enlace de una tarjeta del resumen. Los campos siguen a
+  // la URL.
+  useEffect(() => {
+    setEstado(vista.estado);
+    setDistrito(vista.distrito);
+    setSinDevolucion(vista.sinDevolucion);
+    if (!temporizador.current) setQ(vista.q);
+  }, [vista.estado, vista.distrito, vista.q, vista.sinDevolucion]);
+
+  useEffect(
+    () => () => {
+      if (temporizador.current) clearTimeout(temporizador.current);
+    },
+    [],
+  );
+
+  const navegar = (cambios: Partial<Vista>) => {
+    iniciarTransicion(() => {
+      router.replace(armarEnlace(ultimaVista.current, { ...cambios, pagina: 1 }), {
+        scroll: false,
+      });
+    });
+  };
+
+  return {
+    montado,
+    pendiente,
+    estado,
+    distrito,
+    q,
+    sinDevolucion,
+    cambiarEstado(valor: string) {
+      setEstado(valor);
+      navegar({ estado: valor });
+    },
+    cambiarDistrito(valor: string) {
+      setDistrito(valor);
+      navegar({ distrito: valor });
+    },
+    cambiarSinDevolucion(valor: boolean) {
+      setSinDevolucion(valor);
+      navegar({ sinDevolucion: valor });
+    },
+    cambiarBusqueda(valor: string) {
+      setQ(valor);
+      if (temporizador.current) clearTimeout(temporizador.current);
+      temporizador.current = setTimeout(() => {
+        temporizador.current = null;
+        navegar({ q: valor });
+      }, DEMORA_BUSQUEDA);
+    },
+    /** Enter en el buscador: no esperar la demora. */
+    buscarYa() {
+      if (temporizador.current) {
+        clearTimeout(temporizador.current);
+        temporizador.current = null;
+      }
+      navegar({ q });
+    },
+  };
+}
+
 /** Filtros en cero, para el enlace de "Limpiar filtros". */
 const VISTA_LIMPIA: Partial<Vista> = {
   estado: "",
@@ -243,6 +346,7 @@ export default function PanelBandeja({
   ahora: number;
 }) {
   const soloLectura = rol === "lector";
+  const filtros = usarFiltrosEnVivo(vista);
   const deuda = resumen.noFactiblesSinDevolucion;
 
   const paginas = Math.max(1, Math.ceil(total / porPagina));
@@ -367,7 +471,13 @@ export default function PanelBandeja({
       <form
         method="get"
         action={RUTA}
-        key={`${vista.estado}|${vista.distrito}|${vista.q}|${vista.sinDevolucion}`}
+        // Con JavaScript los campos ya navegaron solos; el submit solo llega
+        // cuando alguien aprieta Enter, y ahi se busca sin esperar la demora.
+        onSubmit={(evento) => {
+          if (!filtros.montado) return;
+          evento.preventDefault();
+          filtros.buscarYa();
+        }}
         className="mt-5 flex flex-wrap items-end gap-3"
       >
         {/* El orden elegido sobrevive al filtro; la página vuelve a la primera. */}
@@ -378,7 +488,8 @@ export default function PanelBandeja({
           <span className="font-medium">Estado</span>
           <select
             name="estado"
-            defaultValue={vista.estado}
+            value={filtros.estado}
+            onChange={(evento) => filtros.cambiarEstado(evento.target.value)}
             style={estiloCampo}
             className="rounded-xl px-3 py-2"
           >
@@ -395,7 +506,8 @@ export default function PanelBandeja({
           <span className="font-medium">Distrito</span>
           <select
             name="distrito"
-            defaultValue={vista.distrito}
+            value={filtros.distrito}
+            onChange={(evento) => filtros.cambiarDistrito(evento.target.value)}
             style={estiloCampo}
             className="rounded-xl px-3 py-2"
           >
@@ -413,7 +525,8 @@ export default function PanelBandeja({
           <input
             type="search"
             name="q"
-            defaultValue={vista.q}
+            value={filtros.q}
+            onChange={(evento) => filtros.cambiarBusqueda(evento.target.value)}
             placeholder="Título o barrio (con o sin tildes)…"
             style={estiloCampo}
             className="w-64 rounded-xl px-3 py-2"
@@ -425,18 +538,23 @@ export default function PanelBandeja({
             type="checkbox"
             name="sindevolucion"
             value="1"
-            defaultChecked={vista.sinDevolucion}
+            checked={filtros.sinDevolucion}
+            onChange={(evento) => filtros.cambiarSinDevolucion(evento.target.checked)}
           />
           Solo los “no” sin devolución
         </label>
 
-        <button
-          type="submit"
-          className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
-          style={{ background: "var(--color-marca-700)" }}
-        >
-          Filtrar
-        </button>
+        {/* Sin JavaScript el filtro necesita su boton; con JavaScript los
+            campos ya buscan solos y el boton sobra. */}
+        {!filtros.montado && (
+          <button
+            type="submit"
+            className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
+            style={{ background: "var(--color-marca-700)" }}
+          >
+            Filtrar
+          </button>
+        )}
         {hayFiltro && (
           <Link href={armarEnlace(vista, VISTA_LIMPIA)} className="pb-3 text-sm underline">
             Limpiar filtros
@@ -454,12 +572,23 @@ export default function PanelBandeja({
       <div className="mt-6 grid gap-6 2xl:grid-cols-[minmax(0,2.2fr)_minmax(22rem,1fr)] 2xl:items-start">
         <section>
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-              {total === 0
-                ? "Ninguna idea coincide con estos filtros."
-                : `Mostrando ${formatearNumero(desde)}–${formatearNumero(hasta)} de ${formatearNumero(total)} ${
-                    total === 1 ? "idea" : "ideas"
-                  }`}
+            {/*
+              aria-live: como el listado ahora cambia solo, sin que nadie
+              apriete un boton, quien usa lector de pantalla necesita que le
+              avisen cuantos resultados quedaron.
+            */}
+            <p
+              className="text-sm"
+              aria-live="polite"
+              style={{ color: "var(--texto-suave)" }}
+            >
+              {filtros.pendiente
+                ? "Buscando…"
+                : total === 0
+                  ? "Ninguna idea coincide con estos filtros."
+                  : `Mostrando ${formatearNumero(desde)}–${formatearNumero(hasta)} de ${formatearNumero(total)} ${
+                      total === 1 ? "idea" : "ideas"
+                    }`}
             </p>
             {vista.orden === "prioridad" ? (
               <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
