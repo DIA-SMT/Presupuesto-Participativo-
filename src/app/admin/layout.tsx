@@ -10,7 +10,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const nombre = sesion ? await nombreDeLaCuenta(sesion.adminId, sesion.email) : null;
 
   return (
-    <div className="contenedor py-8">
+    <div className="contenedor-panel py-8">
       {/* Sin sesion no hay cabecera: /admin/ingresar se dibuja sola. */}
       {sesion && nombre && (
         <CabeceraPanel nombre={nombre} email={sesion.email} rol={sesion.rol} />

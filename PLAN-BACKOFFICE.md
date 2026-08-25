@@ -14,31 +14,44 @@ existe porque sin ella las demás se pisan entre sí. Lo que está marcado como
 |---|---|---|
 | 1 · Base | Hecha | — (migraciones, rate limit, filtros, devolución) |
 | 2 · Ediciones y cronograma | Hecha | `/admin/ediciones` |
-| 3 · Bandeja de revisión | Hecha | `/admin/bandeja` |
+| 3 · Bandeja de revisión | Hecha | `/admin` (era `/admin/bandeja`) |
 | 4 · Seguimiento sin mail | Hecha | `/ideas/seguimiento`, `/privacidad` |
 | 5 · Tablero | Hecha | `/admin/tablero` |
 | 6 · Aviso por mail | **No hecha** | depende de terceros del municipio |
 | 7 · Equipo y roles | Hecha | `/admin/equipo`, `/admin/password` |
+| 8 · Mejoras del panel | Hecha | reordenamiento, chat arrastrable |
+| 9 · Bitácora y acceso | Hecha | `/admin/bitacora`, acceso desde el sitio |
 
-Lo que falta para poder usar todo esto:
+Las tandas 8 y 9 no estaban en el plan original: salieron de un relevamiento de
+la sección de administración una vez que estuvo armada. Están más abajo.
 
-1. **Dejar el registro de migraciones al día en Supabase** (`npm run db:migrate`).
-   El esquema ya está completo — se aplicó por fuera del runner con
-   `drizzle-kit push` — pero `drizzle.__drizzle_migrations` está vacío. Las
-   `0000` a `0002` se hicieron reaplicables para poder correrlas sobre esa base
-   sin cambiar nada; sin ese paso, la próxima migración falla en la primera
-   sentencia. **No volver a usar `drizzle-kit push`**: es exactamente lo que la
-   tanda 1 vino a evitar.
-2. **Completar los cinco `PENDIENTE CONFIRMAR` de `/privacidad`**: responsable y
-   domicilio para pedidos sobre datos personales, número de inscripción en el
-   registro de la AAIP, país donde está alojada la base, canal para ejercer
-   derechos, y plazo de conservación de las consultas del chatbot. Están
-   marcados en la página a propósito: no los inventamos.
-3. **Revisión legal** del texto de `/privacidad` y del consentimiento
-   (`VERSION_CONSENTIMIENTO`, hoy `"2026-08"`) antes de publicarlos.
-4. **`npm run lint` sigue roto** de antes: el script usa `next lint`, que Next 16
+**La base está al día**: las cinco migraciones (`0000` a `0004`) aplicadas en
+Supabase, con su registro en `drizzle.__drizzle_migrations`. El esquema pasó de
+14 a 17 tablas.
+
+Lo que falta:
+
+1. **Completar los `PENDIENTE CONFIRMAR` de `/privacidad`.** Al revisarlos
+   quedaron en menos de los cinco que decía este documento: el responsable y el
+   domicilio ya están en la tabla `textos` (`contacto-organismo` y
+   `contacto-direccion`), el país de alojamiento se sabe (Supabase en
+   `sa-east-1`, São Paulo) y el plazo de conservación del chat es una decisión
+   del equipo, no un trámite. **Falta de verdad una sola cosa: una casilla de
+   correo atendida** para que el vecino ejerza acceso, rectificación y
+   supresión. La inscripción en el registro de la AAIP es un trámite aparte y no
+   bloquea publicar la página.
+2. **Revisión legal** del texto de `/privacidad` y del consentimiento
+   (`VERSION_CONSENTIMIENTO`, hoy `"2026-08"`) antes de publicarlos. Ojo: la
+   página **ya está enlazada desde el pie del sitio** y hoy muestra los
+   marcadores `PENDIENTE CONFIRMAR`. Antes de desplegar, o se completan o se
+   saca el enlace del pie.
+3. **`npm run lint` sigue roto** de antes: el script usa `next lint`, que Next 16
    eliminó, y la config de ESLint falla al cargarse. Es independiente de este
-   trabajo.
+   trabajo, y significa que **ningún archivo de estas tandas pasó por el
+   linter**.
+4. **`cambiarEtapa` ya deja rastro** (tanda 9), pero la idea que quedó sin hacer
+   es una consulta de unión de las tres bitácoras para una vista "todo lo que
+   pasó en el panel" ordenada por fecha. Hoy son tres listados separados.
 
 ---
 
@@ -75,7 +88,12 @@ tablas y los datos del 2025. Aplicarla ahí no recrea nada — solo registra el
 punto de partida en `drizzle.__drizzle_migrations`. Sobre una base vacía (PGlite
 en desarrollo) crea el esquema completo.
 
-**De la `0001` en adelante las migraciones no se editan a mano.**
+**De la `0003` en adelante las migraciones no se editan a mano.** La `0001` y la
+`0002` también terminaron siendo reaplicables, y por el mismo motivo que la
+`0000`: alguien aplicó el esquema por fuera del runner con `drizzle-kit push`, y
+el registro quedó vacío. Corregirlas fue la única forma de que el runner pudiera
+correr sin fallar en la primera sentencia. **No volver a usar `push`**: es
+exactamente lo que esta tanda vino a evitar.
 
 Verificado sobre una PGlite descartable: crea las 14 tablas desde cero, corre dos
 veces sin efecto, y aplicada sobre una base que ya tenía el esquema *y datos*
@@ -94,13 +112,12 @@ entender por qué — y recién entonces:
 npm run db:migrate
 ```
 
-#### Paso pendiente en Supabase
+#### Estado en Supabase
 
-La base de producción todavía **no tiene** la tabla de migraciones: hay que
-correr `npm run db:migrate` una vez contra ella para registrar el punto de
-partida. Antes de hacerlo: snapshot de Supabase. Si el pooler en modo transacción
-(puerto 6543) rechaza el DDL, usar el Session pooler en el 5432 — el script lo
-avisa en el mensaje de error.
+**Al día**: las cinco migraciones (`0000` a `0004`) aplicadas y registradas. Si
+alguna vez el pooler en modo transacción (puerto 6543) rechaza el DDL, hay que
+usar el Session pooler en el 5432 — el script lo avisa en el mensaje de error—
+y volver a 6543 después, porque la aplicación necesita el transaccional.
 
 ### 1.2 Tope de intentos en el login del backoffice
 
@@ -372,3 +389,176 @@ frontera de seguridad.
 - **Avance presupuestario.** La columna del tablero muestra el monto de la etapa
   actual sobre el total, no un acumulado. Si el equipo espera un acumulado, hace
   falta otra consulta.
+
+---
+
+## Tanda 8 — Mejoras del panel (hecha)
+
+Salió de mirar la sección de administración ya armada y hacer un relevamiento.
+El diagnóstico fue que había siete problemas, ordenados por impacto y no por
+esfuerzo.
+
+### 8.1 Ideas y Bandeja se solapaban
+
+**El problema de fondo, y el que definía todo lo demás.** `/admin` y
+`/admin/bandeja` editaban la misma cosa, pero solo la bandeja dejaba historial
+en `revisiones` y exigía devolución para rechazar. Mientras convivieran, se
+podía cambiar un estado por el camino que no deja rastro, y toda la auditoría de
+la tanda 3 era opcional.
+
+- **`/admin` ES la bandeja.** `/admin/bandeja` quedó como redirect permanente
+  308 que arrastra el querystring, para no romper enlaces ni marcadores.
+- **`tabla-ideas.tsx` eliminado**, y con él la acción `actualizarIdea`:
+  desapareció la última vía de escritura sin auditoría completa.
+
+### 8.2 La lista era una vitrina, no una herramienta
+
+Traía las 100 ideas de una, sin columnas ordenables ni paginado, y ordenadas por
+*ganadores primero, después por votos* — el orden de una vitrina. Para trabajar
+hace falta lo contrario: arriba lo que falta hacer.
+
+Ahora es una tabla con columnas ordenables en el servidor (mapeadas contra una
+lista blanca: nada del querystring llega al SQL), paginado de 25 con el total, y
+un filtro nuevo por "sin devolución escrita". El orden por defecto es
+**prioridad**: pendientes, después los "no" sin devolución, después el resto,
+por antigüedad dentro de cada grupo.
+
+### 8.3 La cabecera mostraba las métricas equivocadas
+
+Decía "100 ideas · 0 pendientes · 4 sin publicar · 0 votos" en una línea de
+texto corrido. Ninguna de esas cuatro le dice al equipo qué hacer hoy. Ahora son
+tarjetas accionables y la primera es la deuda real: **32 ideas no factibles sin
+devolución escrita**, o sea 32 vecinos con un "no" sin explicación. Enlaza a su
+filtro.
+
+### 8.4 El selector de etapa estaba demasiado a mano
+
+Es la acción con más consecuencias del panel — define lo que ve todo el sitio y
+si pasa a "votación" abre la votación pública — y estaba en la cabecera de la
+home, al lado del filtro, con un botón "Cambiar".
+
+Se mudó a `/admin/ediciones`, con una confirmación que **dice en palabras qué
+implica** según la etapa destino, en lugar de un "¿estás seguro?" genérico.
+
+### 8.5 La navegación no escalaba
+
+Nueve enlaces idénticos, sin estado activo. Ahora son tres grupos (el proceso,
+el contenido, la administración), con la sección activa marcada y
+`aria-current`, y "Mi contraseña" movido al bloque de la cuenta, que además
+muestra el nombre de la persona en lugar del correo.
+
+Medido: los chips daban **1.04:1** sobre su contenedor y su borde **1.31:1**,
+cuando el criterio 1.4.11 de WCAG pide 3:1 para lo que delimita un control. Por
+eso se veían como texto flotando y no como botones. Token nuevo
+`--borde-control`, derivado de `--texto` para servir en los dos temas. Se aplica
+a controles y **no** a bordes de tarjetas, que son decoración y no tienen
+requisito de contraste.
+
+### 8.6 El chat de consultas: se mueve, no se saca
+
+El relevamiento proponía sacarlo del panel; el equipo pidió lo contrario, que se
+pueda arrastrar. Hook nuevo `src/components/usar-arrastre.ts`:
+
+- Pointer Events, así anda con mouse, lápiz y dedo.
+- **Umbral de 4 px** para separar el clic del arrastre: sin eso, un clic corto
+  dejaba el chat corrido dos píxeles y no abría.
+- Acotado al viewport, recalculado al abrir el panel (que es mucho más alto que
+  el lanzador) y al cambiar el tamaño de la ventana.
+- Posición recordada en `localStorage`; un valor inválido o fuera de pantalla se
+  descarta al cargar.
+- Abajo de 640 px solo se mueve en vertical, para no romper el panel a ancho
+  completo.
+- Teclado: flechas (16 px), Shift+flechas (64 px) e Inicio para volver. No podía
+  quedar una función solo de mouse.
+
+### 8.7 El presupuesto de la idea se mudó a Obras
+
+Se editaba solo en la tabla vieja. La bandeja es para evaluar propuestas; la
+plata pertenece a la ejecución, y `/admin/obras` ya lo mostraba. La acción nueva
+deja fila en `revisiones` con el monto anterior y el nuevo (migración `0003`,
+que suma el valor `presupuesto` al enum `accion_revision`).
+
+No se agregó control manual de `estadoPresupuesto`: ese campo lo escribe
+`crearAvance` a partir del último avance, y un select a mano permite
+desincronizarlo del historial. Para retroceder una etapa se carga otro avance.
+
+### 8.8 El ancho del panel
+
+`/admin` usaba `contenedor`, que son 76rem: un ancho de **lectura**, pensado
+para que un párrafo del sitio público no quede larguísimo. El panel no se lee,
+se opera. Con 76rem partidos entre tabla y ficha, la tabla quedaba en unos
+715 px y se cortaban el barrio, la antigüedad y los votos.
+
+Utilidad nueva `contenedor-panel` (110rem) para el backoffice, y la división
+entre tabla y ficha pasa a aparecer **solo desde 1536 px**, no desde 1280: abajo
+de ese ancho la ficha va debajo y cada una usa todo el ancho. Medido: a 1280 px
+la tabla pasó de 715 a 1223 px sin recorte, y a 1600 px quedan 1044 px de tabla
+y 475 de ficha, lado a lado.
+
+## Tanda 9 — Bitácora del sistema y acceso al panel (hecha)
+
+### 9.1 La bitácora
+
+Había **10 acciones sin ningún rastro**, y varias son las más consecuentes que
+existen: `cambiarEtapa`, las tres de edición, las dos del cronograma,
+`guardarTexto` (puede reescribir cualquier texto público) y las dos de avances
+de obra, que son datos que el vecino ya vio.
+
+Tabla nueva `bitacora_sistema` (migración `0004`). Es la **tercera** bitácora y
+eso es a propósito: `revisiones` audita lo que se le hace a *una idea* y
+`bitacora_equipo` lo que se le hace a *una cuenta*. Mezclarlas convertiría el
+historial de una idea en un cajón de sastre; cada una tiene su granularidad y su
+retención.
+
+Guarda **el antes y el después en texto legible**, no solo la acción: "alguien
+cambió la etapa" no sirve, el valor está en "pasó de evaluación a votación". El
+valor anterior se lee de la base antes de escribir, y la fila va en la misma
+transacción que el cambio: si el cambio no se pudo hacer no hay registro, y si
+hay registro el cambio se hizo.
+
+Pantalla `/admin/bitacora` con filtros y paginado. La puede ver **cualquier rol,
+incluido `lector`**: auditar no necesita permiso de escritura, y es justo para
+lo que ese rol existe. No tiene ninguna acción de escritura, ni para un
+administrador: una bitácora que se puede corregir no prueba nada.
+
+### 9.2 El acceso desde el sitio
+
+Al panel solo se llegaba escribiendo la URL.
+
+- **Sin sesión**: un acceso discreto en el **pie**, "Acceso del equipo". Va en
+  el pie y no en el encabezado a propósito: el encabezado es del vecino, y un
+  "Ingresar" grande ahí le hace creer que necesita una cuenta para mirar el
+  sitio o para votar, cuando votar es otra cosa: se hace con el DNI por CIDITUC,
+  sin contraseña.
+- **Con sesión**: un atajo visible en el encabezado, con borde punteado para que
+  se lea como herramienta interna y no como una sección del sitio. Cualquier rol
+  lo ve; el panel por dentro ya restringe qué puede hacer cada uno.
+
+### 9.3 Un bug que apareció al probar
+
+Verificando la bitácora de punta a punta se descubrió que mandar el presupuesto
+**vacío** lo guardaba como **0** en lugar de dejarlo sin asignar, y que después
+no había forma de volver a vaciarlo. La causa es una trampa de zod: en
+
+    z.union([z.coerce.number().min(0), z.literal("")])
+
+`Number("")` es `0`, así que la rama del `coerce` matchea el vacío y gana; el
+chequeo `=== ""` de más abajo era código muerto. Afectaba el presupuesto de la
+edición y el monto y el porcentaje de un avance de obra. Helper nuevo
+`opcional()` que resuelve el vacío **antes** de coercionar.
+
+Vale como recordatorio de por qué se prueba contra la base y no solo con
+`typecheck`: el tipo era correcto, el dato no.
+
+## Lo que quedó abierto de estas dos tandas
+
+- `borrarAvance` sigue borrando sin confirmación.
+- Falta la vista "cómo lo ve el vecino" desde la ficha de una idea.
+- `estiloCampo` en los paneles todavía usa el borde decorativo en inputs y
+  selects. Ahora que existe `--borde-control` es un reemplazo mecánico, pero
+  toca también el sitio público y conviene mirarlo con capturas.
+- La mesa de ayuda no puede recuperar el código de seguimiento de un vecino: se
+  puede regenerar desde el `id`, pero no hay pantalla que lo muestre.
+- El chatbot no sabe de `/ideas/seguimiento`.
+- Una consulta de unión de las tres bitácoras, para una vista "todo lo que pasó
+  en el panel" ordenada por fecha.
