@@ -160,6 +160,21 @@ campo `notasMigracion` de cada idea, visible en la ficha pública):
 | `npm test` | Pruebas de normalización y point-in-polygon |
 | `npm run typecheck` | TypeScript sin emitir |
 
+### Cambios de esquema: siempre por migraciones
+
+Desde que existe la carpeta `drizzle/`, **todo cambio en `src/db/schema.ts` va
+por migración versionada**: editar el esquema, correr `npm run db:generate`
+(crea el SQL en `drizzle/` con un nombre descriptivo), revisar ese SQL, y
+aplicarlo con `npm run db:migrate`. La migración se commitea junto con el
+cambio del esquema.
+
+No usar `drizzle-kit push` (por eso no hay script para eso): `push` empuja el
+esquema sin dejar registro, y la base de producción lleva la cuenta de qué
+migraciones tiene aplicadas en `drizzle.__drizzle_migrations`. Un `push` por
+fuera desincroniza ese registro y la próxima migración de otra persona falla o,
+peor, pisa un cambio. Regla corta: si tocaste `schema.ts`, tu PR incluye un
+archivo nuevo en `drizzle/`.
+
 ## Pendientes conocidos
 
 - **CIDITUC**: el flujo OIDC está implementado (`/api/auth/*`) pero sin probar
