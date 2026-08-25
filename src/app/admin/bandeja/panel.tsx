@@ -444,7 +444,14 @@ export default function PanelBandeja({
         )}
       </form>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] xl:items-start">
+      {/*
+        La tabla y la ficha se ponen lado a lado SOLO desde 1536 px (2xl), no
+        desde 1280. Son nueve columnas que necesitan unos 900 px: partiendo una
+        pantalla de 1280 quedaban 715 y se cortaban el barrio, la antiguedad y
+        los votos. Abajo de ese ancho la ficha va debajo de la tabla y cada una
+        usa todo el ancho. Cuando entran las dos, la tabla se lleva el doble.
+      */}
+      <div className="mt-6 grid gap-6 2xl:grid-cols-[minmax(0,2.2fr)_minmax(22rem,1fr)] 2xl:items-start">
         <section>
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <p className="text-sm" style={{ color: "var(--texto-suave)" }}>

@@ -160,6 +160,20 @@
   padding-inline: 1.25rem;
 }
 
+/*
+ * Ancho del backoffice. Es mas ancho que `contenedor` a proposito: 76rem es un
+ * ancho de LECTURA, pensado para que un parrafo del sitio publico no quede
+ * larguisimo. El panel no se lee, se opera: son tablas de nueve columnas al
+ * lado de una ficha, y con 76rem la tabla quedaba en unos 715 px y se cortaban
+ * el barrio, la antiguedad y los votos.
+ */
+@utility contenedor-panel {
+  width: 100%;
+  max-width: 110rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+
 /* Enlace de salto al contenido, visible solo al tabular. */
 .salto-contenido {
   position: absolute;
