@@ -58,6 +58,16 @@ function crear(): BaseDatos {
     });
     return drizzleNodePg(pool, { schema });
   }
+  // PGlite escribe en ./data/pg: solo sirve en una maquina local. En Vercel
+  // sin DATABASE_URL conviene fallar con un mensaje claro antes que con un
+  // error criptico del filesystem de solo lectura.
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Falta DATABASE_URL en las variables de entorno del despliegue. " +
+        "Configurar la connection string del Transaction pooler de Supabase " +
+        "(puerto 6543) y volver a desplegar.",
+    );
+  }
   return drizzlePglite(new PGlite(RUTA_PGLITE), { schema });
 }
 

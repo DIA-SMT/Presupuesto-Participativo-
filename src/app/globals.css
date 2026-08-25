@@ -61,6 +61,11 @@
   --font-serif: "Noto Serif", ui-serif, Georgia, serif;
 }
 
+/*
+ * El sitio tiene una sola cara: la institucional clara. No se adapta al tema
+ * oscuro del sistema a proposito, para que la identidad municipal se vea
+ * igual en cualquier dispositivo.
+ */
 :root {
   --fondo: #ffffff;
   --fondo-suave: #f5f8fc;
@@ -81,28 +86,15 @@
    * borde decorativo --borde.
    *
    * El criterio 1.4.11 de WCAG pide 3:1 para lo que no es texto pero delimita
-   * un control. Medido, --borde sobre una tarjeta da 1.23:1 en claro y 1.31:1
-   * en oscuro: alcanza para separar dos superficies, no para que algo se lea
-   * como un boton. Este token sale de --texto, asi que sirve en los dos temas
-   * con una sola definicion.
+   * un control. Medido, --borde sobre una tarjeta da 1.23:1: alcanza para
+   * separar dos superficies, no para que algo se lea como un boton. Este token
+   * sale de --texto, asi que acompaña a la paleta con una sola definicion.
    *
    * El borde de una tarjeta o de un separador sigue usando --borde: son
    * decoracion y no tienen requisito de contraste.
    */
   --borde-control: color-mix(in srgb, var(--texto) 55%, transparent);
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fondo: #0c141f;
-    --fondo-suave: #111c2b;
-    --fondo-tarjeta: #141f30;
-    --borde: #243449;
-    --texto: #e8eef7;
-    --texto-suave: #9aa9c0;
-    color-scheme: dark;
-  }
+  color-scheme: only light;
 }
 
 @layer base {
@@ -216,9 +208,4 @@
 }
 .maplibregl-ctrl-group button + button {
   border-top-color: var(--borde) !important;
-}
-@media (prefers-color-scheme: dark) {
-  .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
-    filter: invert(1) hue-rotate(180deg);
-  }
 }

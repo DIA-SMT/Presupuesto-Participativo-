@@ -133,7 +133,10 @@ export async function POST(request: Request) {
   }
   const pregunta = ultima.texto.slice(0, MAX_LARGO);
 
-  const tope = Number(process.env.CHAT_RATE_LIMIT ?? 30);
+  // Un CHAT_RATE_LIMIT vacio o invalido en el entorno no debe apagar el chat.
+  const topeConfigurado = Number(process.env.CHAT_RATE_LIMIT);
+  const tope =
+    Number.isFinite(topeConfigurado) && topeConfigurado > 0 ? topeConfigurado : 30;
   const limite = await consumir(`chat:${ipHash}`, tope, 3600);
   if (!limite.permitido) {
     return Response.json(
