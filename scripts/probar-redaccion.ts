@@ -30,6 +30,18 @@ type Caso = {
   barrio?: string;
   /** Datos que NO tienen que aparecer en la salida: no los dijo la persona. */
   prohibido?: string[];
+  /**
+   * Porcentaje minimo de palabras nuevas que se espera EN ESTE CASO.
+   *
+   * No es un umbral global a proposito. Cuanto se puede mejorar un texto
+   * depende de cuanto aporto la persona: si nombro un uso del lugar y a quien
+   * afecta, se puede reordenar y explicitar bastante; si escribio dos hechos
+   * sueltos y ningun uso, limpiarlo es todo lo que se puede hacer sin inventar,
+   * y una salida parecida a la entrada es la salida CORRECTA. Un umbral unico
+   * marcaba en rojo justamente los casos donde portarse bien se ve igual que
+   * no hacer nada.
+   */
+  saltoEsperado?: number;
 };
 
 const CASOS: Caso[] = [
@@ -38,25 +50,40 @@ const CASOS: Caso[] = [
     campo: "problema",
     texto:
       "en la zona de atras del parque guillermina hay un gran espacio verde, que algunas veces se ven afectados por la basura y a la gente le gusta hacer deporte por esa zona.",
+    saltoEsperado: 25,
     prohibido: ["metros", "hectárea", "vecinos aproximadamente", "%", "canasto", "contenedor"],
   },
   {
     nombre: "texto corto y crudo",
     campo: "problema",
     texto: "en mi cuadra ay muchos pozos y cuando llueve se inunda todo",
-    prohibido: ["metros", "cuadras", "casas", "familias", "centímetros"],
+    // "circulación" y "cada vez que" los marco la auditoria: la persona nunca
+    // nombro un uso de la cuadra, y "cuando llueve" no es "cada vez que".
+    prohibido: [
+      "metros",
+      "cuadras",
+      "casas",
+      "familias",
+      "centímetros",
+      "circulación",
+      "circular",
+      "cada vez que",
+      "siempre",
+    ],
   },
   {
     nombre: "problema implicito, nunca lo nombra",
     campo: "problema",
     texto:
       "los chicos del barrio juegan a la pelota en la calle porque no hay otro lugar, pasan autos rapido por ahi",
+    saltoEsperado: 25,
     prohibido: ["accidente", "atropell", "km/h", "cantidad"],
   },
   {
     nombre: "solucion escrita como pedido",
     campo: "solucion",
     texto: "que pongan luces y arreglen los juegos de la placita asi los chicos pueden ir de noche",
+    saltoEsperado: 25,
     prohibido: ["LED", "luminarias de", "watts", "presupuesto", "$"],
   },
   {
@@ -64,7 +91,17 @@ const CASOS: Caso[] = [
     campo: "problema",
     texto:
       "hay un baldio al lado de la escuela que esta lleno de yuyos y basura, se juntan ratas, los chicos pasan por ahi todos los dias para ir a clase y las madres tienen miedo, antes lo limpiaban pero hace mucho que no viene nadie",
-    prohibido: ["metros", "cantidad de chicos", "hace dos años", "hace 5"],
+    // "estado de abandono" lo marco la auditoria: es una etiqueta
+    // administrativa sobre el inmueble que la persona no eligio.
+    prohibido: [
+      "metros",
+      "cantidad de chicos",
+      "hace dos años",
+      "hace 5",
+      "abandono",
+      "abandonado",
+      "usurpad",
+    ],
   },
   {
     nombre: "beneficios deducidos del contexto",
@@ -74,7 +111,20 @@ const CASOS: Caso[] = [
       "hay un baldio al lado de la escuela lleno de yuyos y basura, los chicos pasan por ahi todos los dias",
     solucion: "limpiar el terreno y hacer una plaza con juegos",
     barrio: "San Cayetano",
-    prohibido: ["cientos", "%", "300", "metros"],
+    // Las dos violaciones reales que encontro la auditoria estaban aca:
+    // "mejora la seguridad" (eje que nadie planteo) y "esa cuadra" / "las
+    // familias de San Cayetano" (alcance inflado).
+    prohibido: [
+      "cientos",
+      "%",
+      "300",
+      "metros",
+      "seguridad",
+      "cuadra",
+      "familias de San Cayetano",
+      "todo el barrio",
+      "abandonado",
+    ],
   },
 ];
 
@@ -134,8 +184,8 @@ async function pedir(caso: Caso): Promise<string> {
 
 /**
  * Dos senales automaticas, que no reemplazan leer la salida pero avisan rapido:
- * si el texto quedo practicamente igual (no hizo nada) y si aparecio alguna de
- * las palabras prohibidas (invento un dato).
+ * si el texto quedo por debajo del salto que ESE caso esperaba, y si aparecio
+ * alguna de las palabras prohibidas (invento un dato).
  */
 function medir(caso: Caso, salida: string) {
   const normal = (t: string) =>
@@ -198,8 +248,10 @@ async function main() {
       if (m.invento.length) {
         console.log(`${ROJO}INVENTO DATOS: ${m.invento.join(", ")}${FIN}`);
       }
-      if (caso.campo !== "beneficios" && m.cambio < 15) {
-        console.log(`${ROJO}CASI NO LO TOCO: solo ${m.cambio}% de palabras nuevas${FIN}`);
+      if (caso.saltoEsperado !== undefined && m.cambio < caso.saltoEsperado) {
+        console.log(
+          `${ROJO}SE QUEDO CORTO: ${m.cambio}% cuando este caso esperaba ${caso.saltoEsperado}%${FIN}`,
+        );
       }
       console.log("");
     } catch (causa) {
