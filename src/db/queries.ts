@@ -12,6 +12,7 @@ import {
   eq,
   ilike,
   inArray,
+  isNull,
   like,
   or,
   sql,
@@ -625,6 +626,50 @@ export async function getCategorias() {
     })
     .from(categorias)
     .orderBy(asc(categorias.orden));
+}
+
+export type IdeaComparable = {
+  id: number;
+  titulo: string;
+  problema: string | null;
+  slug: string;
+  publicada: boolean;
+};
+
+/**
+ * Ideas del mismo distrito contra las que comparar una propuesta nueva, para
+ * avisarle al vecino que ya hay algo parecido presentado.
+ *
+ * Incluye las NO publicadas a proposito: durante la etapa de ideas todavia no
+ * se publico ninguna, asi que comparar solo contra las publicadas no
+ * encontraria nada. Quien llama decide que mostrar: de una idea sin publicar no
+ * se puede revelar el titulo, porque seria filtrar el estado de moderacion.
+ *
+ * Quedan afuera las que ya se integraron a otra (`integrada_en_id`): su idea
+ * principal ya esta en la lista, y contarlas seria mostrar dos veces lo mismo.
+ */
+export async function getIdeasParaComparar(
+  edicionId: number,
+  distrito: number,
+): Promise<IdeaComparable[]> {
+  return db
+    .select({
+      id: ideas.id,
+      titulo: ideas.titulo,
+      problema: ideas.problema,
+      slug: ideas.slug,
+      publicada: ideas.publicada,
+    })
+    .from(ideas)
+    .innerJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(
+      and(
+        eq(ideas.edicionId, edicionId),
+        eq(distritos.numero, distrito),
+        isNull(ideas.integradaEnId),
+      ),
+    )
+    .limit(300);
 }
 
 /** Cuenta de votos reales registrados por el sitio nuevo, para la etapa de votacion. */
