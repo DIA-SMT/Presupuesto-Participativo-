@@ -534,6 +534,24 @@ export default function FormularioIdea({
       <div className="order-2 space-y-6 lg:order-1">
         <section className="space-y-4">
           <h2 className="text-lg font-bold">2. Contanos tu idea</h2>
+          {/*
+            El orden importa y no es obvio. La revision pide datos que la IA
+            tiene prohibido inventar (cuanta gente, desde cuando), asi que
+            formalizar antes de contestarlos deja un texto prolijo al que le
+            sigue faltando lo mismo. Se dice una vez, en una linea, y el resto
+            lo guia el panel de la revision cuando corresponde.
+          */}
+          <p className="text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+            Escribilo con tus palabras, como puedas.{" "}
+            {conIA ? (
+              <>
+                Después revisamos qué le falta, vos completás esos datos, y al final la IA te
+                ordena el texto.
+              </>
+            ) : (
+              <>Después revisamos qué le falta y vos decidís qué corregir.</>
+            )}
+          </p>
 
           <Campo etiqueta="Título de la idea" ayuda="Una línea que resuma la propuesta.">
             <input
@@ -794,9 +812,7 @@ export default function FormularioIdea({
         )}
 
         {revision && (
-          <PanelRevision
-            revision={revision}
-          />
+          <PanelRevision revision={revision} conIA={conIA} />
         )}
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
@@ -828,6 +844,27 @@ export default function FormularioIdea({
               style={{ color: "var(--texto-suave)" }}
             >
               Enviar sin revisar
+            </button>
+          )}
+
+          {/*
+            Volver a revisar. Sin esto el circuito que propone el panel no se
+            puede cerrar: despues de la primera revision el boton de submit pasa
+            a enviar, y la persona que corrige lo que se le senalo no tiene forma
+            de confirmar que quedo bien.
+          */}
+          {revision && (
+            <button
+              type="button"
+              disabled={!abierta || ocupado}
+              onClick={(evento) => {
+                const formulario = evento.currentTarget.form;
+                if (formulario && distrito) void revisar(new FormData(formulario), distrito);
+              }}
+              className="text-sm underline disabled:opacity-50"
+              style={{ color: "var(--texto-suave)" }}
+            >
+              Revisar de nuevo
             </button>
           )}
         </div>
@@ -1065,8 +1102,11 @@ function IconoChispa() {
  */
 function PanelRevision({
   revision,
+  conIA,
 }: {
   revision: RespuestaAsistente;
+  /** Si hay clave del modelo: sin ella no se menciona ningun boton de IA. */
+  conIA: boolean;
 }) {
   const { modo, faltantes, parecidas, senalamientos, aviso } = revision;
   const todoBien =
@@ -1123,6 +1163,20 @@ function PanelRevision({
               </li>
             ))}
           </ul>
+
+          {/* El paso siguiente, dicho en el momento en que hace falta. Sin esto
+              la revision termina en una lista de reproches y la persona no sabe
+              que se espera que haga con ella. */}
+          <p className="mt-3 text-sm leading-relaxed">
+            Completá esos datos en los campos de arriba y{" "}
+            <strong>volvé a revisar</strong>.{" "}
+            {conIA && (
+              <>
+                Cuando la información esté completa, el botón de IA de cada campo te ordena el
+                texto.
+              </>
+            )}
+          </p>
         </>
       )}
 
