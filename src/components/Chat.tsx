@@ -377,6 +377,28 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
               Enviar
             </button>
           </form>
+
+          {/* La advertencia va aca abajo, no en la bienvenida: la bienvenida se
+              lee una vez y despues sube y se pierde, y este aviso tiene que
+              estar a la vista en el momento en que la persona decide creerle a
+              una respuesta. El enlace apunta al bloque de IA del aviso legal
+              (#aviso-ia, adentro del <details> del pie: por eso se despliega
+              solo) y cierra el panel, que si no tapa la pagina de atras. */}
+          <p
+            className="px-4 pb-3 text-center text-[0.6875rem] leading-snug"
+            style={{ color: "var(--texto-suave)" }}
+          >
+            Respuestas generadas con inteligencia artificial sobre los datos publicados. Pueden
+            tener errores y no son una respuesta oficial del municipio.{" "}
+            <a
+              href="#aviso-ia"
+              onClick={() => setAbierto(false)}
+              className="underline"
+              style={{ color: "inherit" }}
+            >
+              Aviso legal
+            </a>
+          </p>
         </div>
       )}
     </>

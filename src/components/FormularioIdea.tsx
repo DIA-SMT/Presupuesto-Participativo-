@@ -716,6 +716,21 @@ function PanelRevision({
           )}
         </div>
       )}
+
+      {/* Cierra el panel entero, no solo la reescritura: el miedo razonable de
+          quien lee una revision automatica es que la maquina este puntuando su
+          idea, y el lugar para desmentirlo es el pie de la revision. */}
+      <p
+        className="mt-5 border-t pt-3 text-xs leading-relaxed"
+        style={{ borderColor: "var(--borde)", color: "var(--texto-suave)" }}
+      >
+        Esta revisión la hace un asistente de inteligencia artificial y puede equivocarse.{" "}
+        <strong>No evalúa tu propuesta ni decide si se publica</strong>: eso lo hace el equipo del
+        programa, y podés enviarla igual sin aplicar ningún cambio.{" "}
+        <a href="#aviso-ia" className="underline" style={{ color: "inherit" }}>
+          Aviso legal
+        </a>
+      </p>
     </section>
   );
 }

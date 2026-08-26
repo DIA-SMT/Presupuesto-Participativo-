@@ -209,3 +209,56 @@
 .maplibregl-ctrl-group button + button {
   border-top-color: var(--borde) !important;
 }
+
+/*
+ * Aviso legal del pie: cuando se llega por cualquiera de sus anclas la pestana
+ * queda marcada, para que no se pierda entre el resto del pie. La primera regla
+ * es para el ancla vieja al <details> mismo; la segunda, para las que apuntan
+ * adentro (#aviso-legal-texto desde la lista del pie, #aviso-ia desde el chat y
+ * el formulario de ideas), que ademas hacen que el navegador lo despliegue
+ * solo. El reparto de anclas esta explicado en src/components/AvisoLegal.tsx.
+ *
+ * Las dos reglas van separadas a proposito: un `:has()` desconocido invalidaria
+ * toda la lista de selectores, y con eso se perderia tambien el `:target`.
+ */
+#aviso-legal:target {
+  border-color: var(--color-marca-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-marca-600) 22%, transparent);
+}
+#aviso-legal:has(:target) {
+  border-color: var(--color-marca-600);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-marca-600) 22%, transparent);
+}
+
+/* Que el ancla no quede debajo del encabezado pegajoso. */
+#aviso-legal,
+#aviso-legal [id] {
+  scroll-margin-block-start: 6rem;
+}
+
+/*
+ * La pestana se abre y se cierra con el chevron, no con el triangulito nativo:
+ * `list-style: none` lo saca en los navegadores actuales y la regla
+ * ::-webkit-details-marker cubre a los Safari viejos. El giro va aca y no con
+ * `group-open:rotate-180` de Tailwind porque esa utilidad usa la propiedad
+ * `rotate` a traves de variables y no termina de aplicarse desde la variante de
+ * grupo.
+ */
+#aviso-legal > summary {
+  list-style: none;
+}
+#aviso-legal > summary::-webkit-details-marker {
+  display: none;
+}
+#aviso-legal > summary svg {
+  transition: rotate 200ms ease;
+}
+#aviso-legal[open] > summary svg {
+  rotate: 180deg;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #aviso-legal > summary svg {
+    transition: none;
+  }
+}

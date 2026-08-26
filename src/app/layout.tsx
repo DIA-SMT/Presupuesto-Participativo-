@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
 import AccesoPanel from "@/components/AccesoPanel";
+import AvisoLegal from "@/components/AvisoLegal";
 import Chat from "@/components/Chat";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
 import { getEdicionActiva, getTextos } from "@/db/queries";
@@ -209,6 +210,20 @@ export default async function RootLayout({
                     </Link>
                   </li>
                 ))}
+                {/* Fuera de la lista de arriba porque no es una ruta: es la
+                    pestaña que esta unos centimetros mas abajo, en este mismo
+                    pie. Va con <a> y no con <Link> por lo mismo. Apunta al
+                    parrafo de adentro (#aviso-legal-texto) y no al <details>,
+                    que es lo que hace que se despliegue solo. */}
+                <li>
+                  <a
+                    href="#aviso-legal-texto"
+                    className="hover:underline"
+                    style={{ color: "var(--texto-suave)" }}
+                  >
+                    Aviso legal y condiciones de uso
+                  </a>
+                </li>
               </ul>
             </div>
 
@@ -240,6 +255,14 @@ export default async function RootLayout({
                 </p>
               )}
             </div>
+          </div>
+
+          {/* El aviso legal y las condiciones de uso, plegados. Van al pie y no
+              en una ruta propia: tienen que estar al alcance desde cualquier
+              pagina, y ahi los encuentra quien los busca sin estorbarle al
+              resto. El por que esta en src/components/AvisoLegal.tsx. */}
+          <div className="contenedor mt-10">
+            <AvisoLegal textos={textos} />
           </div>
 
           {/* Autoria: cierra todas las paginas del sitio. */}
