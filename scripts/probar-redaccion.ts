@@ -104,6 +104,18 @@ const CASOS: Caso[] = [
     ],
   },
   {
+    // El caso que justifica los aspectos de obra: una propuesta escueta, como
+    // la escribe un vecino, que tiene que poder llegar al nivel de las que
+    // ganan ("piso de hormigon llaneado", "cerco perimetral", "iluminacion").
+    // Ese vocabulario NO puede aparecer en el texto: tiene que venir en
+    // `detalles`, para que la persona lo tilde.
+    nombre: "propuesta escueta: tiene que ofrecer aspectos de obra",
+    campo: "solucion",
+    texto: "quiero una canchita para que los chicos jueguen al futbol en el terreno del club",
+    saltoEsperado: 20,
+    prohibido: ["hormigón", "LED", "perimetral", "reglamentaria", "metros", "$"],
+  },
+  {
     nombre: "beneficios deducidos del contexto",
     campo: "beneficios",
     texto: "",
@@ -134,7 +146,7 @@ const ROJO = "[31m";
 const GRIS = "[90m";
 const FIN = "[0m";
 
-async function pedir(caso: Caso): Promise<string> {
+async function pedir(caso: Caso): Promise<{ texto: string; detalles: string[] }> {
   const cliente = crearCliente();
   const sistema =
     caso.campo === "beneficios" ? SISTEMA_BENEFICIOS : sistemaFormalizar(caso.campo);
@@ -168,18 +180,35 @@ async function pedir(caso: Caso): Promise<string> {
       json_schema: {
         name: "texto_del_campo",
         strict: true,
-        schema: {
-          type: "object",
-          properties: { texto: { type: "string" } },
-          required: ["texto"],
-          additionalProperties: false,
-        },
+        // El mismo esquema que usa la ruta: `solucion` devuelve tambien los
+        // aspectos de obra para ofrecer, los otros dos campos no.
+        schema:
+          caso.campo === "solucion"
+            ? {
+                type: "object",
+                properties: {
+                  texto: { type: "string" },
+                  detalles: { type: "array", items: { type: "string" } },
+                },
+                required: ["texto", "detalles"],
+                additionalProperties: false,
+              }
+            : {
+                type: "object",
+                properties: { texto: { type: "string" } },
+                required: ["texto"],
+                additionalProperties: false,
+              },
       },
     },
   });
 
   const crudo = respuesta.choices[0]?.message?.content ?? "{}";
-  return String(JSON.parse(crudo).texto ?? "").trim();
+  const salida = JSON.parse(crudo) as { texto?: string; detalles?: string[] };
+  return {
+    texto: String(salida.texto ?? "").trim(),
+    detalles: (salida.detalles ?? []).map((d) => d.trim()).filter(Boolean),
+  };
 }
 
 /**
@@ -235,10 +264,23 @@ async function main() {
     }
 
     try {
-      const salida = await pedir(caso);
+      const { texto: salida, detalles } = await pedir(caso);
       console.log(`${VERDE}DEVOLVIO:${FIN} ${salida}\n`);
 
+      if (detalles.length) {
+        console.log(`${VERDE}OFRECE PARA TILDAR:${FIN} ${detalles.join("  ·  ")}\n`);
+      }
+
       const m = medir(caso, salida);
+      // El punto de los aspectos de obra es que van APARTE. Si alguno se colo
+      // dentro del texto, la persona no lo eligio y la regla se rompio.
+      const colados = detalles.filter((d) =>
+        salida.toLowerCase().includes(d.toLowerCase()),
+      );
+      if (colados.length) {
+        console.log(`${ROJO}METIO EN EL TEXTO lo que tenia que ofrecer: ${colados.join(", ")}${FIN}`);
+      }
+
       const senal =
         caso.campo === "beneficios"
           ? `${m.largoDespues} caracteres`

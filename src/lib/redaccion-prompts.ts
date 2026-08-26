@@ -74,18 +74,50 @@ Mirá lo que pasó ahí: se ordenó (primero de qué lugar se habla, después qu
 
 /** Sistema para formalizar el problema o la solucion que escribio la persona. */
 export function sistemaFormalizar(campo: "problema" | "solucion"): string {
+  // Como se le pregunto en el formulario. Importa que coincida: la persona
+  // escribio respondiendo esa pregunta y no otra.
   const queEs =
     campo === "problema"
-      ? "el problema que quiere resolver en su barrio"
-      : "la obra o intervención que propone para resolverlo";
+      ? "por qué hace falta lo que propone: qué pasa hoy en su barrio y a quién afecta"
+      : "qué quiere proponer para su barrio";
 
   // Cada campo se queda en lo suyo. Sin esta regla el modelo cierra el problema
   // con la propuesta ("propongo que asfalten..."): queda simpatico y mezcla dos
   // campos que el equipo tecnico lee por separado.
   const suCarril =
     campo === "problema"
-      ? `Este campo describe **solamente el problema**: de qué lugar o situación se habla, qué pasa ahí, a quién afecta y desde cuándo, si lo dijo. NO incluyas la obra que se pide, ni la solución, ni una frase tipo "propongo que…": eso va en otro campo del formulario. Tampoco repitas el título de la propuesta.`
-      : `Este campo describe **solamente la obra o intervención** que se propone: qué habría que hacer y dónde. No vuelvas a contar el problema, que ya está en otro campo del formulario.`;
+      ? `Este campo responde **por qué hace falta**: qué pasa hoy en el lugar, a quién afecta y desde cuándo, si lo dijo. NO incluyas la obra que se pide, ni una frase tipo "propongo que…": eso va en otro campo del formulario. Tampoco repitas el título de la propuesta.`
+      : `Este campo responde **qué se quiere proponer**: qué habría que construir, arreglar o poner, y dónde. No vuelvas a contar el problema, que ya está en otro campo del formulario.`;
+
+  /*
+   * Solo en `solucion`, y solo como oferta aparte del texto.
+   *
+   * Es la respuesta a un problema real: las propuestas que ganan estan escritas
+   * con vocabulario de obra ("piso de hormigon llaneado", "delimitacion
+   * reglamentaria de canchas", "cerco perimetral"), y un vecino que escribe
+   * "una canchita para los chicos" nunca llega ahi. Pero meterselo en el texto
+   * seria inventar datos, que es exactamente lo que la regla absoluta prohibe.
+   *
+   * La salida: se ofrecen como lista para tildar. El texto no los incluye hasta
+   * que la persona elige, y entonces los elige ella. Cambia quien decide, no la
+   * regla.
+   */
+  const detalles =
+    campo !== "solucion"
+      ? ""
+      : `
+
+# Además del texto: los aspectos para ofrecer
+
+Devolvés también \`detalles\`: entre 0 y 6 aspectos de obra que el municipio suele pedir para algo como lo que la persona propone, y que **ella no mencionó**.
+
+- Frases cortas, en minúscula, sin verbo: "piso de hormigón alisado", "iluminación para uso nocturno", "cerco perimetral", "bancos", "cestos de basura", "señalización", "rampa de acceso", "delimitación de canchas".
+- **No los pongas en el texto.** Van aparte, en \`detalles\`, para que la persona elija cuáles quiere. Si los metés en el texto le estás poniendo en la boca algo que no dijo.
+- Sin medidas, cantidades ni montos: "cerco perimetral", nunca "cerco perimetral de 40 metros".
+- Que sean del tipo de obra que ella propone. Si propone una plaza, no ofrezcas "asfaltado".
+- Si de su texto no se entiende qué obra es, devolvés la lista vacía.
+
+Si en el pedido vienen \`<aspecto_elegido>\`, esos SÍ van dentro del texto: la persona los eligió. Incorporalos como parte natural de lo que propone, sin agregarles medidas ni cantidades, y sin sumar ningún aspecto que no esté en esa lista.`;
 
   return `${COMUN}
 
@@ -106,9 +138,7 @@ Concretamente:
 - Puede quedar más largo que el original si ese largo viene de ordenar y de explicitar. No de rellenar, ni de repetir la misma idea con otras palabras.
 - Mantené el sentido y las prioridades de la persona. Es su propuesta, no la tuya.
 
-${EJEMPLO}
-
-Devolvés únicamente el texto formalizado.`;
+${EJEMPLO}${detalles}`;
 }
 
 /**

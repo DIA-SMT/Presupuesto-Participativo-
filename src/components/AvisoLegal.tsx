@@ -162,8 +162,8 @@ export default function AvisoLegal({ textos }: { textos: Record<string, string> 
             <FuncionIA
               titulo="El asistente de carga de ideas"
               color="var(--color-cat-ambiental)"
-              queHace="Cuando presentás una idea puede ordenarte lo que escribiste, para que se entienda mejor. En el problema y en la solución no escribe por vos: parte del texto que vos cargaste y solo lo formaliza. En el campo de beneficios, que es opcional, puede redactar un texto deduciéndolo del problema y la solución que vos contaste. También puede avisarte si ya hay una propuesta parecida y señalarte qué le falta a la tuya."
-              limite="Nunca completa el formulario solo: el texto aparece aparte y se carga únicamente si apretás «usar este texto», y después lo podés editar. Es una sugerencia y nada más: podés ignorarla, y lo que se envía es siempre lo que vos elegís. No evalúa tu propuesta, no la puntúa y no influye en su suerte."
+              queHace="Cuando presentás una idea puede ordenarte lo que escribiste, para que se entienda mejor. En qué querés proponer y en por qué hace falta no escribe por vos: parte del texto que vos cargaste y solo lo formaliza, sin agregarle datos. En el campo de quiénes se benefician, que es opcional, puede redactar un texto deduciéndolo de lo que ya contaste. Aparte, sobre lo que querés proponer, puede ofrecerte una lista de detalles de obra que el municipio suele pedir (el tipo de piso, la iluminación, un cerco) para que elijas cuáles agregar. También puede avisarte si ya hay una propuesta parecida y señalarte qué le falta a la tuya."
+              limite="Nunca completa el formulario solo: el texto aparece aparte y se carga únicamente si apretás «usar este texto», y después lo podés editar. Los detalles de obra son casillas: ninguno entra a tu propuesta si no lo tildás vos. Es una sugerencia y nada más: podés ignorarla, y lo que se envía es siempre lo que vos elegís. No evalúa tu propuesta, no la puntúa y no influye en su suerte."
             />
             <FuncionIA
               titulo="El informe de impacto"

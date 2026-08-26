@@ -72,6 +72,18 @@ export type RespuestaRedactar = {
   /** "formalizado" partio del texto de la persona; "redactado" lo dedujo. */
   modo: "formalizado" | "redactado";
   texto: string;
+  /**
+   * Aspectos tecnicos que el municipio suele pedir para una obra asi y que la
+   * persona no menciono. Van SEPARADOS del texto a proposito: son una oferta,
+   * no un agregado. El formulario los muestra como casillas y solo entran al
+   * texto si la persona los tilda, y en ese caso vuelven en `agregar`.
+   *
+   * Es la unica via por la que aparece vocabulario tecnico que la persona no
+   * escribio, y existe porque sin eso una propuesta de vecino no llega nunca al
+   * nivel de las que ganan (ver el comentario de src/lib/redaccion-prompts.ts).
+   * La diferencia con inventar es quien decide: acá decide ella, tildando.
+   */
+  detalles?: string[];
 };
 
 /**
@@ -88,21 +100,48 @@ const esquema = z.object({
   problema: z.string().trim().max(LARGOS.problema).nullish(),
   solucion: z.string().trim().max(LARGOS.solucion).nullish(),
   beneficios: z.string().trim().max(LARGOS.beneficios).nullish(),
+  /**
+   * Los aspectos tecnicos que la persona tildo de la lista que se le ofrecio.
+   * Se topea en 8: es una lista para elegir, no un canal para meter texto
+   * arbitrario en el prompt.
+   */
+  agregar: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
 });
+
+const PROP_TEXTO = {
+  texto: {
+    type: "string",
+    description: "El texto del campo, listo para pegar. Sin titulo ni vinetas.",
+  },
+} as const;
 
 const ESQUEMA_SALIDA = {
   type: "object",
-  properties: {
-    texto: {
-      type: "string",
-      description: "El texto del campo, listo para pegar. Sin titulo ni vinetas.",
-    },
-  },
+  properties: PROP_TEXTO,
   required: ["texto"],
   additionalProperties: false,
 } as const;
 
-const salidaModelo = z.object({ texto: z.string().min(1).max(5000) });
+/** Solo para `solucion`: el texto mas la lista de aspectos para ofrecer. */
+const ESQUEMA_SALIDA_SOLUCION = {
+  type: "object",
+  properties: {
+    ...PROP_TEXTO,
+    detalles: {
+      type: "array",
+      description:
+        "Entre 0 y 6 aspectos tecnicos que la persona NO menciono, como frases cortas. Van aparte del texto.",
+      items: { type: "string" },
+    },
+  },
+  required: ["texto", "detalles"],
+  additionalProperties: false,
+} as const;
+
+const salidaModelo = z.object({
+  texto: z.string().min(1).max(5000),
+  detalles: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
+});
 
 // ---------------------------------------------------------------------------
 // Handler
@@ -179,6 +218,11 @@ export async function POST(request: Request) {
   const sistema =
     campo === "beneficios" ? SISTEMA_BENEFICIOS : sistemaFormalizar(campo);
 
+  // Los aspectos tecnicos solo tienen sentido en `solucion`: son detalles de la
+  // obra que se propone, no del problema ni de los beneficios.
+  const ofreceDetalles = campo === "solucion";
+  const elegidos = ofreceDetalles ? (entrada.agregar ?? []) : [];
+
   try {
     const cliente = crearCliente();
     const respuesta = await cliente.chat.completions.create({
@@ -186,11 +230,18 @@ export async function POST(request: Request) {
       max_tokens: MAX_TOKENS,
       messages: [
         { role: "system", content: sistema },
-        { role: "user", content: mensaje(campo, entrada, nombreCategoria) },
+        {
+          role: "user",
+          content: mensaje(campo, entrada, nombreCategoria, elegidos),
+        },
       ],
       response_format: {
         type: "json_schema",
-        json_schema: { name: "texto_del_campo", strict: true, schema: ESQUEMA_SALIDA },
+        json_schema: {
+          name: "texto_del_campo",
+          strict: true,
+          schema: ofreceDetalles ? ESQUEMA_SALIDA_SOLUCION : ESQUEMA_SALIDA,
+        },
       },
     });
 
@@ -215,10 +266,17 @@ export async function POST(request: Request) {
       ok: true,
     });
 
+    // Se filtran los que la persona ya eligio: volver a ofrecerlos despues de
+    // haberlos agregado deja casillas que no hacen nada.
+    const detalles = (salida.detalles ?? [])
+      .map((d) => d.trim())
+      .filter((d) => d && !elegidos.some((e) => e.toLowerCase() === d.toLowerCase()));
+
     return Response.json({
       campo,
       modo: campo === "beneficios" && !propio ? "redactado" : "formalizado",
       texto: final,
+      ...(ofreceDetalles ? { detalles } : {}),
     } satisfies RespuestaRedactar);
   } catch (causa) {
     console.error("[redactar]", causa);
@@ -258,6 +316,7 @@ function mensaje(
   campo: Campo,
   entrada: z.infer<typeof esquema>,
   nombreCategoria: string,
+  elegidos: string[],
 ): string {
   const ubicacion = [
     `<barrio>${entrada.barrio ?? "no indicado"}</barrio>`,
@@ -284,12 +343,24 @@ function mensaje(
   // problema repitiendolo ("propongo el arreglo de la calle del barrio"). Para
   // formalizar un campo no aporta nada, y tienta a mezclar campos.
   const etiqueta = campo === "problema" ? "problema" : "solucion";
-  return [
+  const partes = [
     `Formalizá este texto que escribió la persona. Es su ${etiqueta}.`,
     "",
     ...ubicacion,
     `<${etiqueta}_escrito_por_la_persona>${entrada[campo] ?? ""}</${etiqueta}_escrito_por_la_persona>`,
-  ].join("\n");
+  ];
+
+  // La persona tildo aspectos de la lista que se le ofrecio. Van delimitados
+  // igual que el resto: son datos que ELLA eligio, no instrucciones.
+  if (elegidos.length) {
+    partes.push(
+      "",
+      "La persona eligió agregar estos aspectos a su propuesta. Incorporalos al texto:",
+      ...elegidos.map((d) => `<aspecto_elegido>${d}</aspecto_elegido>`),
+    );
+  }
+
+  return partes.join("\n");
 }
 
 async function registrar(datos: {
