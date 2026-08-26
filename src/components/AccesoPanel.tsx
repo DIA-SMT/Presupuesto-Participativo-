@@ -1,24 +1,22 @@
 "use client";
 
 /**
- * La unica puerta al backoffice desde el sitio publico. Hasta ahora al panel se
- * llegaba escribiendo /admin en la barra de direcciones.
+ * La unica puerta al backoffice desde el sitio publico, a la derecha del
+ * encabezado. Segun haya o no sesion del equipo:
  *
- * Son dos accesos distintos porque son dos personas distintas, y la diferencia
- * es deliberada:
+ *  - SIN sesion: el boton "Ingresar", que lleva a /admin/ingresar. Estuvo
+ *    primero al pie, en letra chica, para no hacerle creer al vecino que
+ *    necesita usuario y contrasena para mirar el sitio o votar (no los
+ *    necesita: para participar entra con su DNI por CIDITUC, sin contrasena).
+ *    Pero al pie no lo encontraba nadie, empezando por el propio equipo, y
+ *    Lucas pidio el boton a la vista en el encabezado (26/08/2026). La
+ *    confusion posible la desarma la pantalla de destino: /admin/ingresar dice
+ *    a quien esta dirigida.
  *
- *  - `lugar="pie"`, SIN sesion del equipo: un enlace discreto al pie, "Acceso
- *    del equipo municipal". Va al pie y NO al encabezado a proposito: el
- *    encabezado es del vecino, y un boton de "Ingresar" ahi le hace creer que
- *    necesita usuario y contrasena para mirar el sitio o para votar. No los
- *    necesita: para participar entra con su DNI por CIDITUC, que es otra cosa
- *    (cookie pp_votante, sin contrasena). De ahi que el texto del enlace nombre
- *    al equipo municipal y no diga solo "Ingresar".
- *
- *  - `lugar="encabezado"`, CON sesion del equipo: ahi si un atajo visible, con
- *    la cuenta a la vista. Quien tiene la cookie pp_admin es del equipo y
- *    quiere llegar rapido. Lo ve cualquier rol: adentro, cada pantalla y cada
- *    accion releen el rol de la base y recortan lo que se puede hacer.
+ *  - CON sesion: el atajo al panel con la cuenta a la vista. Quien tiene la
+ *    cookie pp_admin es del equipo y quiere llegar rapido. Lo ve cualquier
+ *    rol: adentro, cada pantalla y cada accion releen el rol de la base y
+ *    recortan lo que se puede hacer.
  *
  * Por que es un componente cliente
  * --------------------------------
@@ -47,35 +45,49 @@ function estaEnElPanel(pathname: string): boolean {
 }
 
 export default function AccesoPanel({
-  lugar,
   cuenta,
 }: {
-  lugar: "encabezado" | "pie";
   /** Correo de la sesion del equipo, o null si no hay sesion. */
   cuenta: string | null;
 }) {
   const pathname = usePathname();
   if (estaEnElPanel(pathname)) return null;
-
-  if (lugar === "encabezado") {
-    // Sin sesion no hay atajo en el encabezado: el vecino no tiene nada que
-    // hacer con el panel. Su puerta es el enlace del pie.
-    if (!cuenta) return null;
-    return <AtajoAlPanel cuenta={cuenta} />;
-  }
-
-  // Con sesion el enlace del pie sobra: el atajo del encabezado ya lleva al
-  // panel, y /admin/ingresar redirige a /admin de todos modos.
-  if (cuenta) return null;
-  return <EnlaceDelEquipo />;
+  return cuenta ? <AtajoAlPanel cuenta={cuenta} /> : <BotonIngresar />;
 }
 
 /**
- * Atajo del encabezado. No entra en el `<nav>` de las secciones del sitio ni
- * se pinta como esas pastillas: es una herramienta interna, no una seccion mas.
- * El borde punteado y el icono de controles lo dicen sin depender del color,
- * y el borde usa --borde-control porque delimita un control (WCAG 1.4.11 pide
- * 3:1, y --borde queda en 1.2:1).
+ * El boton de ingreso. No entra en el `<nav>` de las secciones ni se pinta
+ * como esas pastillas: es una puerta, no una seccion del sitio. Secundario a
+ * proposito (borde y fondo de tarjeta, como los botones secundarios del
+ * hero): el protagonista del encabezado sigue siendo el llamado de la etapa
+ * ("Presenta tu idea" / "Votar"), no el login.
+ *
+ * `rel="nofollow"` acompana al `robots: noindex` de /admin/ingresar: la puerta
+ * del backoffice no tiene por que estar en un buscador.
+ */
+function BotonIngresar() {
+  return (
+    <Link
+      href="/admin/ingresar"
+      rel="nofollow"
+      className="flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition hover:brightness-95 sm:py-1.5"
+      style={{
+        background: "var(--fondo-tarjeta)",
+        border: "1px solid var(--borde-control)",
+        color: "var(--color-marca-700)",
+      }}
+    >
+      <IconoPersona />
+      Ingresar
+    </Link>
+  );
+}
+
+/**
+ * Atajo del encabezado con sesion. El borde punteado y el icono de controles
+ * dicen "herramienta interna" sin depender del color, y el borde usa
+ * --borde-control porque delimita un control (WCAG 1.4.11 pide 3:1, y --borde
+ * queda en 1.2:1).
  *
  * En telefono queda solo el icono: el encabezado ya lleva el logo con dos
  * lineas de texto y el correo no entra sin empujar todo. El `aria-label` fijo
@@ -104,21 +116,24 @@ function AtajoAlPanel({ cuenta }: { cuenta: string }) {
   );
 }
 
-/**
- * Enlace del pie. Discreto a proposito: mismo tamano y mismo color que la
- * letra chica que lo rodea, sin forma de boton. No dice "Ingresar" solo,
- * porque el vecino no tiene que preguntarse si eso es para el.
- *
- * `rel="nofollow"` acompana al `robots: noindex` de /admin/ingresar: la puerta
- * del backoffice no tiene por que estar en un buscador.
- */
-function EnlaceDelEquipo() {
+/** Silueta de persona: dice "cuenta", el gesto universal del login. */
+function IconoPersona() {
   return (
-    <p className="mt-8 text-center text-xs" style={{ color: "var(--texto-suave)" }}>
-      <Link href="/admin/ingresar" rel="nofollow" className="hover:underline">
-        Acceso del equipo municipal
-      </Link>
-    </p>
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20.5c1.5-3.4 4.2-5 7.5-5s6 1.6 7.5 5" />
+    </svg>
   );
 }
 
