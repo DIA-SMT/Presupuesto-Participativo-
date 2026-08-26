@@ -20,6 +20,23 @@ async function main() {
   console.log("columnas de costo y origen en chat_consultas:");
   console.table(columnas);
 
+  const tablas = await sql<{ table_name: string }[]>`
+    SELECT table_name
+      FROM information_schema.tables
+     WHERE table_schema = 'public'
+     ORDER BY table_name
+  `;
+  console.log(`\ntablas (${tablas.length}): ${tablas.map((t) => t.table_name).join(", ")}`);
+
+  const acciones = await sql<{ enumlabel: string }[]>`
+    SELECT enumlabel
+      FROM pg_enum
+      JOIN pg_type ON pg_type.oid = enumtypid
+     WHERE typname = 'accion_revision'
+     ORDER BY enumsortorder
+  `;
+  console.log(`accion_revision: ${acciones.map((a) => a.enumlabel).join(", ")}`);
+
   await sql.end();
 }
 

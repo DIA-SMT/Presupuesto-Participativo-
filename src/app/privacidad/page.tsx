@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Pendiente } from "@/components/ui";
 import { getTextos, UMBRAL_SUPRESION } from "@/db/queries";
 import { VERSION_CONSENTIMIENTO } from "@/lib/avisos";
 
@@ -337,21 +338,5 @@ function Bloque({ titulo, children }: { titulo: string; children: ReactNode }) {
       <h2 className="text-xl font-bold">{titulo}</h2>
       <div className="mt-3 space-y-3 text-[0.9375rem] leading-relaxed">{children}</div>
     </section>
-  );
-}
-
-/** Marcador visible de un dato que el municipio todavia tiene que confirmar. */
-function Pendiente({ children }: { children: ReactNode }) {
-  return (
-    <span
-      className="inline-block rounded-lg px-2.5 py-1 text-sm"
-      style={{
-        background: "color-mix(in srgb, var(--color-acento-600) 14%, transparent)",
-        border: "1px dashed var(--color-acento-600)",
-        color: "var(--texto)",
-      }}
-    >
-      <strong style={{ color: "var(--color-acento-600)" }}>PENDIENTE CONFIRMAR:</strong> {children}
-    </span>
   );
 }

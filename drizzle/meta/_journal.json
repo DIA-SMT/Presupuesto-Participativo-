@@ -43,6 +43,13 @@
       "when": 1787702512768,
       "tag": "0005_origen_consulta",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787710682954,
+      "tag": "0006_informes_impacto",
+      "breakpoints": true
     }
   ]
 }

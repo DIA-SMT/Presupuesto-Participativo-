@@ -33,6 +33,7 @@ import {
   faq,
   hitos,
   ideas,
+  informesImpacto,
   novedades,
   revisiones,
   textos,
@@ -996,7 +997,9 @@ export type AccionRevision =
   | "proclamacion"
   | "reapertura"
   /** Cambio del presupuesto asignado al proyecto (migracion 0003). */
-  | "presupuesto";
+  | "presupuesto"
+  /** Se pidio un informe de impacto para la idea (migracion 0006). */
+  | "informe";
 
 export type FilaRevision = {
   id: number;
@@ -1007,6 +1010,43 @@ export type FilaRevision = {
   nota: string | null;
   createdAt: Date;
 };
+
+export type InformeImpacto = {
+  resumen: string;
+  impactoPositivo: string[];
+  riesgos: string[];
+  preguntas: string[];
+  encuadre: string | null;
+  borradorDevolucion: string | null;
+  modelo: string;
+  pedidoPorNombre: string;
+  createdAt: Date;
+};
+
+/**
+ * El informe de impacto de una idea, si alguien ya lo pidio. Hay uno por idea:
+ * regenerarlo reemplaza al anterior, y cada pedido queda en `revisiones`.
+ */
+export async function getInformeImpacto(
+  ideaId: number,
+): Promise<InformeImpacto | null> {
+  const [fila] = await db
+    .select({
+      resumen: informesImpacto.resumen,
+      impactoPositivo: informesImpacto.impactoPositivo,
+      riesgos: informesImpacto.riesgos,
+      preguntas: informesImpacto.preguntas,
+      encuadre: informesImpacto.encuadre,
+      borradorDevolucion: informesImpacto.borradorDevolucion,
+      modelo: informesImpacto.modelo,
+      pedidoPorNombre: informesImpacto.pedidoPorNombre,
+      createdAt: informesImpacto.createdAt,
+    })
+    .from(informesImpacto)
+    .where(eq(informesImpacto.ideaId, ideaId))
+    .limit(1);
+  return fila ?? null;
+}
 
 /** Historial completo de una idea, mas nuevo primero. La tabla es append-only. */
 export async function getRevisiones(ideaId: number): Promise<FilaRevision[]> {

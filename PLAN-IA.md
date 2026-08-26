@@ -17,7 +17,7 @@ cierra un circuito de trabajo completo.
 |---|---|---|
 | 0 · Proveedor y base compartida | **Hecha** | — (sin pantallas: un cliente para las tres funciones, y el chat vuelve a vivir) |
 | 1 · Asistente de carga | **Hecha** | `/ideas/nueva` con revisión y reescritura antes de enviar |
-| 2 · Informe de impacto | Pendiente | Bloque en la ficha de `/admin` con borrador de devolución |
+| 2 · Informe de impacto | **Hecha** | Bloque en la ficha de `/admin` con borrador de devolución |
 | 3 · Transparencia | Pendiente | `/privacidad` al día, marcado de contenido generado |
 
 ## Decisiones tomadas

@@ -91,6 +91,10 @@ export const accionRevision = pgEnum("accion_revision", [
   "proclamacion",
   "reapertura",
   "presupuesto",
+  // Se pidio un informe de impacto (ver `informes_impacto`). Queda en el
+  // historial de la idea aunque no cambie nada: es plata publica y conviene
+  // saber que hubo un analisis automatico de por medio. Valor agregado en 0006.
+  "informe",
 ]);
 
 /** Cambios sobre las cuentas del backoffice (tabla `bitacora_equipo`). */
@@ -323,6 +327,54 @@ export const revisiones = pgTable(
   },
   (t) => [index("revisiones_idea_idx").on(t.ideaId, t.createdAt)],
 );
+
+/**
+ * Informe de impacto de una idea, generado por el modelo a pedido del equipo.
+ *
+ * Es un INSUMO INTERNO, no una decision y no una devolucion. Reglas que el
+ * codigo sostiene y conviene no aflojar:
+ *
+ *  - No toca `ideas.estado`: la IA no aprueba ni rechaza nada.
+ *  - No toca `ideas.motivo_estado`. Esa columna es la devolucion que lee el
+ *    vecino y su unico camino de escritura auditado es `evaluarIdea`. El
+ *    informe puede PROPONER un texto (`borradorDevolucion`), pero para que se
+ *    publique una persona tiene que copiarlo, editarlo y guardarlo con la
+ *    accion de siempre, que deja su fila en `revisiones` con su nombre.
+ *  - Guarda con que modelo y a que costo se genero: es plata publica.
+ *
+ * Se guarda un informe por idea (el ultimo). Regenerar reemplaza, y la fila de
+ * `revisiones` deja el rastro de cada pedido.
+ */
+export const informesImpacto = pgTable("informes_impacto", {
+  id: serial("id").primaryKey(),
+  ideaId: integer("idea_id")
+    .notNull()
+    .unique()
+    .references(() => ideas.id, { onDelete: "cascade" }),
+
+  /** Que propone la idea, en una linea, segun el texto que cargo el vecino. */
+  resumen: text("resumen").notNull(),
+  impactoPositivo: jsonb("impacto_positivo").$type<string[]>().notNull(),
+  riesgos: jsonb("riesgos").$type<string[]>().notNull(),
+  /** Las preguntas que el equipo deberia responder antes de decidir. */
+  preguntas: jsonb("preguntas").$type<string[]>().notNull(),
+  /** Si entra en la categoria elegida y si parece competencia municipal. */
+  encuadre: text("encuadre"),
+  /** Texto sugerido para la devolucion. Nadie lo publica sin editarlo. */
+  borradorDevolucion: text("borrador_devolucion"),
+
+  modelo: varchar("modelo", { length: 80 }).notNull(),
+  tokensEntrada: integer("tokens_entrada"),
+  tokensSalida: integer("tokens_salida"),
+  ms: integer("ms"),
+
+  /** Queda en null si se borra la cuenta: el informe no se pierde. */
+  pedidoPorId: integer("pedido_por_id").references(() => admins.id, {
+    onDelete: "set null",
+  }),
+  pedidoPorNombre: text("pedido_por_nombre").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /** Historial publico de ejecucion de un proyecto ganador. */
 export const avances = pgTable(

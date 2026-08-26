@@ -61,3 +61,11 @@ export function codigoValido(ideaId: number, ingresado: string): boolean {
  * cargados con la version anterior no se pueden usar bajo el texto nuevo.
  */
 export const VERSION_CONSENTIMIENTO = "2026-08";
+
+/**
+ * Version del aviso legal y las condiciones de uso que se muestran al pie del
+ * sitio (src/components/AvisoLegal.tsx). Se numera aparte de
+ * VERSION_CONSENTIMIENTO porque son textos distintos y cambian por motivos
+ * distintos: este no se guarda con ningun dato, solo se publica.
+ */
+export const VERSION_AVISO_LEGAL = "2026-08";
