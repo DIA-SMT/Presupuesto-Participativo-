@@ -149,9 +149,28 @@ export default async function Privacidad() {
               </Pendiente>
             </li>
             <li>
-              <strong>Anthropic</strong>, proveedor del modelo de lenguaje que responde en el chat
-              del sitio: recibe únicamente el texto de la pregunta que escribís en el chat, para
-              generar la respuesta. Por eso pedimos que no escribas datos personales en el chat.
+              <strong>OpenRouter</strong>, el servicio por el que pasan las funciones de
+              inteligencia artificial del sitio. OpenRouter no ejecuta el modelo: enruta cada
+              consulta al proveedor del modelo elegido (hoy Anthropic), que también está fuera de
+              la Argentina. Recibe tres cosas y ninguna otra:
+              <ul className="mt-2 space-y-1 pl-5">
+                <li className="list-disc">
+                  el texto de la pregunta que escribís en el chat del sitio;
+                </li>
+                <li className="list-disc">
+                  el texto de tu propuesta, si pedís que la revisemos antes de enviarla (título,
+                  barrio, problema, solución y beneficios). <strong>Nunca tu nombre ni tu
+                  correo</strong>: esos datos no salen de la base del municipio;
+                </li>
+                <li className="list-disc">
+                  el texto de una propuesta ya presentada, cuando el equipo pide un informe interno
+                  para evaluarla. También sin datos de quien la presentó.
+                </li>
+              </ul>
+              <p className="mt-2">
+                Por eso te pedimos que no escribas datos personales dentro del texto del chat ni de
+                la propuesta: no hacen falta y viajan a un tercero.
+              </p>
             </li>
             <li>
               <strong>Ciudadanía digital de Tucumán (CIDITUC)</strong>, para verificar la identidad
@@ -188,9 +207,11 @@ export default async function Privacidad() {
               solos en ventanas de minutos u horas.
             </li>
             <li>
-              <strong>Las consultas al chat</strong> se guardan sin datos personales, para saber qué
-              pregunta la gente y mejorar las respuestas.{" "}
-              <Pendiente>plazo de conservación de las consultas del chat</Pendiente>
+              <strong>Las consultas a las funciones de inteligencia artificial</strong> (el chat, la
+              revisión de una propuesta y los informes internos del equipo) se guardan sin datos
+              personales, para saber qué pregunta la gente, mejorar las respuestas y controlar
+              cuánto cuesta el servicio.{" "}
+              <Pendiente>plazo de conservación de las consultas</Pendiente>
             </li>
           </ul>
         </Bloque>
@@ -328,7 +349,14 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
     caracter: "Facultativo",
     color: "var(--color-cat-urbana)",
     finalidad:
-      "La pregunta y la respuesta se guardan para saber qué consulta la gente y mejorar la información del sitio. No pidas ni escribas datos personales en el chat: no hace falta para usarlo.",
+      "La pregunta y la respuesta se guardan para saber qué consulta la gente y mejorar la información del sitio. La pregunta viaja a OpenRouter para poder responderte. No pidas ni escribas datos personales en el chat: no hace falta para usarlo.",
+  },
+  {
+    dato: "El texto de tu propuesta, si pedís que la revisemos",
+    caracter: "Facultativo",
+    color: "var(--color-cat-urbana)",
+    finalidad:
+      "Cuando apretás “Revisar mi idea”, el texto de la propuesta (sin tu nombre ni tu correo) viaja a OpenRouter para señalarte qué le falta y ofrecerte una versión mejor escrita. Podés enviar tu idea sin pedir la revisión: el botón “Enviar sin revisar” está siempre disponible.",
   },
 ];
 
