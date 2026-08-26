@@ -23,14 +23,19 @@
  *     boton deshabilitado es comodidad: la regla de verdad la aplica el
  *     servidor con un 422 (ver el comentario de la ruta).
  *  2. **Al final, sobre la propuesta entera** (/api/ideas/asistente): senala lo
- *     que le falta, avisa si ya hay algo parecido en el distrito y ofrece una
- *     reescritura completa.
+ *     que le falta y avisa si ya hay algo parecido en el distrito. NO reescribe
+ *     nada, y eso es deliberado: ofrecia una reescritura completa que hacia el
+ *     mismo trabajo que los botones por campo, peor (con su propio prompt, mas
+ *     timido) y sin que la persona pudiera elegir campo por campo. Dos ofertas
+ *     de lo mismo con distinta calidad en la misma pantalla. Quedo con lo que
+ *     solo el puede hacer: mirar la propuesta completa y compararla con las
+ *     demas del distrito.
  *
  * Ninguna de las dos es obligatoria. "Enviar sin revisar" esta siempre
  * disponible, los botones de ayuda se pueden ignorar, y si el modelo falla o no
  * hay clave el envio no se entera.
  *
- * Los campos siguen SIN ser controlados. Para poder aplicar una reescritura
+ * Los campos siguen SIN ser controlados. Para poder aplicar un texto generado
  * alcanza con una referencia por campo y escribir su `.value`: el FormData del
  * envio lo levanta igual. Pasarlos a controlados habria sido rehacer el
  * formulario entero para no ganar nada. Lo unico que se sigue en estado es el
@@ -88,6 +93,23 @@ const AYUDAS_QUIETAS: Record<CampoLargo, EstadoAyuda> = {
   beneficios: { tipo: "quieto" },
 };
 
+/**
+ * Como se llama cada campo EN PANTALLA.
+ *
+ * El asistente devuelve la clave de la columna (`problema`, `solucion`) y aca se
+ * traduce a la pregunta que la persona tiene delante. Antes el modelo escribia
+ * el nombre del campo dentro de la observacion y decia cosas como "no
+ * completaste el campo de beneficios", una etiqueta que ya no existe en el
+ * formulario. Ahora el modelo dice QUE falta y el formulario dice DONDE.
+ */
+const PREGUNTA_DEL_CAMPO: Record<string, string> = {
+  solucion: "¿Qué querés proponer?",
+  problema: "¿Por qué hace falta?",
+  beneficios: "¿Quiénes se benefician?",
+  titulo: "Título de la idea",
+  categoria: "Categoría",
+};
+
 export default function FormularioIdea({
   categorias,
   abierta,
@@ -111,8 +133,6 @@ export default function FormularioIdea({
 
   /** Ultima revision del asistente, o null si todavia no se pidio ninguna. */
   const [revision, setRevision] = useState<RespuestaAsistente | null>(null);
-  /** Para no ofrecer dos veces la misma reescritura ya aplicada. */
-  const [reescrituraAplicada, setReescrituraAplicada] = useState(false);
 
   /** Estado de la ayuda de redaccion de cada campo largo. */
   const [ayudas, setAyudas] = useState<Record<CampoLargo, EstadoAyuda>>(AYUDAS_QUIETAS);
@@ -232,7 +252,6 @@ export default function FormularioIdea({
       }
 
       setRevision((await respuesta.json()) as RespuestaAsistente);
-      setReescrituraAplicada(false);
       setEstado({ tipo: "editando" });
     } catch (causa) {
       // La revision es una ayuda, no un requisito: se deja pasar al envio.
@@ -241,7 +260,6 @@ export default function FormularioIdea({
         faltantes: [],
         parecidas: [],
         senalamientos: [],
-        reescritura: null,
         aviso:
           causa instanceof Error
             ? causa.message
@@ -329,26 +347,6 @@ export default function FormularioIdea({
         ? previo
         : { ...previo, [campo]: valor.trim().length },
     );
-  }
-
-  /** Escribe la reescritura en los campos. Solo se llama si la persona acepta. */
-  function usarReescritura() {
-    const propuesta = revision?.reescritura;
-    if (!propuesta) return;
-    if (refTitulo.current) refTitulo.current.value = propuesta.titulo;
-    if (refProblema.current) refProblema.current.value = propuesta.problema;
-    if (refSolucion.current) refSolucion.current.value = propuesta.solucion;
-    if (refBeneficios.current && propuesta.beneficios) {
-      refBeneficios.current.value = propuesta.beneficios;
-    }
-    // Los largos se recalculan a mano: escribir `.value` no dispara onInput, y
-    // sin esto los botones de ayuda quedarian juzgando el texto anterior.
-    setLargos({
-      problema: propuesta.problema.trim().length,
-      solucion: propuesta.solucion.trim().length,
-      beneficios: (propuesta.beneficios || refBeneficios.current?.value || "").trim().length,
-    });
-    setReescrituraAplicada(true);
   }
 
   async function enviar(datos: FormData) {
@@ -798,8 +796,6 @@ export default function FormularioIdea({
         {revision && (
           <PanelRevision
             revision={revision}
-            reescrituraAplicada={reescrituraAplicada}
-            onUsarReescritura={usarReescritura}
           />
         )}
 
@@ -1069,14 +1065,10 @@ function IconoChispa() {
  */
 function PanelRevision({
   revision,
-  reescrituraAplicada,
-  onUsarReescritura,
 }: {
   revision: RespuestaAsistente;
-  reescrituraAplicada: boolean;
-  onUsarReescritura: () => void;
 }) {
-  const { modo, faltantes, parecidas, senalamientos, reescritura, aviso } = revision;
+  const { modo, faltantes, parecidas, senalamientos, aviso } = revision;
   const todoBien =
     !faltantes.length && !parecidas.length && !senalamientos.length && !aviso;
 
@@ -1116,9 +1108,17 @@ function PanelRevision({
       {senalamientos.length > 0 && (
         <>
           <p className="mt-4 text-sm font-semibold">Para que se entienda mejor:</p>
+          {/* La pregunta la pone el formulario, no el modelo: asi el nombre que
+              lee la persona es siempre el que tiene arriba en la pantalla, y no
+              depende de que el modelo lo escriba bien. */}
           <ul className="mt-1.5 space-y-1.5 pl-4 text-sm">
             {senalamientos.map((senalamiento, indice) => (
               <li key={indice} className="list-disc">
+                {PREGUNTA_DEL_CAMPO[senalamiento.campo] && (
+                  <span className="font-semibold">
+                    {PREGUNTA_DEL_CAMPO[senalamiento.campo]}:{" "}
+                  </span>
+                )}
                 {senalamiento.texto}
               </li>
             ))}
@@ -1160,48 +1160,7 @@ function PanelRevision({
         </div>
       )}
 
-      {reescritura && (
-        <div className="mt-5">
-          <p className="text-sm font-semibold">Una forma de escribirlo</p>
-          <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-            Generado por inteligencia artificial a partir de lo que escribiste, sin agregar datos
-            nuevos. Es una sugerencia: si no te representa, dejá tu texto.
-          </p>
-
-          <div
-            className="mt-3 space-y-3 rounded-xl p-4 text-sm leading-relaxed"
-            style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
-          >
-            {/* En el orden en que la persona los vio en el formulario: primero
-                qué propone, después por qué hace falta. */}
-            <p className="font-semibold">{reescritura.titulo}</p>
-            <p>{reescritura.solucion}</p>
-            <p>{reescritura.problema}</p>
-            {reescritura.beneficios && <p>{reescritura.beneficios}</p>}
-          </div>
-
-          <button
-            type="button"
-            onClick={onUsarReescritura}
-            disabled={reescrituraAplicada}
-            className="mt-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-60"
-            style={{
-              background: reescrituraAplicada ? "var(--fondo-suave)" : "var(--color-marca-700)",
-              color: reescrituraAplicada ? "var(--texto-suave)" : "#fff",
-              border: "1px solid var(--borde)",
-            }}
-          >
-            {reescrituraAplicada ? "Texto aplicado ✓" : "Usar este texto"}
-          </button>
-          {reescrituraAplicada && (
-            <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
-              Quedó cargado en los campos de arriba. Podés seguir editándolo antes de enviar.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Cierra el panel entero, no solo la reescritura: el miedo razonable de
+      {/* Cierra el panel entero: el miedo razonable de
           quien lee una revision automatica es que la maquina este puntuando su
           idea, y el lugar para desmentirlo es el pie de la revision.
 

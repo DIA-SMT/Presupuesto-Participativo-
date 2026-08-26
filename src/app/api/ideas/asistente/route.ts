@@ -8,7 +8,7 @@
  *     `similitud()`, la misma funcion Jaccard que uso el ETL para encontrar los
  *     duplicados de 2025. Gratis, instantaneo y siempre disponible.
  *  2. Lo que necesita leer el texto se le pide al modelo: que le falta a la
- *     propuesta, si la categoria elegida corresponde, y una reescritura.
+ *     propuesta y si la categoria elegida corresponde.
  *  3. Nada de esto es obligatorio. Si el modelo falla, tarda o no hay clave, la
  *     respuesta igual trae los puntos determinísticos y el formulario deja
  *     enviar. El asistente nunca esta en el camino critico.
@@ -44,7 +44,7 @@ export const dynamic = "force-dynamic";
 const TOPE_POR_HORA = 12;
 /** Arriba de esto dos propuestas hablan de lo mismo (calibrado en el ETL). */
 const UMBRAL_PARECIDA = 0.55;
-const MAX_TOKENS = 1400;
+const MAX_TOKENS = 700;
 
 const esquema = contenidoIdea.extend({
   distrito: z.number().int().min(1).max(20),
@@ -60,19 +60,11 @@ export type Parecida = {
   url: string | null;
 };
 
-export type Reescritura = {
-  titulo: string;
-  problema: string;
-  solucion: string;
-  beneficios: string;
-};
-
 export type RespuestaAsistente = {
   modo: "ia" | "basico";
   faltantes: string[];
   parecidas: Parecida[];
   senalamientos: Senalamiento[];
-  reescritura: Reescritura | null;
   aviso: string | null;
 };
 
@@ -104,21 +96,8 @@ const ESQUEMA_SALIDA = {
         additionalProperties: false,
       },
     },
-    reescritura: {
-      type: "object",
-      description:
-        "La misma propuesta, mejor escrita. Sin inventar datos que la persona no puso.",
-      properties: {
-        titulo: { type: "string" },
-        problema: { type: "string" },
-        solucion: { type: "string" },
-        beneficios: { type: "string" },
-      },
-      required: ["titulo", "problema", "solucion", "beneficios"],
-      additionalProperties: false,
-    },
   },
-  required: ["senalamientos", "reescritura"],
+  required: ["senalamientos"],
   additionalProperties: false,
 } as const;
 
@@ -131,12 +110,6 @@ const salidaModelo = z.object({
       }),
     )
     .max(6),
-  reescritura: z.object({
-    titulo: z.string().min(1).max(200),
-    problema: z.string().min(1).max(4000),
-    solucion: z.string().min(1).max(5000),
-    beneficios: z.string().max(4000),
-  }),
 });
 
 function construirSistema(
@@ -147,16 +120,25 @@ function construirSistema(
 
 # Qué hacés
 
-1. Señalás lo que falta. Concreto y accionable: "no decís cuántas personas usan la plaza", "no se entiende en qué parte del barrio sería". Entre una y cuatro observaciones. Si la propuesta ya está completa, devolvés la lista vacía.
-2. Reescribís la propuesta, mejor ordenada y más clara.
+Señalás lo que le falta a la propuesta. Nada más: no la reescribas, no ofrezcas texto. De reescribir se encarga otra parte del formulario, campo por campo y con la persona decidiendo.
 
-# Reglas de la reescritura
+Entre una y cuatro observaciones, concretas y accionables: "no decís cuántas personas usan la plaza", "no se entiende en qué parte del barrio sería". Si la propuesta ya está completa, devolvés la lista vacía: inventar una observación para no venir con las manos vacías le hace perder tiempo a la persona.
 
-- **No inventes NADA.** Ni cantidades, ni medidas, ni montos, ni nombres de calles, ni cantidad de vecinos. Si la persona no lo escribió, no existe. Reescribir es ordenar y aclarar lo que ya está, no completarlo.
-- Mantené el sentido y las prioridades de la persona. Es su propuesta, no la tuya.
-- Español de Argentina, voseo, primera persona ("propongo", "en mi barrio").
-- Texto corrido, sin viñetas ni encabezados. El campo beneficios puede quedar vacío si la persona no escribió nada y no hay de dónde sacarlo.
-- No agregues fórmulas de cortesía ni cierres tipo "espero su pronta respuesta".
+# Cómo se escribe una observación
+
+- Dirigida a la persona, con voseo, en una frase corta.
+- **No nombres el campo.** No escribas "en el campo de beneficios" ni "en el problema": el formulario ya le muestra a qué pregunta corresponde cada observación. Vos decís QUÉ falta, no dónde.
+- Pedile datos concretos que ella pueda contestar (cuánta gente, desde cuándo, en qué parte). Es la forma de que la propuesta llegue con información real en lugar de que alguien la invente después.
+
+# Los campos, como los ve la persona en el formulario
+
+- \`solucion\`: "¿Qué querés proponer?" — la obra o mejora que pide.
+- \`problema\`: "¿Por qué hace falta?" — qué pasa hoy y a quién afecta.
+- \`beneficios\`: "¿Quiénes se benefician?" — opcional.
+- \`titulo\`: el título de la idea.
+- \`categoria\`: la categoría elegida.
+
+En cada observación devolvés el campo al que corresponde, con esas claves.
 
 # Categorías del programa
 
@@ -191,7 +173,6 @@ export async function POST(request: Request) {
       faltantes: faltantesBasicos(parcial),
       parecidas: [],
       senalamientos: [],
-      reescritura: null,
       aviso: null,
     } satisfies RespuestaAsistente);
   }
@@ -228,7 +209,6 @@ export async function POST(request: Request) {
       faltantes,
       parecidas,
       senalamientos: [],
-      reescritura: null,
       aviso: null,
     } satisfies RespuestaAsistente);
   }
@@ -254,8 +234,9 @@ export async function POST(request: Request) {
             `<titulo>${entrada.titulo}</titulo>`,
             `<barrio>${entrada.barrio ?? "no indicado"}</barrio>`,
             `<distrito>${entrada.distrito}</distrito>`,
-            `<problema>${entrada.problema}</problema>`,
+            // En el orden en que la persona los contesto en el formulario.
             `<solucion>${entrada.solucion}</solucion>`,
+            `<problema>${entrada.problema}</problema>`,
             `<beneficios>${entrada.beneficios ?? ""}</beneficios>`,
           ].join("\n"),
         },
@@ -289,12 +270,6 @@ export async function POST(request: Request) {
       faltantes,
       parecidas,
       senalamientos: salida.senalamientos,
-      reescritura: {
-        titulo: salida.reescritura.titulo.trim(),
-        problema: salida.reescritura.problema.trim(),
-        solucion: salida.reescritura.solucion.trim(),
-        beneficios: salida.reescritura.beneficios.trim(),
-      },
       aviso: null,
     } satisfies RespuestaAsistente);
   } catch (causa) {
@@ -316,7 +291,6 @@ export async function POST(request: Request) {
       faltantes,
       parecidas,
       senalamientos: [],
-      reescritura: null,
       aviso: mensajeDeError(
         causa,
         "No se pudo hacer la revisión completa. Podés enviar tu idea igual.",
