@@ -4,6 +4,7 @@ import "./globals.css";
 import AccesoPanel from "@/components/AccesoPanel";
 import AvisoLegal from "@/components/AvisoLegal";
 import Chat from "@/components/Chat";
+import VentanaAvisoLegal from "@/components/VentanaAvisoLegal";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
 import { getEdicionActiva, getTextos } from "@/db/queries";
 import { urlDelSitio } from "@/lib/sitio";
@@ -111,9 +112,9 @@ export default async function RootLayout({
               </span>
             </Link>
 
-            {/* Las secciones del vecino y, aparte, el atajo del equipo: el
-                atajo queda FUERA del <nav> porque no es una seccion del
-                sitio. */}
+            {/* Las secciones del vecino y, aparte, el acceso del equipo
+                (Ingresar sin sesion, el atajo al panel con sesion): queda
+                FUERA del <nav> porque no es una seccion del sitio. */}
             <div className="flex items-center gap-2">
               <nav aria-label="Secciones del sitio" className="hidden items-center gap-1 md:flex">
                 {NAVEGACION.map((item) => (
@@ -146,7 +147,7 @@ export default async function RootLayout({
                 )}
               </nav>
 
-              <AccesoPanel lugar="encabezado" cuenta={cuentaEquipo} />
+              <AccesoPanel cuenta={cuentaEquipo} />
             </div>
           </div>
 
@@ -210,19 +211,14 @@ export default async function RootLayout({
                     </Link>
                   </li>
                 ))}
-                {/* Fuera de la lista de arriba porque no es una ruta: es la
-                    pestaña que esta unos centimetros mas abajo, en este mismo
-                    pie. Va con <a> y no con <Link> por lo mismo. Apunta al
-                    parrafo de adentro (#aviso-legal-texto) y no al <details>,
-                    que es lo que hace que se despliegue solo. */}
+                {/* Fuera de la lista de arriba porque no es una ruta: es un
+                    boton que abre el aviso en una ventana centrada con su
+                    propio scroll (src/components/VentanaAvisoLegal.tsx). El
+                    texto entra como children ya renderizado en el servidor. */}
                 <li>
-                  <a
-                    href="#aviso-legal-texto"
-                    className="hover:underline"
-                    style={{ color: "var(--texto-suave)" }}
-                  >
-                    Aviso legal y condiciones de uso
-                  </a>
+                  <VentanaAvisoLegal>
+                    <AvisoLegal textos={textos} />
+                  </VentanaAvisoLegal>
                 </li>
               </ul>
             </div>
@@ -257,24 +253,12 @@ export default async function RootLayout({
             </div>
           </div>
 
-          {/* El aviso legal y las condiciones de uso, plegados. Van al pie y no
-              en una ruta propia: tienen que estar al alcance desde cualquier
-              pagina, y ahi los encuentra quien los busca sin estorbarle al
-              resto. El por que esta en src/components/AvisoLegal.tsx. */}
-          <div className="contenedor mt-10">
-            <AvisoLegal textos={textos} />
-          </div>
-
           {/* Autoria: cierra todas las paginas del sitio. */}
           <div
             className="contenedor mt-10 pt-8"
             style={{ borderTop: "1px solid var(--borde)" }}
           >
             <SelloDireccionIA />
-            {/* La puerta del backoffice para quien todavia no entro: al pie,
-                en letra chica y con el equipo nombrado. El por que esta en
-                src/components/AccesoPanel.tsx. */}
-            <AccesoPanel lugar="pie" cuenta={cuentaEquipo} />
           </div>
         </footer>
 

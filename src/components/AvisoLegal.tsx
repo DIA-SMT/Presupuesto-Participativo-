@@ -4,36 +4,28 @@ import { Pendiente } from "@/components/ui";
 import { VERSION_AVISO_LEGAL } from "@/lib/avisos";
 
 /**
- * Aviso legal y condiciones de uso del sitio.
+ * Aviso legal y condiciones de uso del sitio: el texto, y nada mas que el
+ * texto.
  *
- * Por que vive al pie y no en una ruta propia: el descargo tiene que estar al
- * alcance desde cualquier pagina (la portada, una ficha de proyecto, el chat),
- * y una ruta mas seria una pagina que nadie visita salvo que la busque. Como
- * <details> plegado en el pie esta en todas las paginas del sitio, no le suma
- * peso visual a ninguna y no ensucia la navegacion.
+ * Se muestra adentro de la ventana modal del pie
+ * (src/components/VentanaAvisoLegal.tsx). Fue primero un <details> plegado en
+ * el mismo pie, pero desplegado dejaba la pagina cargada; la ventana lo saca
+ * del flujo sin darle lo que nunca tuvo ni necesita: una ruta propia que nadie
+ * visitaria. Sigue siendo un componente de servidor a proposito: son ~300
+ * lineas de texto que no necesitan JavaScript, y viajan como children ya
+ * renderizados, no en el bundle del cliente.
  *
- * Es un componente de servidor a proposito: son ~300 lineas de texto que no
- * necesitan JavaScript. El plegado lo hace <details> nativo, que ademas ya es
- * el patron de las preguntas frecuentes de /acerca-de.
+ * Las anclas quedan donde estaban, porque el sitio ya enlaza a ellas:
  *
- * Las tres anclas que le entran de afuera apuntan todas ADENTRO del <details>,
- * y eso no es casual: el navegador despliega el <details> solo cuando el
- * fragmento cae en su contenido plegado, que es lo que tiene que revelar. Un
- * ancla al <details> mismo, o incluso a su <summary>, solo lo scrollea a la
- * vista y lo deja cerrado (probado en Chrome: el <summary> nunca esta oculto,
- * asi que no hay nada que revelar). De ahi el reparto:
- *
- *  - `#aviso-legal-texto`, el parrafo de apertura: es a donde va el enlace
- *    "Aviso legal y condiciones de uso" del pie (src/app/layout.tsx).
- *  - `#aviso-ia`, el bloque 6: es a donde van los micro-avisos del chat
+ *  - `#aviso-legal-texto`, el parrafo de apertura.
+ *  - `#aviso-ia`, el bloque 6: a donde van los micro-avisos del chat
  *    (src/components/Chat.tsx) y del formulario de ideas
  *    (src/components/FormularioIdea.tsx), que hablan justo de eso.
- *  - `#aviso-legal`, el <details> de afuera, queda como identidad del bloque
- *    para el CSS y para cualquier enlace viejo; ese caso lo cubre el resalte
- *    `:target` de globals.css.
+ *  - `#aviso-legal`, el contenedor, para cualquier enlace viejo.
  *
- * Y como este componente esta en el pie de TODAS las paginas, las anclas
- * resuelven siempre, sin importar donde este el vecino.
+ * Como ahora viven adentro de un <dialog> cerrado, el navegador no puede
+ * scrollear hasta ellas: VentanaAvisoLegal escucha el hash, abre la ventana y
+ * scrollea su cuerpo hasta el bloque. Este componente no sabe nada de eso.
  *
  * Los datos del organismo llegan por props y no con una consulta propia: el
  * layout ya trajo la tabla `textos` para el resto del pie. Lo que nadie
@@ -46,28 +38,7 @@ export default function AvisoLegal({ textos }: { textos: Record<string, string> 
   const telefono = textos["contacto-telefono"];
 
   return (
-    <details
-      id="aviso-legal"
-      className="superficie rounded-2xl px-5 py-4 sm:px-6"
-      style={{ background: "var(--fondo-tarjeta)" }}
-    >
-      {/* El triangulito nativo y el giro del chevron se resuelven en
-          globals.css (`#aviso-legal > summary`): las utilidades de Tailwind
-          para las dos cosas son variantes arbitrarias que no valen el ruido, y
-          `rotate-180` de Tailwind v4 no llega a aplicarse a traves de
-          `group-open`. */}
-      <summary className="flex cursor-pointer items-center justify-between gap-4">
-        <span>
-          <span className="block text-sm font-bold">Aviso legal y condiciones de uso</span>
-          <span className="mt-0.5 block text-xs" style={{ color: "var(--texto-suave)" }}>
-            Qué valor tiene la información de este sitio, cómo funcionan sus asistentes de
-            inteligencia artificial y qué esperamos de quien participa
-          </span>
-        </span>
-        <Chevron />
-      </summary>
-
-      <div className="mt-6 max-w-3xl space-y-10 pb-2">
+    <div id="aviso-legal" className="space-y-10">
         <p id="aviso-legal-texto" className="text-[0.9375rem] leading-relaxed">
           Este sitio es el canal de información y participación del programa{" "}
           <strong>Presupuesto Participativo</strong> de la {organismo}. Acá te contamos qué valor
@@ -396,8 +367,7 @@ export default function AvisoLegal({ textos }: { textos: Record<string, string> 
             falta antes que publicar un dato inventado.
           </p>
         </Bloque>
-      </div>
-    </details>
+    </div>
   );
 }
 
@@ -448,25 +418,3 @@ function FuncionIA({
   );
 }
 
-/** Marca de plegado de la pestana: gira cuando el <details> se abre. */
-function Chevron() {
-  return (
-    <svg
-      viewBox="0 0 20 20"
-      width="18"
-      height="18"
-      aria-hidden="true"
-      className="shrink-0"
-      style={{ color: "var(--texto-suave)" }}
-    >
-      <path
-        d="M5 7.5 10 12.5 15 7.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}

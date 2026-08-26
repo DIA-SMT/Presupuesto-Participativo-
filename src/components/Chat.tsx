@@ -382,8 +382,9 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
               lee una vez y despues sube y se pierde, y este aviso tiene que
               estar a la vista en el momento en que la persona decide creerle a
               una respuesta. El enlace apunta al bloque de IA del aviso legal
-              (#aviso-ia, adentro del <details> del pie: por eso se despliega
-              solo) y cierra el panel, que si no tapa la pagina de atras. */}
+              (#aviso-ia: la ventana del pie escucha ese hash, se abre y
+              scrollea hasta el bloque) y cierra el panel del chat, que si no
+              queda abajo de la ventana. */}
           <p
             className="px-4 pb-3 text-center text-[0.6875rem] leading-snug"
             style={{ color: "var(--texto-suave)" }}
