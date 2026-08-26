@@ -3,6 +3,7 @@ import FormularioIdea from "@/components/FormularioIdea";
 import { Aviso } from "@/components/ui";
 import { getCategorias, getEdicionActiva, getTextos } from "@/db/queries";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
+import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 
 export const metadata: Metadata = {
   title: "Presentá tu idea",
@@ -14,7 +15,16 @@ export default async function NuevaIdea() {
   const edicion = await getEdicionActiva();
   const [textos, categorias] = await Promise.all([getTextos(), getCategorias()]);
 
-  const abierta = edicion?.etapa === "ideas";
+  /*
+   * La etapa manda para el vecino. El equipo (o MODO_PRUEBA_IDEAS=1) puede
+   * cargar igual para recorrer el circuito completo y mostrarlo: el por que
+   * esta en src/lib/modo-prueba.ts. Los dos casos se distinguen para poder
+   * decirlo en pantalla, que es lo que evita que una demostracion se confunda
+   * con una carga real.
+   */
+  const enEtapa = edicion?.etapa === "ideas";
+  const porPrueba = !enEtapa && (await puedeCargarFueraDeEtapa());
+  const abierta = enEtapa || porPrueba;
 
   return (
     <div className="contenedor py-10 sm:py-14">
@@ -27,7 +37,7 @@ export default async function NuevaIdea() {
         </p>
       </header>
 
-      {!abierta && edicion && (
+      {!enEtapa && edicion && (
         <div className="mt-6 max-w-3xl">
           <Aviso tono="atencion">
             <strong>
@@ -37,7 +47,15 @@ export default async function NuevaIdea() {
             {edicion.ideasDesde && (
               <> La etapa de ideas fue {formatearRango(edicion.ideasDesde, edicion.ideasHasta)}.</>
             )}{" "}
-            Cuando se abra la próxima edición vas a poder cargar tu propuesta desde acá.
+            {porPrueba ? (
+              <>
+                El formulario está habilitado en <strong>modo prueba</strong> para poder recorrer el
+                circuito completo: la idea que cargues queda registrada sin publicar y el equipo la
+                puede borrar. No es una presentación válida para la edición.
+              </>
+            ) : (
+              <>Cuando se abra la próxima edición vas a poder cargar tu propuesta desde acá.</>
+            )}
           </Aviso>
         </div>
       )}

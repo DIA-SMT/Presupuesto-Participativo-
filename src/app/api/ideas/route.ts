@@ -20,6 +20,7 @@ import {
   slugificar,
 } from "@/lib/texto";
 import { altaIdea } from "@/lib/idea-esquema";
+import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 
 export const runtime = "nodejs";
 
@@ -66,7 +67,10 @@ export async function POST(request: Request) {
   if (!edicion) {
     return Response.json({ error: "No hay una edición activa." }, { status: 503 });
   }
-  if (edicion.etapa !== "ideas") {
+  // Fuera de la ventana del reglamento el alta esta cerrada, salvo para el
+  // equipo o con MODO_PRUEBA_IDEAS=1, que es como se muestra el circuito
+  // completo con el programa en seguimiento (ver src/lib/modo-prueba.ts).
+  if (edicion.etapa !== "ideas" && !(await puedeCargarFueraDeEtapa())) {
     return Response.json(
       { error: "La etapa de presentación de ideas está cerrada." },
       { status: 409 },
