@@ -132,13 +132,28 @@ export default function FormularioIdea({
   const refProblema = useRef<HTMLTextAreaElement>(null);
   const refSolucion = useRef<HTMLTextAreaElement>(null);
   const refBeneficios = useRef<HTMLTextAreaElement>(null);
+  /**
+   * El ultimo barrio que puso el mapa. Sirve para distinguir "esto lo completo
+   * un clic" de "esto lo escribio la persona": si el valor del campo coincide
+   * con esto, es nuestro y se puede reemplazar; si no, es suyo y no se toca.
+   */
+  const barrioPuesto = useRef<string | null>(null);
+  /** Si el barrio del campo lo puso el mapa, para poder decirlo en pantalla. */
+  const [barrioAutomatico, setBarrioAutomatico] = useState(false);
   const refDe: Record<CampoLargo, React.RefObject<HTMLTextAreaElement | null>> = {
     problema: refProblema,
     solucion: refSolucion,
     beneficios: refBeneficios,
   };
 
-  /** Al marcar un punto se le pregunta al servidor a que distrito pertenece. */
+  /**
+   * Al marcar un punto se le pregunta al servidor el distrito y el barrio.
+   *
+   * El barrio se AUTOCOMPLETA pero no se impone: solo se escribe si el campo
+   * esta vacio o si lo habia puesto un clic anterior. Si la persona lo escribio
+   * a mano, gana ella: conoce su barrio mejor que una capa de 2022, y contra las
+   * ideas ya cargadas la capa acierta en 23 de 34 casos, no en todos.
+   */
   async function elegirPunto(nuevo: { lat: number; lon: number }) {
     setPunto(nuevo);
     setDistrito(null);
@@ -147,8 +162,19 @@ export default function FormularioIdea({
       const respuesta = await fetch(
         `/api/distrito?lat=${nuevo.lat.toFixed(6)}&lon=${nuevo.lon.toFixed(6)}`,
       );
-      const cuerpo = (await respuesta.json()) as { distrito: number | null };
+      const cuerpo = (await respuesta.json()) as {
+        distrito: number | null;
+        barrio: string | null;
+      };
       setDistrito(cuerpo.distrito);
+
+      const campo = refBarrio.current;
+      const escritoAMano = campo && campo.value.trim() && campo.value !== barrioPuesto.current;
+      if (campo && cuerpo.barrio && !escritoAMano) {
+        campo.value = cuerpo.barrio;
+        barrioPuesto.current = cuerpo.barrio;
+        setBarrioAutomatico(true);
+      }
     } catch {
       setDistrito(null);
     } finally {
@@ -552,12 +578,21 @@ export default function FormularioIdea({
             </ul>
           </Campo>
 
-          <Campo etiqueta="Barrio" ayuda="Opcional, pero ayuda a ubicar la propuesta.">
+          <Campo
+            etiqueta="Barrio"
+            ayuda={
+              barrioAutomatico
+                ? "Lo completamos con el punto que marcaste en el mapa. Si no es ese, corregilo."
+                : "Opcional. Se completa solo cuando marcás el lugar en el mapa."
+            }
+          >
             <input
               ref={refBarrio}
               name="barrio"
               maxLength={120}
               disabled={!abierta || ocupado}
+              // Si lo edita a mano deja de ser nuestro y el mapa no lo pisa mas.
+              onInput={() => setBarrioAutomatico(false)}
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />

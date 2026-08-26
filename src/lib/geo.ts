@@ -7,6 +7,8 @@
  * version en TypeScript sirve para el navegador y para el ETL.
  */
 
+import { fajaTresAGeografica, pareceFajaTres } from "./gauss-kruger";
+
 export type Punto = { lat: number; lon: number };
 
 export type FeatureDistrito = {
@@ -18,6 +20,25 @@ export type FeatureDistrito = {
 export type ColeccionDistritos = {
   type: "FeatureCollection";
   features: FeatureDistrito[];
+};
+
+/**
+ * Un barrio de la capa oficial 2022 del municipio.
+ *
+ * Un registro por NOMBRE: cuatro nombres tienen dos poligonos separados por
+ * kilometros (son barrios distintos que se llaman igual) y van agrupados en el
+ * multipoligono, asi el nombre alcanza como identificador. `revisar` viene del
+ * campo "Problemas" del archivo original, que nadie del municipio supo explicar.
+ */
+export type FeatureBarrio = {
+  type: "Feature";
+  properties: { nombre: string; revisar: boolean };
+  geometry: { type: "MultiPolygon"; coordinates: number[][][][] };
+};
+
+export type ColeccionBarrios = {
+  type: "FeatureCollection";
+  features: FeatureBarrio[];
 };
 
 /** Caja que contiene a todo el ejido municipal, segun la geometria oficial. */
@@ -74,6 +95,72 @@ export function distritoDelPunto(
   return null;
 }
 
+/**
+ * Nombre del barrio que contiene al punto, o null si ninguno lo contiene.
+ *
+ * Devolver null es normal y no es un error: la capa de barrios cubre los
+ * barrios reconocidos, no cada metro del ejido. Hay calles, plazas y terrenos
+ * que no pertenecen a ninguno, y ahi el campo del formulario se deja en blanco
+ * para que lo complete la persona.
+ */
+export function barrioDelPunto(
+  punto: Punto,
+  barrios: ColeccionBarrios,
+): string | null {
+  for (const feature of barrios.features) {
+    const dentro = feature.geometry.coordinates.some((poligono) =>
+      dentroDelPoligono(punto, poligono),
+    );
+    if (dentro) return feature.properties.nombre;
+  }
+  return null;
+}
+
+/**
+ * Centroide de un multipoligono, ponderado por area.
+ *
+ * Se calcula sobre la geometria oficial en lugar de leerse de un archivo
+ * aparte: el centroide es una consecuencia de la forma del distrito, y tenerlo
+ * suelto significaba que al corregirse la geometria (los distritos 15 y 19 se
+ * movieron unos 600 m) el centroide quedaba apuntando al lugar viejo.
+ *
+ * Es el centroide del area, no el promedio de los vertices: un borde con muchos
+ * vertices juntos arrastraria el promedio hacia ese lado.
+ */
+export function centroideDelMultipoligono(
+  coordenadas: number[][][][],
+): Punto {
+  let area2 = 0;
+  let sumaLon = 0;
+  let sumaLat = 0;
+
+  for (const poligono of coordenadas) {
+    const exterior = poligono[0];
+    if (!exterior || exterior.length < 4) continue;
+    for (let i = 0; i < exterior.length - 1; i += 1) {
+      const [x1, y1] = exterior[i];
+      const [x2, y2] = exterior[i + 1];
+      const cruz = x1 * y2 - x2 * y1;
+      area2 += cruz;
+      sumaLon += (x1 + x2) * cruz;
+      sumaLat += (y1 + y2) * cruz;
+    }
+  }
+
+  // Degenerado (area cero): se cae al promedio de los vertices antes que
+  // devolver NaN y poner un marcador en el golfo de Guinea.
+  if (Math.abs(area2) < 1e-12) {
+    const puntos = coordenadas.flat(2);
+    if (!puntos.length) return CENTRO_SMT;
+    return {
+      lon: puntos.reduce((s, p) => s + p[0], 0) / puntos.length,
+      lat: puntos.reduce((s, p) => s + p[1], 0) / puntos.length,
+    };
+  }
+
+  return { lon: sumaLon / (3 * area2), lat: sumaLat / (3 * area2) };
+}
+
 /** Descarta coordenadas que no pueden corresponder a San Miguel de Tucuman. */
 export function puntoPlausible(punto: Punto): boolean {
   return (
@@ -98,9 +185,14 @@ export type ResultadoCoordenada = {
  *   1. "-26.797050, -65.207859"              par decimal correcto
  *   2. "26.795635, -65.254633"               latitud con el signo invertido
  *   3. "26 51 20.7 S 65 15 21.0 W"           grados, minutos y segundos
- *   4. "3576679.46555, 7028253.17743"        coordenadas proyectadas
- * El caso 4 se descarta: sin saber el sistema de origen no se puede
- * reproyectar de forma confiable, y adivinarlo pondria un punto falso en el mapa.
+ *   4. "3576679.46555, 7028253.17743"        Gauss-Kruger faja 3
+ *
+ * El caso 4 se descartaba, porque sin saber el sistema de origen reproyectar
+ * era adivinar y habria puesto un punto falso en el mapa. Dejo de ser una
+ * adivinanza cuando el municipio entrego su capa de barrios en ese mismo
+ * sistema y confirmo cual es (26/08/2026): ahora se convierte, y el rango que
+ * lo habilita es el del ejido, no el de la faja entera (ver
+ * src/lib/gauss-kruger.ts).
  */
 export function parsearCoordenada(bruto: string | null): ResultadoCoordenada {
   const texto = (bruto ?? "").trim();
@@ -135,6 +227,19 @@ export function parsearCoordenada(bruto: string | null): ResultadoCoordenada {
 
   // Coordenadas proyectadas (metros): valores de seis cifras o mas.
   if (Math.abs(a) > 1000 || Math.abs(b) > 1000) {
+    // Gauss-Kruger faja 3, el sistema en el que trabaja el municipio. Se acepta
+    // en los dos ordenes porque el sitio anterior no era consistente.
+    for (const [este, norte] of [
+      [a, b],
+      [b, a],
+    ]) {
+      if (!pareceFajaTres(este, norte)) continue;
+      const [lon, lat] = fajaTresAGeografica(este, norte);
+      const punto = { lat, lon };
+      if (puntoPlausible(punto)) {
+        return { punto, nota: "coordenada reproyectada desde Gauss-Kruger faja 3" };
+      }
+    }
     return {
       punto: null,
       nota: "coordenada en un sistema proyectado desconocido; descartada",
