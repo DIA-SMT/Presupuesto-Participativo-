@@ -107,10 +107,20 @@ test("parsearCoordenada cubre los cuatro formatos del sitio anterior", () => {
   assert.ok(Math.abs(gms.punto!.lat + 26.8557) < 0.01);
   assert.ok(Math.abs(gms.punto!.lon + 65.2558) < 0.01);
 
-  // 4. coordenadas proyectadas: se descartan, no se adivinan
-  const proyectada = parsearCoordenada("3576679.46555, 7028253.17743");
-  assert.equal(proyectada.punto, null);
-  assert.match(proyectada.nota ?? "", /proyectado/);
+  // 4. Gauss-Kruger faja 3: se reproyecta desde que el municipio confirmo el
+  //    sistema. Es la coordenada real de la idea #91 de 2025, que hasta
+  //    entonces se descartaba y quedaba en el centroide de su distrito.
+  const faja = parsearCoordenada("3576679.46555, 7028253.17743");
+  assert.ok(faja.punto, "la coordenada de la faja 3 tiene que convertirse");
+  assert.ok(Math.abs(faja.punto!.lat - -26.872285) < 1e-4, "latitud reproyectada");
+  assert.ok(Math.abs(faja.punto!.lon - -65.228333) < 1e-4, "longitud reproyectada");
+  assert.match(faja.nota ?? "", /faja 3/);
+
+  // Un par de siete cifras que NO cae en el ejido sigue descartandose: el rango
+  // que habilita la conversion es el de la ciudad, no el de la faja entera.
+  const lejos = parsearCoordenada("3400000, 6900000");
+  assert.equal(lejos.punto, null);
+  assert.match(lejos.nota ?? "", /proyectado/);
 
   assert.deepEqual(parsearCoordenada(null), { punto: null, nota: null });
   assert.deepEqual(parsearCoordenada(""), { punto: null, nota: null });
