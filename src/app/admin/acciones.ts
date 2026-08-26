@@ -25,10 +25,13 @@ import {
   avances,
   bitacoraEquipo,
   bitacoraSistema,
+  categorias,
+  chatConsultas,
   distritos,
   ediciones,
   hitos,
   ideas,
+  informesImpacto,
   novedades,
   revisiones,
   textos,
@@ -41,6 +44,10 @@ import {
   type EstadoIdea,
   type RolAdmin,
 } from "@/db/queries";
+import { generarInforme, tieneMaterial } from "@/lib/informe-impacto";
+// `mensajeDeError` ya existe aca abajo con otro proposito (encadenar causas):
+// el del proveedor se importa con otro nombre para no pisarlo.
+import { hayClave, mensajeDeError as mensajeDelProveedor } from "@/lib/modelo";
 import { hashearPassword, verificarPassword } from "@/lib/password";
 import { MINIMO_PASSWORD } from "@/lib/politica-password";
 import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
@@ -508,6 +515,146 @@ export async function evaluarIdea(
 
   revalidatePath("/", "layout");
   return { ok: true };
+}
+
+/**
+ * Genera el informe de impacto de una idea.
+ *
+ * Es un insumo interno: NO cambia el estado de la idea ni escribe en
+ * `motivo_estado`, que es la devolucion que lee el vecino. Si el informe
+ * propone un texto de devolucion, la persona lo copia, lo edita y lo guarda con
+ * `evaluarIdea`, que es el unico camino auditado hacia esa columna.
+ *
+ * Deja fila en `revisiones` igual, aunque no cambie nada: que hubo un analisis
+ * automatico de por medio es parte del expediente.
+ */
+export async function generarInformeImpacto(
+  _previo: Resultado | null,
+  formulario: FormData,
+): Promise<Resultado> {
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
+
+  const id = Number(formulario.get("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return { ok: false, error: "Datos inválidos." };
+  }
+
+  if (!hayClave()) {
+    return {
+      ok: false,
+      error:
+        "El informe necesita la clave del modelo (OPENROUTER_API_KEY), que no está configurada en el servidor.",
+    };
+  }
+
+  // Tope por cuenta: sin esto, un clic repetido dispara N llamadas pagas sobre
+  // la misma idea.
+  const limite = await consumir(`informe:${sesion.adminId}`, 30, 3600);
+  if (!limite.permitido) {
+    return {
+      ok: false,
+      error: `Ya generaste 30 informes en la última hora. Probá de nuevo en ${Math.ceil(
+        limite.reiniciaEn / 60,
+      )} minutos.`,
+    };
+  }
+
+  const [idea] = await db
+    .select({
+      titulo: ideas.titulo,
+      barrio: ideas.barrio,
+      distrito: distritos.numero,
+      categoria: categorias.nombre,
+      problema: ideas.problema,
+      solucion: ideas.solucion,
+      beneficios: ideas.beneficios,
+    })
+    .from(ideas)
+    .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
+    .where(eq(ideas.id, id))
+    .limit(1);
+  if (!idea) return { ok: false, error: "La idea no existe." };
+
+  // Sin texto no hay informe posible. Es el caso de casi todas las ideas de
+  // 2025: el relevamiento del sitio anterior solo recupero el de los ganadores.
+  if (!tieneMaterial(idea)) {
+    return {
+      ok: false,
+      error:
+        "Esta idea no tiene problema ni solución cargados: no hay material para analizar. Cargá el texto de la propuesta y volvé a intentar.",
+    };
+  }
+
+  const inicio = Date.now();
+  let generado: Awaited<ReturnType<typeof generarInforme>>;
+  try {
+    generado = await generarInforme(idea);
+  } catch (causa) {
+    console.error("[informe]", causa);
+    return {
+      ok: false,
+      error: mensajeDelProveedor(
+        causa,
+        "No se pudo generar el informe. Probá de nuevo en un momento.",
+      ),
+    };
+  }
+  const ms = Date.now() - inicio;
+
+  const fila = {
+    ideaId: id,
+    ...generado.datos,
+    modelo: generado.modelo,
+    tokensEntrada: generado.consumo.tokensEntrada,
+    tokensSalida: generado.consumo.tokensSalida,
+    ms,
+    pedidoPorId: sesion.adminId,
+    pedidoPorNombre: sesion.nombre,
+    createdAt: new Date(),
+  };
+
+  await db.transaction(async (tx) => {
+    // Hay un informe por idea: regenerar reemplaza al anterior. El rastro de
+    // cada pedido queda en `revisiones`, que si es append-only.
+    await tx
+      .insert(informesImpacto)
+      .values(fila)
+      .onConflictDoUpdate({ target: informesImpacto.ideaId, set: fila });
+
+    await tx.insert(revisiones).values(
+      filaRevision({
+        ideaId: id,
+        sesion,
+        accion: "informe",
+        nota: `Informe de impacto generado con ${generado.modelo}.`,
+      }),
+    );
+  });
+
+  // Registro de costo, en la misma tabla que el chat y el asistente.
+  try {
+    await db.insert(chatConsultas).values({
+      origen: "informe",
+      pregunta: idea.titulo,
+      respuesta: generado.datos.resumen,
+      herramientas: [],
+      modelo: generado.modelo,
+      tokensEntrada: generado.consumo.tokensEntrada,
+      tokensSalida: generado.consumo.tokensSalida,
+      cacheLectura: generado.consumo.cacheLectura,
+      ms,
+      ok: true,
+    });
+  } catch (causa) {
+    console.error("[informe] no se pudo registrar el costo", causa);
+  }
+
+  // Solo cambia una pantalla del backoffice: no hace falta tirar abajo el
+  // cache del sitio publico entero como hacen las acciones que publican.
+  revalidatePath("/admin");
+  return { ok: true, mensaje: "Informe generado." };
 }
 
 /** Publica una idea. La publicacion es una decision aparte del estado tecnico. */

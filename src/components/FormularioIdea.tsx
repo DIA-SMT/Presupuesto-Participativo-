@@ -12,14 +12,26 @@
  * correo es facultativo, detras de una casilla desmarcada. Sin la casilla el
  * campo del correo ni siquiera se envia, y el aviso de como sigue la idea se
  * resuelve con el codigo de seguimiento que devuelve /api/ideas.
+ *
+ * Antes de enviar hay un paso de revision (/api/ideas/asistente): senala lo que
+ * le falta a la propuesta, avisa si ya hay algo parecido en el distrito y ofrece
+ * una reescritura. Es opcional en el sentido fuerte: "Enviar sin revisar" esta
+ * siempre disponible y si el asistente falla el envio no se entera.
+ *
+ * Los campos siguen SIN ser controlados. Para poder aplicar la reescritura
+ * alcanza con una referencia por campo y escribir su `.value`: el FormData del
+ * envio lo levanta igual. Pasarlos a controlados habria sido rehacer el
+ * formulario entero para no ganar nada.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Mapa from "@/components/Mapa";
+import type { RespuestaAsistente } from "@/app/api/ideas/asistente/route";
 
 type Categoria = { slug: string; nombre: string; descripcion: string };
 
 type Estado =
   | { tipo: "editando" }
+  | { tipo: "revisando" }
   | { tipo: "enviando" }
   | { tipo: "listo"; numero: number; distrito: number; codigo: string }
   | { tipo: "error"; mensaje: string };
@@ -45,6 +57,18 @@ export default function FormularioIdea({
   /** Consentimiento para guardar el correo. Arranca en false, siempre. */
   const [avisos, setAvisos] = useState(false);
 
+  /** Ultima revision del asistente, o null si todavia no se pidio ninguna. */
+  const [revision, setRevision] = useState<RespuestaAsistente | null>(null);
+  /** Para no ofrecer dos veces la misma reescritura ya aplicada. */
+  const [reescrituraAplicada, setReescrituraAplicada] = useState(false);
+
+  // Referencias a los campos de contenido: se leen para revisar y se escriben
+  // al aceptar una reescritura, sin volver controlado el formulario.
+  const refTitulo = useRef<HTMLInputElement>(null);
+  const refProblema = useRef<HTMLTextAreaElement>(null);
+  const refSolucion = useRef<HTMLTextAreaElement>(null);
+  const refBeneficios = useRef<HTMLTextAreaElement>(null);
+
   /** Al marcar un punto se le pregunta al servidor a que distrito pertenece. */
   async function elegirPunto(nuevo: { lat: number; lon: number }) {
     setPunto(nuevo);
@@ -63,8 +87,17 @@ export default function FormularioIdea({
     }
   }
 
-  async function enviar(evento: React.FormEvent<HTMLFormElement>) {
+  /**
+   * El submit decide: si todavia no se reviso, revisa; si ya se reviso, envia.
+   *
+   * El FormData se arma en la PRIMERA linea sincronica a proposito. React
+   * recicla el evento apenas hay un await, y `evento.currentTarget` pasa a ser
+   * null: cualquier lectura despues del primer await se pierde.
+   */
+  async function alEnviarFormulario(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+
     if (!punto || !distrito) {
       setEstado({
         tipo: "error",
@@ -73,7 +106,71 @@ export default function FormularioIdea({
       return;
     }
 
-    const datos = new FormData(evento.currentTarget);
+    if (revision) await enviar(datos);
+    else await revisar(datos, distrito);
+  }
+
+  /** Pide la revision al asistente. Nunca bloquea el envio: si falla, avisa. */
+  async function revisar(datos: FormData, numeroDistrito: number) {
+    setEstado({ tipo: "revisando" });
+    try {
+      const respuesta = await fetch("/api/ideas/asistente", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          titulo: datos.get("titulo"),
+          categoria: datos.get("categoria"),
+          barrio: datos.get("barrio") || null,
+          problema: datos.get("problema"),
+          solucion: datos.get("solucion"),
+          beneficios: datos.get("beneficios") || null,
+          distrito: numeroDistrito,
+          // Ni nombre ni correo: el asistente no necesita saber quien escribe.
+        }),
+      });
+
+      if (!respuesta.ok) {
+        const cuerpo = (await respuesta.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(cuerpo?.error ?? "No se pudo revisar la idea.");
+      }
+
+      setRevision((await respuesta.json()) as RespuestaAsistente);
+      setReescrituraAplicada(false);
+      setEstado({ tipo: "editando" });
+    } catch (causa) {
+      // La revision es una ayuda, no un requisito: se deja pasar al envio.
+      setRevision({
+        modo: "basico",
+        faltantes: [],
+        parecidas: [],
+        senalamientos: [],
+        reescritura: null,
+        aviso:
+          causa instanceof Error
+            ? causa.message
+            : "No se pudo revisar la idea. Podés enviarla igual.",
+      });
+      setEstado({ tipo: "editando" });
+    }
+  }
+
+  /** Escribe la reescritura en los campos. Solo se llama si la persona acepta. */
+  function usarReescritura() {
+    const propuesta = revision?.reescritura;
+    if (!propuesta) return;
+    if (refTitulo.current) refTitulo.current.value = propuesta.titulo;
+    if (refProblema.current) refProblema.current.value = propuesta.problema;
+    if (refSolucion.current) refSolucion.current.value = propuesta.solucion;
+    if (refBeneficios.current && propuesta.beneficios) {
+      refBeneficios.current.value = propuesta.beneficios;
+    }
+    setReescrituraAplicada(true);
+  }
+
+  async function enviar(datos: FormData) {
+    if (!punto || !distrito) return;
     setEstado({ tipo: "enviando" });
 
     try {
@@ -196,9 +293,14 @@ export default function FormularioIdea({
   }
 
   const enviando = estado.tipo === "enviando";
+  const revisando = estado.tipo === "revisando";
+  const ocupado = enviando || revisando;
 
   return (
-    <form onSubmit={enviar} className="mt-8 grid gap-8 lg:grid-cols-[1fr_1fr] lg:items-start">
+    <form
+      onSubmit={alEnviarFormulario}
+      className="mt-8 grid gap-8 lg:grid-cols-[1fr_1fr] lg:items-start"
+    >
       {/* --- Ubicación ----------------------------------------------------- */}
       <section className="order-1 lg:order-2">
         <h2 className="text-lg font-bold">1. ¿Dónde sería?</h2>
@@ -255,10 +357,11 @@ export default function FormularioIdea({
 
           <Campo etiqueta="Título de la idea" ayuda="Una línea que resuma la propuesta.">
             <input
+              ref={refTitulo}
               name="titulo"
               required
               maxLength={LARGOS.titulo}
-              disabled={!abierta || enviando}
+              disabled={!abierta || ocupado}
               placeholder="Puesta en valor de la plaza del barrio…"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
@@ -269,7 +372,7 @@ export default function FormularioIdea({
             <select
               name="categoria"
               required
-              disabled={!abierta || enviando}
+              disabled={!abierta || ocupado}
               defaultValue=""
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
@@ -296,7 +399,7 @@ export default function FormularioIdea({
             <input
               name="barrio"
               maxLength={120}
-              disabled={!abierta || enviando}
+              disabled={!abierta || ocupado}
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
@@ -307,11 +410,12 @@ export default function FormularioIdea({
             ayuda="¿A quiénes afecta y cómo? Cuanto más concreto, mejor se puede evaluar."
           >
             <textarea
+              ref={refProblema}
               name="problema"
               required
               rows={5}
               maxLength={LARGOS.problema}
-              disabled={!abierta || enviando}
+              disabled={!abierta || ocupado}
               className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
@@ -319,11 +423,12 @@ export default function FormularioIdea({
 
           <Campo etiqueta="¿Cómo lo resolverías?" ayuda="Describí la obra o la intervención que propones.">
             <textarea
+              ref={refSolucion}
               name="solucion"
               required
               rows={5}
               maxLength={LARGOS.solucion}
-              disabled={!abierta || enviando}
+              disabled={!abierta || ocupado}
               className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
@@ -334,10 +439,11 @@ export default function FormularioIdea({
             ayuda="Opcional. ¿Quiénes se benefician y de qué manera?"
           >
             <textarea
+              ref={refBeneficios}
               name="beneficios"
               rows={3}
               maxLength={LARGOS.beneficios}
-              disabled={!abierta || enviando}
+              disabled={!abierta || ocupado}
               className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
@@ -356,7 +462,7 @@ export default function FormularioIdea({
             <input
               name="autorNombre"
               maxLength={120}
-              disabled={!abierta || enviando}
+              disabled={!abierta || ocupado}
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
@@ -372,7 +478,7 @@ export default function FormularioIdea({
                 type="checkbox"
                 checked={avisos}
                 onChange={(evento) => setAvisos(evento.target.checked)}
-                disabled={!abierta || enviando}
+                disabled={!abierta || ocupado}
                 className="mt-0.5"
               />
               <span className="text-sm font-medium">
@@ -399,7 +505,7 @@ export default function FormularioIdea({
                     type="email"
                     required
                     maxLength={160}
-                    disabled={!abierta || enviando}
+                    disabled={!abierta || ocupado}
                     placeholder="tunombre@ejemplo.com"
                     className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
                     style={campoEstilo}
@@ -423,16 +529,194 @@ export default function FormularioIdea({
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={!abierta || enviando}
-          className="w-full rounded-xl px-5 py-3.5 text-sm font-semibold text-white transition disabled:opacity-50 sm:w-auto"
-          style={{ background: "var(--color-acento-600)" }}
-        >
-          {enviando ? "Enviando…" : "Enviar mi idea"}
-        </button>
+        {revision && (
+          <PanelRevision
+            revision={revision}
+            reescrituraAplicada={reescrituraAplicada}
+            onUsarReescritura={usarReescritura}
+          />
+        )}
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <button
+            type="submit"
+            disabled={!abierta || ocupado}
+            className="w-full rounded-xl px-5 py-3.5 text-sm font-semibold text-white transition disabled:opacity-50 sm:w-auto"
+            style={{ background: "var(--color-acento-600)" }}
+          >
+            {revisando
+              ? "Revisando…"
+              : enviando
+                ? "Enviando…"
+                : revision
+                  ? "Enviar mi idea"
+                  : "Revisar mi idea"}
+          </button>
+
+          {/* Salida siempre disponible: la revision ayuda, no condiciona. */}
+          {!revision && (
+            <button
+              type="button"
+              disabled={!abierta || ocupado}
+              onClick={(evento) => {
+                const formulario = evento.currentTarget.form;
+                if (formulario) void enviar(new FormData(formulario));
+              }}
+              className="text-sm underline disabled:opacity-50"
+              style={{ color: "var(--texto-suave)" }}
+            >
+              Enviar sin revisar
+            </button>
+          )}
+        </div>
+
+        {!revision && !revisando && (
+          <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
+            Antes de enviar podemos revisar tu idea: te decimos qué le falta para que se entienda
+            mejor y si ya hay una propuesta parecida en tu distrito. Después decidís vos.
+          </p>
+        )}
       </div>
     </form>
+  );
+}
+
+/**
+ * Resultado de la revision. Todo lo que muestra es o determinístico (mínimos y
+ * propuestas parecidas) o generado por el modelo, y en ese caso va dicho.
+ */
+function PanelRevision({
+  revision,
+  reescrituraAplicada,
+  onUsarReescritura,
+}: {
+  revision: RespuestaAsistente;
+  reescrituraAplicada: boolean;
+  onUsarReescritura: () => void;
+}) {
+  const { faltantes, parecidas, senalamientos, reescritura, aviso } = revision;
+  const todoBien =
+    !faltantes.length && !parecidas.length && !senalamientos.length && !aviso;
+
+  return (
+    <section
+      aria-live="polite"
+      className="rounded-2xl p-5"
+      style={{
+        background: "var(--fondo-suave)",
+        border: "1px solid var(--color-marca-600)",
+      }}
+    >
+      <h3 className="text-base font-bold">Revisión de tu idea</h3>
+
+      {todoBien && (
+        <p className="mt-2 text-sm leading-relaxed">
+          Tu propuesta se entiende y está completa. Podés enviarla.
+        </p>
+      )}
+
+      {aviso && (
+        <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+          {aviso}
+        </p>
+      )}
+
+      {faltantes.length > 0 && (
+        <ul className="mt-3 space-y-1.5 pl-4 text-sm">
+          {faltantes.map((texto) => (
+            <li key={texto} className="list-disc">
+              {texto}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {senalamientos.length > 0 && (
+        <>
+          <p className="mt-4 text-sm font-semibold">Para que se entienda mejor:</p>
+          <ul className="mt-1.5 space-y-1.5 pl-4 text-sm">
+            {senalamientos.map((senalamiento, indice) => (
+              <li key={indice} className="list-disc">
+                {senalamiento.texto}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {parecidas.length > 0 && (
+        <div className="mt-4">
+          <p className="text-sm font-semibold">
+            Ya hay {parecidas.length === 1 ? "una propuesta parecida" : "propuestas parecidas"} en
+            tu distrito
+          </p>
+          <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
+            Podés presentar la tuya igual. Si son lo mismo, el equipo las integra en un solo
+            proyecto.
+          </p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {parecidas.map((parecida, indice) => (
+              <li key={indice}>
+                {parecida.url && parecida.titulo ? (
+                  <a
+                    href={parecida.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                    style={{ color: "var(--color-marca-600)" }}
+                  >
+                    {parecida.titulo}
+                  </a>
+                ) : (
+                  <span style={{ color: "var(--texto-suave)" }}>
+                    Una propuesta que todavía está en evaluación.
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {reescritura && (
+        <div className="mt-5">
+          <p className="text-sm font-semibold">Una forma de escribirlo</p>
+          <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+            Generado por inteligencia artificial a partir de lo que escribiste, sin agregar datos
+            nuevos. Es una sugerencia: si no te representa, dejá tu texto.
+          </p>
+
+          <div
+            className="mt-3 space-y-3 rounded-xl p-4 text-sm leading-relaxed"
+            style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
+          >
+            <p className="font-semibold">{reescritura.titulo}</p>
+            <p>{reescritura.problema}</p>
+            <p>{reescritura.solucion}</p>
+            {reescritura.beneficios && <p>{reescritura.beneficios}</p>}
+          </div>
+
+          <button
+            type="button"
+            onClick={onUsarReescritura}
+            disabled={reescrituraAplicada}
+            className="mt-3 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-60"
+            style={{
+              background: reescrituraAplicada ? "var(--fondo-suave)" : "var(--color-marca-700)",
+              color: reescrituraAplicada ? "var(--texto-suave)" : "#fff",
+              border: "1px solid var(--borde)",
+            }}
+          >
+            {reescrituraAplicada ? "Texto aplicado ✓" : "Usar este texto"}
+          </button>
+          {reescrituraAplicada && (
+            <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+              Quedó cargado en los campos de arriba. Podés seguir editándolo antes de enviar.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -5,6 +5,7 @@ import {
   getEdicionActiva,
   getIdeaAdmin,
   getResumenBandeja,
+  getInformeImpacto,
   getRevisiones,
   getVotosRegistrados,
   listarIdeasBandeja,
@@ -119,6 +120,7 @@ export default async function AdminIdeas({ searchParams }: Props) {
     Number.isInteger(idPedido) && idPedido > 0 ? await getIdeaAdmin(idPedido) : null;
   const ficha = candidata && candidata.anio === edicion.anio ? candidata : null;
   const historial = ficha ? await getRevisiones(ficha.id) : [];
+  const informe = ficha ? await getInformeImpacto(ficha.id) : null;
 
   return (
     <PanelBandeja
@@ -141,6 +143,7 @@ export default async function AdminIdeas({ searchParams }: Props) {
       }}
       ficha={ficha}
       historial={historial}
+      informe={informe}
       rol={sesion.rol}
       ahora={Date.now()}
     />

@@ -1,5 +1,5 @@
 /**
- * Respuesta del chat cuando no hay ANTHROPIC_API_KEY configurada.
+ * Respuesta del chat cuando no hay OPENROUTER_API_KEY configurada.
  *
  * No es un modelo de lenguaje: es un buscador que interpreta la consulta por
  * palabras clave y responde con los datos reales de la base. Existe para que el

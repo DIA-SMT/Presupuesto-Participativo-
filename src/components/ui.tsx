@@ -212,3 +212,24 @@ export function Aviso({ children, tono = "info" }: { children: ReactNode; tono?:
     </p>
   );
 }
+
+/**
+ * Marcador visible de un dato que el municipio todavia tiene que confirmar.
+ * Se usa en los textos legales (privacidad y aviso legal): preferimos que se
+ * vea lo que falta antes que publicar un dato inventado. Vive aca, y no en una
+ * de las dos paginas, porque las dos lo dibujan igual.
+ */
+export function Pendiente({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className="inline-block rounded-lg px-2.5 py-1 text-sm"
+      style={{
+        background: "color-mix(in srgb, var(--color-acento-600) 14%, transparent)",
+        border: "1px dashed var(--color-acento-600)",
+        color: "var(--texto)",
+      }}
+    >
+      <strong style={{ color: "var(--color-acento-600)" }}>PENDIENTE CONFIRMAR:</strong> {children}
+    </span>
+  );
+}

@@ -12,6 +12,7 @@ import {
   eq,
   ilike,
   inArray,
+  isNull,
   like,
   or,
   sql,
@@ -32,6 +33,7 @@ import {
   faq,
   hitos,
   ideas,
+  informesImpacto,
   novedades,
   revisiones,
   textos,
@@ -627,6 +629,50 @@ export async function getCategorias() {
     .orderBy(asc(categorias.orden));
 }
 
+export type IdeaComparable = {
+  id: number;
+  titulo: string;
+  problema: string | null;
+  slug: string;
+  publicada: boolean;
+};
+
+/**
+ * Ideas del mismo distrito contra las que comparar una propuesta nueva, para
+ * avisarle al vecino que ya hay algo parecido presentado.
+ *
+ * Incluye las NO publicadas a proposito: durante la etapa de ideas todavia no
+ * se publico ninguna, asi que comparar solo contra las publicadas no
+ * encontraria nada. Quien llama decide que mostrar: de una idea sin publicar no
+ * se puede revelar el titulo, porque seria filtrar el estado de moderacion.
+ *
+ * Quedan afuera las que ya se integraron a otra (`integrada_en_id`): su idea
+ * principal ya esta en la lista, y contarlas seria mostrar dos veces lo mismo.
+ */
+export async function getIdeasParaComparar(
+  edicionId: number,
+  distrito: number,
+): Promise<IdeaComparable[]> {
+  return db
+    .select({
+      id: ideas.id,
+      titulo: ideas.titulo,
+      problema: ideas.problema,
+      slug: ideas.slug,
+      publicada: ideas.publicada,
+    })
+    .from(ideas)
+    .innerJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(
+      and(
+        eq(ideas.edicionId, edicionId),
+        eq(distritos.numero, distrito),
+        isNull(ideas.integradaEnId),
+      ),
+    )
+    .limit(300);
+}
+
 /** Cuenta de votos reales registrados por el sitio nuevo, para la etapa de votacion. */
 export async function getVotosRegistrados(edicionId: number) {
   const [fila] = await consultar<{ total: number }>(sql`
@@ -951,7 +997,9 @@ export type AccionRevision =
   | "proclamacion"
   | "reapertura"
   /** Cambio del presupuesto asignado al proyecto (migracion 0003). */
-  | "presupuesto";
+  | "presupuesto"
+  /** Se pidio un informe de impacto para la idea (migracion 0006). */
+  | "informe";
 
 export type FilaRevision = {
   id: number;
@@ -962,6 +1010,43 @@ export type FilaRevision = {
   nota: string | null;
   createdAt: Date;
 };
+
+export type InformeImpacto = {
+  resumen: string;
+  impactoPositivo: string[];
+  riesgos: string[];
+  preguntas: string[];
+  encuadre: string | null;
+  borradorDevolucion: string | null;
+  modelo: string;
+  pedidoPorNombre: string;
+  createdAt: Date;
+};
+
+/**
+ * El informe de impacto de una idea, si alguien ya lo pidio. Hay uno por idea:
+ * regenerarlo reemplaza al anterior, y cada pedido queda en `revisiones`.
+ */
+export async function getInformeImpacto(
+  ideaId: number,
+): Promise<InformeImpacto | null> {
+  const [fila] = await db
+    .select({
+      resumen: informesImpacto.resumen,
+      impactoPositivo: informesImpacto.impactoPositivo,
+      riesgos: informesImpacto.riesgos,
+      preguntas: informesImpacto.preguntas,
+      encuadre: informesImpacto.encuadre,
+      borradorDevolucion: informesImpacto.borradorDevolucion,
+      modelo: informesImpacto.modelo,
+      pedidoPorNombre: informesImpacto.pedidoPorNombre,
+      createdAt: informesImpacto.createdAt,
+    })
+    .from(informesImpacto)
+    .where(eq(informesImpacto.ideaId, ideaId))
+    .limit(1);
+  return fila ?? null;
+}
 
 /** Historial completo de una idea, mas nuevo primero. La tabla es append-only. */
 export async function getRevisiones(ideaId: number): Promise<FilaRevision[]> {

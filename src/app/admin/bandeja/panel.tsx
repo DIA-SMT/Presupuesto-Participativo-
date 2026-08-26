@@ -31,6 +31,7 @@ import type {
   FilaBandeja,
   FilaRevision,
   IdeaAdmin,
+  InformeImpacto,
   OrdenBandeja,
   ResumenBandeja,
   RolAdmin,
@@ -39,6 +40,7 @@ import { ETIQUETA_ESTADO, formatearNumero, formatearPesos } from "@/lib/formato"
 import {
   despublicarIdea,
   evaluarIdea,
+  generarInformeImpacto,
   proclamarGanador,
   publicarIdea,
   reabrirRevision,
@@ -75,6 +77,7 @@ const ETIQUETA_ACCION: Record<AccionRevision, string> = {
   proclamacion: "Proclamación",
   reapertura: "Reapertura",
   presupuesto: "Presupuesto",
+  informe: "Informe de impacto",
 };
 
 const ETIQUETA_CANAL: Record<IdeaAdmin["canal"], string> = {
@@ -328,6 +331,7 @@ export default function PanelBandeja({
   vista,
   ficha,
   historial,
+  informe,
   rol,
   ahora,
 }: {
@@ -342,6 +346,8 @@ export default function PanelBandeja({
   vista: Vista;
   ficha: IdeaAdmin | null;
   historial: FilaRevision[];
+  /** Informe de impacto de la idea abierta, si alguien ya lo generó. */
+  informe: InformeImpacto | null;
   rol: RolAdmin;
   ahora: number;
 }) {
@@ -840,6 +846,7 @@ export default function PanelBandeja({
               key={ficha.id}
               ficha={ficha}
               historial={historial}
+              informe={informe}
               rol={rol}
               soloLectura={soloLectura}
             />
@@ -978,11 +985,13 @@ function EnlacePagina({
 function Ficha({
   ficha,
   historial,
+  informe,
   rol,
   soloLectura,
 }: {
   ficha: IdeaAdmin;
   historial: FilaRevision[];
+  informe: InformeImpacto | null;
   rol: RolAdmin;
   soloLectura: boolean;
 }) {
@@ -1088,6 +1097,8 @@ function Ficha({
       >
         Ver la ficha pública
       </a>
+
+      <BloqueInforme ficha={ficha} informe={informe} soloLectura={soloLectura} />
 
       {soloLectura ? (
         <p className="mt-5 text-sm" style={{ color: "var(--texto-suave)" }}>
@@ -1400,3 +1411,173 @@ const estiloCampo: React.CSSProperties = {
   border: "1px solid var(--borde)",
   color: "var(--texto)",
 };
+
+/**
+ * Informe de impacto de la idea.
+ *
+ * Es un insumo interno y esta dicho en la pantalla: no decide nada, no se
+ * publica, y el borrador de devolucion hay que copiarlo al formulario de
+ * evaluacion, editarlo y guardarlo. Ese recorrido de mas es a proposito: lo que
+ * lee el vecino lo escribe y lo firma una persona.
+ */
+function BloqueInforme({
+  ficha,
+  informe,
+  soloLectura,
+}: {
+  ficha: IdeaAdmin;
+  informe: InformeImpacto | null;
+  soloLectura: boolean;
+}) {
+  const [resultado, accion, pendiente] = useActionState(generarInformeImpacto, null);
+  const [copiado, setCopiado] = useState(false);
+
+  // Sin texto no hay nada que analizar: es el caso de casi todas las ideas de
+  // 2025, y conviene decirlo antes de que alguien apriete el boton.
+  const sinMaterial =
+    `${ficha.problema ?? ""} ${ficha.solucion ?? ""}`.trim().length < 60;
+
+  async function copiarBorrador() {
+    if (!informe?.borradorDevolucion) return;
+    try {
+      await navigator.clipboard.writeText(informe.borradorDevolucion);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    } catch {
+      // Sin permiso de portapapeles queda el texto a la vista para copiarlo a mano.
+    }
+  }
+
+  return (
+    <section
+      className="mt-5 rounded-xl p-4"
+      style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold">Informe de impacto</h3>
+          <p className="mt-0.5 text-xs" style={{ color: "var(--texto-suave)" }}>
+            Análisis generado por inteligencia artificial para ayudarte a evaluar. No es una
+            decisión ni se publica.
+          </p>
+        </div>
+
+        {!soloLectura && (
+          <form action={accion}>
+            <input type="hidden" name="id" value={ficha.id} />
+            <button
+              type="submit"
+              disabled={pendiente || sinMaterial}
+              className="rounded-xl px-3.5 py-2 text-xs font-semibold transition disabled:opacity-50"
+              style={{ background: "var(--color-marca-700)", color: "#fff" }}
+            >
+              {pendiente
+                ? "Generando…"
+                : informe
+                  ? "Volver a generar"
+                  : "Generar informe"}
+            </button>
+          </form>
+        )}
+      </div>
+
+      {sinMaterial && (
+        <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
+          Esta idea no tiene problema ni solución cargados: no hay material para analizar. Es el
+          caso de casi todas las ideas migradas de 2025, donde solo se recuperó el texto de los
+          proyectos ganadores.
+        </p>
+      )}
+
+      {resultado && !resultado.ok && (
+        <p
+          role="alert"
+          className="mt-3 rounded-lg px-3 py-2 text-sm"
+          style={{
+            background: "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
+            border: "1px solid var(--color-acento-600)",
+          }}
+        >
+          {resultado.error}
+        </p>
+      )}
+
+      {!informe && !sinMaterial && !pendiente && (
+        <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
+          Todavía no se generó el informe de esta idea.
+        </p>
+      )}
+
+      {informe && (
+        <div className="mt-4 space-y-4 text-sm">
+          <p className="font-medium">{informe.resumen}</p>
+
+          <ListaInforme titulo="Impacto positivo esperado" puntos={informe.impactoPositivo} />
+          <ListaInforme titulo="Riesgos y costos" puntos={informe.riesgos} />
+          <ListaInforme
+            titulo="Qué falta saber antes de decidir"
+            puntos={informe.preguntas}
+          />
+
+          {informe.encuadre && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--texto-suave)" }}>
+                Encuadre
+              </p>
+              <p className="mt-1 leading-relaxed">{informe.encuadre}</p>
+            </div>
+          )}
+
+          {informe.borradorDevolucion && (
+            <div
+              className="rounded-xl p-3.5"
+              style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--texto-suave)" }}>
+                Borrador de devolución
+              </p>
+              <p className="mt-1.5 leading-relaxed">{informe.borradorDevolucion}</p>
+              <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+                Copialo al campo de devolución de acá abajo, editalo y guardalo. Lo que lee el
+                vecino es lo que guardes vos, con tu nombre en el historial.
+              </p>
+              {!soloLectura && (
+                <button
+                  type="button"
+                  onClick={copiarBorrador}
+                  className="mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde-control)" }}
+                >
+                  {copiado ? "Copiado ✓" : "Copiar borrador"}
+                </button>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+            Generado con {informe.modelo} · lo pidió {informe.pedidoPorNombre} ·{" "}
+            {fechaHora.format(informe.createdAt)}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ListaInforme({ titulo, puntos }: { titulo: string; puntos: string[] }) {
+  if (!puntos.length) return null;
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--texto-suave)" }}>
+        {titulo}
+      </p>
+      <ul className="mt-1 space-y-1 pl-4">
+        {puntos.map((punto, indice) => (
+          <li key={indice} className="list-disc leading-relaxed">
+            {punto}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

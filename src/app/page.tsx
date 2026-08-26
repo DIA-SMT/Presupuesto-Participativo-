@@ -1,7 +1,7 @@
 import Link from "next/link";
+import HeroInicio from "@/components/HeroInicio";
 import Mapa from "@/components/Mapa";
-import { MarcaDeAguaFlor } from "@/components/Logo";
-import { Boton, Dato, Seccion, TarjetaProyecto, Vacio } from "@/components/ui";
+import { Boton, Seccion, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
   getDistritos,
   getEdicionActiva,
@@ -31,64 +31,44 @@ export default async function Home() {
   return (
     <>
       {/* --- Portada ------------------------------------------------------- */}
-      <section
-        className="relative overflow-hidden"
-        style={{
-          background:
-            "linear-gradient(150deg, var(--color-marca-950) 0%, var(--color-marca-800) 45%, var(--color-marca-600) 100%)",
-        }}
-      >
-        {/* El isotipo oficial como marca de agua (ver src/components/Logo.tsx). */}
-        <MarcaDeAguaFlor className="pointer-events-none absolute -right-16 -top-24 h-[26rem] w-[26rem] opacity-[0.14] sm:h-[34rem] sm:w-[34rem]" />
-        <div className="contenedor relative grid gap-10 py-16 sm:py-20 lg:grid-cols-[1.15fr_1fr] lg:items-center">
-          <div className="text-white">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/75">
-              {t("home-hero-volanta", "Municipalidad de San Miguel de Tucumán")}
-            </p>
-            <h1 className="mt-3 text-4xl font-bold leading-[1.1] sm:text-5xl">
-              {t("home-hero-titulo", "Vos decidís en qué se invierte tu barrio")}
-            </h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-white/85 sm:text-lg">
-              {t("home-hero-texto")}
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/proyectos"
-                className="inline-flex items-center rounded-xl bg-white px-5 py-3 text-sm font-semibold transition hover:bg-white/90"
-                style={{ color: "var(--color-marca-900)" }}
-              >
-                {t("home-hero-boton", "Ver los proyectos")}
-              </Link>
-              <Link
-                href="/distritos"
-                className="inline-flex items-center rounded-xl border border-white/35 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                Buscá tu distrito
-              </Link>
-            </div>
-            <p className="mt-6 text-sm text-white/70">
-              Edición {stats.anio} · {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
-            </p>
-          </div>
+      <HeroInicio />
 
-          <dl className="grid gap-3 sm:grid-cols-2">
+      {/*
+        Los numeros de la edicion. Estaban dentro de la portada anterior; con la
+        portada nueva pasan a esta banda, que es angosta a proposito para no
+        competir con ella. Son datos reales de la base, y sacarlos de la home
+        seria esconder lo unico que dice de que tamano es el programa.
+      */}
+      <section
+        aria-label={`Números de la edición ${stats.anio}`}
+        style={{ borderBottom: "1px solid var(--borde)" }}
+      >
+        <div className="contenedor py-6">
+          <dl className="flex flex-wrap items-baseline gap-x-10 gap-y-4">
             {[
               { valor: formatearNumero(stats.ideas), etiqueta: "ideas presentadas" },
               { valor: String(stats.ganadores), etiqueta: "proyectos ganadores" },
               { valor: formatearNumero(stats.votos), etiqueta: "votos registrados" },
               { valor: "20", etiqueta: "distritos, uno por proyecto" },
             ].map((item) => (
-              <div
-                key={item.etiqueta}
-                className="rounded-2xl border border-white/20 bg-white/10 p-5 text-white backdrop-blur-sm"
-              >
+              <div key={item.etiqueta} className="flex items-baseline gap-2">
                 <dt className="sr-only">{item.etiqueta}</dt>
-                <dd>
-                  <span className="block text-3xl font-bold sm:text-4xl">{item.valor}</span>
-                  <span className="mt-1 block text-sm text-white/80">{item.etiqueta}</span>
+                <dd className="flex items-baseline gap-2">
+                  <span
+                    className="text-2xl font-bold tabular-nums"
+                    style={{ color: "var(--color-marca-800)" }}
+                  >
+                    {item.valor}
+                  </span>
+                  <span className="text-sm" style={{ color: "var(--texto-suave)" }}>
+                    {item.etiqueta}
+                  </span>
                 </dd>
               </div>
             ))}
+            <div className="ml-auto text-sm" style={{ color: "var(--texto-suave)" }}>
+              Edición {stats.anio} · {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
+            </div>
           </dl>
         </div>
       </section>

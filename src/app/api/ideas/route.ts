@@ -19,30 +19,14 @@ import {
   normalizarTitulo,
   slugificar,
 } from "@/lib/texto";
+import { altaIdea } from "@/lib/idea-esquema";
 
 export const runtime = "nodejs";
 
-const esquema = z
-  .object({
-    titulo: z.string().trim().min(8).max(140),
-    categoria: z.string().trim().min(1).max(60),
-    barrio: z.string().trim().max(120).nullish(),
-    problema: z.string().trim().min(30).max(3000),
-    solucion: z.string().trim().min(30).max(4000),
-    beneficios: z.string().trim().max(3000).nullish(),
-    lat: z.number().min(-90).max(90),
-    lon: z.number().min(-180).max(180),
-    autorNombre: z.string().trim().max(120).nullish(),
-    autorEmail: z.string().trim().email().max(160).nullish().or(z.literal("")),
-    /** Casilla de avisos: sin ella el mail no se guarda (ver el refine). */
-    autorAvisos: z.coerce.boolean().optional(),
-  })
-  // No se acepta un mail sin la casilla marcada: seria un dato personal sin
-  // consentimiento. El formulario no deja llegar hasta aca, esto es el cierre.
-  .refine((datos) => !datos.autorEmail || datos.autorAvisos, {
-    message: "Falta el consentimiento para guardar el correo.",
-    path: ["autorAvisos"],
-  });
+// Los minimos y los largos viven en src/lib/idea-esquema.ts, compartidos con
+// el asistente de carga: si cada uno tuviera los suyos, el asistente podria
+// aprobar un texto que esta ruta rechaza.
+const esquema = altaIdea;
 
 export async function POST(request: Request) {
   const ipHash = hashearIp(ipDe(request));
