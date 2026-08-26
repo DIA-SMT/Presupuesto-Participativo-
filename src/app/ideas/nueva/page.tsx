@@ -3,6 +3,7 @@ import FormularioIdea from "@/components/FormularioIdea";
 import { Aviso } from "@/components/ui";
 import { getCategorias, getEdicionActiva, getTextos } from "@/db/queries";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
+import { hayClave } from "@/lib/modelo";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 
 export const metadata: Metadata = {
@@ -60,7 +61,15 @@ export default async function NuevaIdea() {
         </div>
       )}
 
-      <FormularioIdea categorias={categorias} abierta={abierta} />
+      {/*
+        Sin clave del modelo los botones de redaccion NO se dibujan, en lugar de
+        dibujarse y fallar al apretarlos. No es solo cortesia: el aviso legal del
+        pie ya dice que si el servicio del modelo no esta disponible "las otras
+        dos funciones simplemente no aparecen", y un boton que siempre devuelve
+        error dejaba a ese texto mintiendo. Se evalua en el servidor porque la
+        clave es del servidor y no tiene por que viajar al navegador.
+      */}
+      <FormularioIdea categorias={categorias} abierta={abierta} conIA={hayClave()} />
     </div>
   );
 }

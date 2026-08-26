@@ -85,9 +85,16 @@ const AYUDAS_QUIETAS: Record<CampoLargo, EstadoAyuda> = {
 export default function FormularioIdea({
   categorias,
   abierta,
+  conIA,
 }: {
   categorias: Categoria[];
   abierta: boolean;
+  /**
+   * Si hay clave del modelo. Sin ella los botones de redaccion no se dibujan:
+   * la regla del proyecto es que nada se rompe por falta de clave, y el aviso
+   * legal ya promete que estas funciones "simplemente no aparecen".
+   */
+  conIA: boolean;
 }) {
   const [punto, setPunto] = useState<{ lat: number; lon: number } | null>(null);
   const [distrito, setDistrito] = useState<number | null>(null);
@@ -564,16 +571,18 @@ export default function FormularioIdea({
                 style={campoEstilo}
               />
             </Campo>
-            <AyudaDeRedaccion
-              estado={ayudas.problema}
-              etiqueta="Formalizar con IA"
-              habilitado={largos.problema >= MINIMO_PARA_FORMALIZAR}
-              motivo="Escribí unas palabras, aunque sea corto y con errores, y la IA te lo ordena. No lo escribe por vos."
-              deshabilitado={!abierta || ocupado}
-              onPedir={() => void pedirAyuda("problema")}
-              onUsar={(texto) => usarAyuda("problema", texto)}
-              onDescartar={() => descartarAyuda("problema")}
-            />
+            {conIA && (
+              <AyudaDeRedaccion
+                estado={ayudas.problema}
+                etiqueta="Formalizar con IA"
+                habilitado={largos.problema >= MINIMO_PARA_FORMALIZAR}
+                motivo="Escribí unas palabras, aunque sea corto y con errores, y la IA te lo ordena. No lo escribe por vos."
+                deshabilitado={!abierta || ocupado}
+                onPedir={() => void pedirAyuda("problema")}
+                onUsar={(texto) => usarAyuda("problema", texto)}
+                onDescartar={() => descartarAyuda("problema")}
+              />
+            )}
           </div>
 
           <div>
@@ -593,16 +602,18 @@ export default function FormularioIdea({
                 style={campoEstilo}
               />
             </Campo>
-            <AyudaDeRedaccion
-              estado={ayudas.solucion}
-              etiqueta="Formalizar con IA"
-              habilitado={largos.solucion >= MINIMO_PARA_FORMALIZAR}
-              motivo="Contá con tus palabras qué obra propones y la IA te lo ordena. No lo escribe por vos."
-              deshabilitado={!abierta || ocupado}
-              onPedir={() => void pedirAyuda("solucion")}
-              onUsar={(texto) => usarAyuda("solucion", texto)}
-              onDescartar={() => descartarAyuda("solucion")}
-            />
+            {conIA && (
+              <AyudaDeRedaccion
+                estado={ayudas.solucion}
+                etiqueta="Formalizar con IA"
+                habilitado={largos.solucion >= MINIMO_PARA_FORMALIZAR}
+                motivo="Contá con tus palabras qué obra propones y la IA te lo ordena. No lo escribe por vos."
+                deshabilitado={!abierta || ocupado}
+                onPedir={() => void pedirAyuda("solucion")}
+                onUsar={(texto) => usarAyuda("solucion", texto)}
+                onDescartar={() => descartarAyuda("solucion")}
+              />
+            )}
           </div>
 
           {/*
@@ -627,19 +638,21 @@ export default function FormularioIdea({
                 style={campoEstilo}
               />
             </Campo>
-            <AyudaDeRedaccion
-              estado={ayudas.beneficios}
-              etiqueta={largos.beneficios > 0 ? "Completar con IA" : "Redactar con IA"}
-              habilitado={
-                largos.problema >= MINIMO_DE_CONTEXTO &&
-                largos.solucion >= MINIMO_DE_CONTEXTO
-              }
-              motivo="Completá antes el problema y la solución: los beneficios salen de ahí."
-              deshabilitado={!abierta || ocupado}
-              onPedir={() => void pedirAyuda("beneficios")}
-              onUsar={(texto) => usarAyuda("beneficios", texto)}
-              onDescartar={() => descartarAyuda("beneficios")}
-            />
+            {conIA && (
+              <AyudaDeRedaccion
+                estado={ayudas.beneficios}
+                etiqueta={largos.beneficios > 0 ? "Completar con IA" : "Redactar con IA"}
+                habilitado={
+                  largos.problema >= MINIMO_DE_CONTEXTO &&
+                  largos.solucion >= MINIMO_DE_CONTEXTO
+                }
+                motivo="Completá antes el problema y la solución: los beneficios salen de ahí."
+                deshabilitado={!abierta || ocupado}
+                onPedir={() => void pedirAyuda("beneficios")}
+                onUsar={(texto) => usarAyuda("beneficios", texto)}
+                onDescartar={() => descartarAyuda("beneficios")}
+              />
+            )}
           </div>
         </section>
 
@@ -940,7 +953,7 @@ function PanelRevision({
   reescrituraAplicada: boolean;
   onUsarReescritura: () => void;
 }) {
-  const { faltantes, parecidas, senalamientos, reescritura, aviso } = revision;
+  const { modo, faltantes, parecidas, senalamientos, reescritura, aviso } = revision;
   const todoBien =
     !faltantes.length && !parecidas.length && !senalamientos.length && !aviso;
 
@@ -1065,18 +1078,34 @@ function PanelRevision({
 
       {/* Cierra el panel entero, no solo la reescritura: el miedo razonable de
           quien lee una revision automatica es que la maquina este puntuando su
-          idea, y el lugar para desmentirlo es el pie de la revision. */}
-      <p
-        className="mt-5 border-t pt-3 text-xs leading-relaxed"
-        style={{ borderColor: "var(--borde)", color: "var(--texto-suave)" }}
-      >
-        Esta revisión la hace un asistente de inteligencia artificial y puede equivocarse.{" "}
-        <strong>No evalúa tu propuesta ni decide si se publica</strong>: eso lo hace el equipo del
-        programa, y podés enviarla igual sin aplicar ningún cambio.{" "}
-        <a href="#aviso-ia" className="underline" style={{ color: "inherit" }}>
-          Aviso legal
-        </a>
-      </p>
+          idea, y el lugar para desmentirlo es el pie de la revision.
+
+          Solo en modo "ia". En modo "basico" no intervino ningun modelo (los
+          minimos y las propuestas parecidas se calculan con codigo comun), y
+          decir que reviso una IA seria atribuirle algo que no hizo: exactamente
+          el tipo de afirmacion que este pie existe para evitar. */}
+      {modo === "ia" ? (
+        <p
+          className="mt-5 border-t pt-3 text-xs leading-relaxed"
+          style={{ borderColor: "var(--borde)", color: "var(--texto-suave)" }}
+        >
+          Esta revisión la hace un asistente de inteligencia artificial y puede equivocarse.{" "}
+          <strong>No evalúa tu propuesta ni decide si se publica</strong>: eso lo hace el equipo del
+          programa, y podés enviarla igual sin aplicar ningún cambio.{" "}
+          <a href="#aviso-ia" className="underline" style={{ color: "inherit" }}>
+            Aviso legal
+          </a>
+        </p>
+      ) : (
+        <p
+          className="mt-5 border-t pt-3 text-xs leading-relaxed"
+          style={{ borderColor: "var(--borde)", color: "var(--texto-suave)" }}
+        >
+          Esta revisión son chequeos automáticos sobre lo que cargaste, sin inteligencia
+          artificial. <strong>No evalúa tu propuesta ni decide si se publica</strong>: eso lo hace
+          el equipo del programa, y podés enviarla igual sin cambiar nada.
+        </p>
+      )}
     </section>
   );
 }
