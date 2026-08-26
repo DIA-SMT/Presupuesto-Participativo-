@@ -15,7 +15,7 @@ cierra un circuito de trabajo completo.
 
 | Tanda | Estado | Qué deja |
 |---|---|---|
-| 0 · Proveedor y base compartida | Pendiente | — (sin pantallas: un cliente para las tres funciones, y el chat vuelve a vivir) |
+| 0 · Proveedor y base compartida | **Hecha** | — (sin pantallas: un cliente para las tres funciones, y el chat vuelve a vivir) |
 | 1 · Asistente de carga | Pendiente | `/ideas/nueva` con revisión y reescritura antes de enviar |
 | 2 · Informe de impacto | Pendiente | Bloque en la ficha de `/admin` con borrador de devolución |
 | 3 · Transparencia | Pendiente | `/privacidad` al día, marcado de contenido generado |
