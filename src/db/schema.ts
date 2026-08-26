@@ -68,6 +68,16 @@ export const canalCarga = pgEnum("canal_carga", [
 export const rolAdmin = pgEnum("rol_admin", ["admin", "moderador", "lector"]);
 
 /**
+ * Que funcion del sitio consumio el modelo de lenguaje. Las tres escriben en
+ * la misma tabla `chat_consultas` para tener el costo en un solo lugar.
+ */
+export const origenConsulta = pgEnum("origen_consulta", [
+  "chat",
+  "asistente",
+  "informe",
+]);
+
+/**
  * Que se hizo sobre una idea en la bandeja de revision (tabla `revisiones`).
  *
  * `presupuesto` audita el monto asignado al proyecto (`ideas.presupuesto_total`):
@@ -546,6 +556,12 @@ export const hitos = pgTable("hitos", {
  */
 export const chatConsultas = pgTable("chat_consultas", {
   id: serial("id").primaryKey(),
+  /**
+   * Que funcion del sitio hizo la consulta. Sin esto, el listado de
+   * /admin/consultas mezcla el chat publico con el asistente de carga y con
+   * los informes del panel, que tienen usos y costos muy distintos.
+   */
+  origen: origenConsulta("origen").notNull().default("chat"),
   pregunta: text("pregunta").notNull(),
   respuesta: text("respuesta"),
   herramientas: jsonb("herramientas").$type<string[]>(),

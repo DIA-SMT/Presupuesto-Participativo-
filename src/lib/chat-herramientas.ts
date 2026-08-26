@@ -7,7 +7,7 @@
  * explicitamente que no esta, para que la respuesta lo diga en lugar de
  * completarlo.
  */
-import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import { z } from "zod";
 import {
   getAvances,
@@ -65,98 +65,128 @@ const esquemaVacio = z.object({});
 // Definiciones que ve el modelo
 // ---------------------------------------------------------------------------
 
-export const HERRAMIENTAS: Anthropic.Tool[] = [
+/**
+ * Formato de OpenRouter (compatible con OpenAI): `type: "function"` con el
+ * esquema en `parameters`.
+ *
+ * No se usa `strict: true` a proposito. En el modo estricto de OpenAI toda
+ * propiedad declarada tiene que estar tambien en `required`, y `buscar_proyectos`
+ * tiene los seis parametros opcionales: declararlos obligatorios obligaria al
+ * modelo a inventar filtros que la persona no pidio. Ademas OpenRouter enruta a
+ * proveedores distintos y no todos garantizan el modo estricto. La validacion
+ * real esta abajo, en `ejecutarHerramienta`, donde cada entrada pasa por su
+ * esquema de zod antes de tocar la base.
+ */
+export const HERRAMIENTAS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
-    name: "buscar_proyectos",
-    description:
-      "Busca ideas y proyectos del Presupuesto Participativo. Devuelve titulo, distrito, barrio, categoria, estado y votos de cada uno. Usar siempre que la persona pregunte que se presento, que gano, o pida una lista.",
-    input_schema: {
-      type: "object",
-      properties: {
-        distrito: {
-          type: "integer",
-          minimum: 1,
-          maximum: 20,
-          description: "Numero de distrito, del 1 al 20.",
+    type: "function",
+    function: {
+      name: "buscar_proyectos",
+      description:
+        "Busca ideas y proyectos del Presupuesto Participativo. Devuelve titulo, distrito, barrio, categoria, estado y votos de cada uno. Usar siempre que la persona pregunte que se presento, que gano, o pida una lista.",
+      parameters: {
+        type: "object",
+        properties: {
+          distrito: {
+            type: "integer",
+            minimum: 1,
+            maximum: 20,
+            description: "Numero de distrito, del 1 al 20.",
+          },
+          categoria: {
+            type: "string",
+            enum: [...CATEGORIAS],
+            description:
+              "socio-ambiental (plazas y espacios verdes), cultural-deportivo (playones, clubes, centros culturales) o innovacion-urbana (SUM, corredores, veredas).",
+          },
+          estado: {
+            type: "string",
+            enum: [...ESTADOS],
+            description: "Estado de la idea tras la evaluacion tecnica.",
+          },
+          texto: {
+            type: "string",
+            description:
+              "Palabras a buscar en el titulo, el barrio o el texto del proyecto. Por ejemplo un nombre de plaza o de club.",
+          },
+          solo_ganadores: {
+            type: "boolean",
+            description: "Si es true, devuelve unicamente los proyectos ganadores.",
+          },
+          limite: { type: "integer", minimum: 1, maximum: 25 },
         },
-        categoria: {
-          type: "string",
-          enum: [...CATEGORIAS],
-          description:
-            "socio-ambiental (plazas y espacios verdes), cultural-deportivo (playones, clubes, centros culturales) o innovacion-urbana (SUM, corredores, veredas).",
-        },
-        estado: {
-          type: "string",
-          enum: [...ESTADOS],
-          description: "Estado de la idea tras la evaluacion tecnica.",
-        },
-        texto: {
-          type: "string",
-          description:
-            "Palabras a buscar en el titulo, el barrio o el texto del proyecto. Por ejemplo un nombre de plaza o de club.",
-        },
-        solo_ganadores: {
-          type: "boolean",
-          description: "Si es true, devuelve unicamente los proyectos ganadores.",
-        },
-        limite: { type: "integer", minimum: 1, maximum: 25 },
+        additionalProperties: false,
+        required: [],
       },
-      additionalProperties: false,
-      required: [],
     },
-    strict: true,
   },
   {
-    name: "detalle_proyecto",
-    description:
-      "Devuelve el contenido completo de un proyecto: problema, solucion, beneficios, votos, presupuesto, etapa de la obra y su historial de avance. Requiere el slug que devuelve buscar_proyectos.",
-    input_schema: {
-      type: "object",
-      properties: {
-        slug: {
-          type: "string",
-          description: "Identificador del proyecto, tal como lo devuelve buscar_proyectos.",
+    type: "function",
+    function: {
+      name: "detalle_proyecto",
+      description:
+        "Devuelve el contenido completo de un proyecto: problema, solucion, beneficios, votos, presupuesto, etapa de la obra y su historial de avance. Requiere el slug que devuelve buscar_proyectos.",
+      parameters: {
+        type: "object",
+        properties: {
+          slug: {
+            type: "string",
+            description: "Identificador del proyecto, tal como lo devuelve buscar_proyectos.",
+          },
         },
+        additionalProperties: false,
+        required: ["slug"],
       },
-      additionalProperties: false,
-      required: ["slug"],
     },
-    strict: true,
   },
   {
-    name: "resumen_distrito",
-    description:
-      "Resumen de un distrito: cuantas ideas se presentaron, cual gano con cuantos votos, en que etapa esta la obra y que barrios abarca.",
-    input_schema: {
-      type: "object",
-      properties: {
-        numero: { type: "integer", minimum: 1, maximum: 20 },
+    type: "function",
+    function: {
+      name: "resumen_distrito",
+      description:
+        "Resumen de un distrito: cuantas ideas se presentaron, cual gano con cuantos votos, en que etapa esta la obra y que barrios abarca.",
+      parameters: {
+        type: "object",
+        properties: {
+          numero: { type: "integer", minimum: 1, maximum: 20 },
+        },
+        additionalProperties: false,
+        required: ["numero"],
       },
-      additionalProperties: false,
-      required: ["numero"],
     },
-    strict: true,
   },
   {
-    name: "ubicar_barrio",
-    description:
-      "Dice a que distrito pertenece un barrio. Usar cuando la persona nombra su barrio en lugar de un numero de distrito.",
-    input_schema: {
-      type: "object",
-      properties: {
-        barrio: { type: "string", description: "Nombre del barrio, tal como lo dijo la persona." },
+    type: "function",
+    function: {
+      name: "ubicar_barrio",
+      description:
+        "Dice a que distrito pertenece un barrio. Usar cuando la persona nombra su barrio en lugar de un numero de distrito.",
+      parameters: {
+        type: "object",
+        properties: {
+          barrio: {
+            type: "string",
+            description: "Nombre del barrio, tal como lo dijo la persona.",
+          },
+        },
+        additionalProperties: false,
+        required: ["barrio"],
       },
-      additionalProperties: false,
-      required: ["barrio"],
     },
-    strict: true,
   },
   {
-    name: "estadisticas",
-    description:
-      "Totales de la edicion vigente: ideas presentadas, ganadores, votos, reparto por categoria y por estado, y en que etapa presupuestaria estan las obras.",
-    input_schema: { type: "object", properties: {}, additionalProperties: false, required: [] },
-    strict: true,
+    type: "function",
+    function: {
+      name: "estadisticas",
+      description:
+        "Totales de la edicion vigente: ideas presentadas, ganadores, votos, reparto por categoria y por estado, y en que etapa presupuestaria estan las obras.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+        required: [],
+      },
+    },
   },
 ];
 

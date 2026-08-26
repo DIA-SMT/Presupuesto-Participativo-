@@ -8,13 +8,14 @@ que responde únicamente con los datos publicados.
 
 **Stack:** Next.js 16 (App Router) + Drizzle ORM sobre Postgres
 (**Supabase** en producción, **PGlite** embebido en desarrollo, sin Docker) +
-MapLibre GL + API de Claude para el chatbot. Pensado para desplegarse en
-**Vercel**.
+MapLibre GL + **OpenRouter** para las funciones de lenguaje. Pensado para
+desplegarse en **Vercel**.
 
-> El trabajo en curso sobre el backoffice (tablero, revisión de propuestas,
-> aviso al vecino, roles) está planificado en
-> **[PLAN-BACKOFFICE.md](PLAN-BACKOFFICE.md)**, con el orden de las tandas y las
-> decisiones ya tomadas.
+> El trabajo en curso está planificado en dos documentos, con el orden de las
+> tandas y las decisiones ya tomadas:
+> **[PLAN-BACKOFFICE.md](PLAN-BACKOFFICE.md)** (tablero, revisión de propuestas,
+> aviso al vecino, roles) y **[PLAN-IA.md](PLAN-IA.md)** (asistente de carga e
+> informe de impacto).
 
 ## Qué incluye
 
@@ -53,8 +54,8 @@ npm run dev                    # http://localhost:3000
 |---|---|
 | `DATABASE_URL` | Vacío = PGlite local. Con la URL de Supabase = Postgres real |
 | `SESSION_SECRET` | Firma de sesiones y hash de DNI/IP. Mínimo 32 caracteres |
-| `ANTHROPIC_API_KEY` | Clave del chatbot. **Sin ella el chat sigue funcionando** en modo buscador determinístico |
-| `CHAT_MODEL` / `CHAT_EFFORT` | Modelo y esfuerzo del asistente (por defecto `claude-opus-5` / `low`) |
+| `OPENROUTER_API_KEY` | Clave del modelo, compartida por el chat, el asistente de carga y el informe de impacto. **Sin ella nada rompe**: el chat cae al buscador determinístico y las funciones de IA quedan desactivadas |
+| `OPENROUTER_MODELO` | Modelo con la forma `proveedor/modelo` (por defecto `anthropic/claude-sonnet-5`). Se puede afinar por función con `OPENROUTER_MODELO_CHAT`, `_ASISTENTE` e `_INFORME` |
 | `CHAT_RATE_LIMIT` | Consultas por IP por hora (por defecto 30) |
 | `AUTH_PROVIDER` | `dev` (login de prueba, solo desarrollo) o `cidituc` (OIDC real) |
 | `CIDITUC_*` | Credenciales OIDC que debe entregar el municipio |
@@ -75,7 +76,7 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
    edición 2025 directamente en Supabase.
 3. **Vercel**: importar el repo y configurar las variables de entorno del
    proyecto: `DATABASE_URL` (la misma de Supabase), `SESSION_SECRET`,
-   `ANTHROPIC_API_KEY`, `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
+   `OPENROUTER_API_KEY`, `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
    hasta tener CIDITUC), `SITE_URL` y las `CIDITUC_*` cuando estén.
 4. El mismo código detecta la URL: con Supabase usa node-postgres (`Pool` de
    `pg`, una consulta por conexión, que es lo que tolera el pooler en modo
@@ -97,8 +98,12 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
   (MapTiler, Mapbox o un servidor propio): la política de uso de los tiles de
   OSM no está pensada para sitios institucionales con volumen. Está aislado en
   `src/components/Mapa.tsx` (función `estilo()`), es un cambio de una línea.
-- **Chatbot**: `POST /api/chat` (streaming SSE). Usa la API de Claude con
-  *tool use*: el modelo no recibe la base entera sino cinco herramientas
+- **Funciones de lenguaje**: todas pasan por `src/lib/modelo.ts`, que habla con
+  **OpenRouter** (API compatible con OpenAI) y elige el modelo por entorno. Ese
+  módulo concentra el cliente, el timeout, la traducción de errores y la cuenta
+  de tokens; ninguna función arma el suyo.
+- **Chatbot**: `POST /api/chat` (streaming SSE). Usa *tool use*: el modelo no
+  recibe la base entera sino cinco herramientas
   (`buscar_proyectos`, `detalle_proyecto`, `resumen_distrito`, `ubicar_barrio`,
   `estadisticas`) que llaman exactamente a las mismas consultas que las
   páginas. Si un dato no está cargado, la herramienta lo dice y el asistente

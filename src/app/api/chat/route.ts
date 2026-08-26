@@ -6,10 +6,11 @@
  * src/lib/chat-herramientas.ts) que consultan las mismas funciones que usan
  * las paginas. Por eso no puede responder con datos que el sitio no tenga.
  *
- * Si no hay ANTHROPIC_API_KEY configurada, el endpoint responde igual usando el
- * buscador determinístico de src/lib/chat-sin-ia.ts.
+ * El proveedor es OpenRouter, con la API compatible con OpenAI (ver
+ * src/lib/modelo.ts). Si no hay OPENROUTER_API_KEY configurada, el endpoint
+ * responde igual usando el buscador determinístico de src/lib/chat-sin-ia.ts.
  */
-import Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import { z } from "zod";
 import { db } from "@/db";
 import { chatConsultas } from "@/db/schema";
@@ -18,6 +19,15 @@ import { HERRAMIENTAS, ejecutarHerramienta } from "@/lib/chat-herramientas";
 import { responderSinIA } from "@/lib/chat-sin-ia";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
+import {
+  CONSUMO_VACIO,
+  crearCliente,
+  hayClave,
+  mensajeDeError,
+  modeloPara,
+  sumarConsumo,
+  type Consumo,
+} from "@/lib/modelo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +36,7 @@ const MAX_MENSAJES = 16;
 const MAX_LARGO = 800;
 /** Tope de vueltas del bucle de herramientas, por si el modelo se cicla. */
 const MAX_VUELTAS = 6;
+const MAX_TOKENS = 2048;
 
 const esquema = z.object({
   mensajes: z
@@ -157,18 +168,17 @@ export async function POST(request: Request) {
     );
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-
   // -------------------------------------------------------------------------
   // Sin clave: buscador determinístico. Misma forma de respuesta (SSE).
   // -------------------------------------------------------------------------
-  if (!apiKey) {
+  if (!hayClave()) {
     const { texto, referencias } = await responderSinIA(pregunta, edicion);
     await registrar({
       pregunta,
       respuesta: texto,
       herramientas: ["buscador-local"],
       modelo: null,
+      consumo: CONSUMO_VACIO,
       ms: Date.now() - inicio,
       ipHash,
       ok: true,
@@ -194,26 +204,24 @@ export async function POST(request: Request) {
   }
 
   // -------------------------------------------------------------------------
-  // Con clave: Claude con herramientas, en streaming.
+  // Con clave: el modelo con herramientas, en streaming.
   // -------------------------------------------------------------------------
-  const cliente = new Anthropic({ apiKey });
-  const modelo = process.env.CHAT_MODEL?.trim() || "claude-opus-5";
-  const esfuerzo = (process.env.CHAT_EFFORT?.trim() || "low") as
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh"
-    | "max";
+  const cliente = crearCliente();
+  const modelo = modeloPara("chat");
 
   const sistema = await construirSistema();
-  const mensajes: Anthropic.MessageParam[] = entrada.mensajes.map((m) => ({
-    role: m.rol === "usuario" ? "user" : "assistant",
-    content: m.texto,
-  }));
+  const mensajes: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: sistema },
+    ...entrada.mensajes.map((m) => ({
+      role: (m.rol === "usuario" ? "user" : "assistant") as "user" | "assistant",
+      content: m.texto,
+    })),
+  ];
 
   const usadas: string[] = [];
   const referencias: Array<{ titulo: string; url: string }> = [];
   let respuesta = "";
+  let consumo: Consumo = CONSUMO_VACIO;
 
   const cuerpo = new ReadableStream({
     async start(controlador) {
@@ -222,69 +230,117 @@ export async function POST(request: Request) {
         controlador.enqueue(codificador.encode(sse(evento)));
 
       try {
+        let cerroSolo = false;
+
         for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta += 1) {
-          const stream = cliente.messages.stream({
+          const stream = await cliente.chat.completions.create({
             model: modelo,
-            max_tokens: 2048,
-            // El prompt de sistema y las herramientas son estables: se cachean
-            // para que cada consulta pague solo el mensaje del usuario.
-            system: [
-              { type: "text", text: sistema, cache_control: { type: "ephemeral" } },
-            ],
-            output_config: { effort: esfuerzo },
-            tools: HERRAMIENTAS,
             messages: mensajes,
+            tools: HERRAMIENTAS,
+            max_tokens: MAX_TOKENS,
+            stream: true,
+            // Sin esto el ultimo trozo no trae el consumo y no se puede auditar.
+            stream_options: { include_usage: true },
           });
 
-          stream.on("text", (delta) => {
-            respuesta += delta;
-            enviar({ tipo: "texto", delta });
-          });
+          let texto = "";
+          let motivo: string | null = null;
+          // Las llamadas a herramientas llegan partidas en varios trozos: cada
+          // delta trae un pedazo del JSON de argumentos. Se rearman por indice.
+          const parciales = new Map<number, LlamadaParcial>();
 
-          const mensaje = await stream.finalMessage();
+          for await (const trozo of stream) {
+            if (trozo.usage) consumo = sumarConsumo(consumo, trozo.usage);
 
-          if (mensaje.stop_reason === "refusal") {
-            enviar({
-              tipo: "error",
-              mensaje: "No puedo responder esa consulta. Probá con otra pregunta sobre el programa.",
-            });
+            const eleccion = trozo.choices?.[0];
+            if (!eleccion) continue;
+            if (eleccion.finish_reason) motivo = eleccion.finish_reason;
+
+            const contenido = eleccion.delta?.content;
+            if (contenido) {
+              texto += contenido;
+              respuesta += contenido;
+              enviar({ tipo: "texto", delta: contenido });
+            }
+
+            for (const parcial of eleccion.delta?.tool_calls ?? []) {
+              const previo = parciales.get(parcial.index) ?? {
+                id: "",
+                nombre: "",
+                argumentos: "",
+              };
+              parciales.set(parcial.index, {
+                id: parcial.id ?? previo.id,
+                nombre: parcial.function?.name ?? previo.nombre,
+                argumentos: previo.argumentos + (parcial.function?.arguments ?? ""),
+              });
+            }
+          }
+
+          const llamadas = [...parciales.values()].filter((l) => l.nombre && l.id);
+
+          if (!llamadas.length) {
+            // Respuesta final. Si se corto por tope de tokens conviene decirlo:
+            // antes quedaba truncada en seco y parecia un error del sitio.
+            if (motivo === "length") {
+              enviar({
+                tipo: "texto",
+                delta: "\n\n(La respuesta quedó cortada. Probá con una pregunta más acotada.)",
+              });
+            }
+            cerroSolo = true;
             break;
           }
 
-          const llamadas = mensaje.content.filter(
-            (bloque): bloque is Anthropic.ToolUseBlock => bloque.type === "tool_use",
-          );
+          mensajes.push({
+            role: "assistant",
+            content: texto || null,
+            tool_calls: llamadas.map((l) => ({
+              id: l.id,
+              type: "function" as const,
+              function: { name: l.nombre, arguments: l.argumentos || "{}" },
+            })),
+          });
 
-          if (!llamadas.length) break;
-
-          mensajes.push({ role: "assistant", content: mensaje.content });
-
-          const resultados: Anthropic.ToolResultBlockParam[] = [];
           for (const llamada of llamadas) {
-            usadas.push(llamada.name);
-            enviar({ tipo: "herramienta", nombre: llamada.name });
+            usadas.push(llamada.nombre);
+            enviar({ tipo: "herramienta", nombre: llamada.nombre });
+
+            let contenido: string;
             try {
-              const salida = await ejecutarHerramienta(llamada.name, llamada.input, edicion);
+              const argumentos = llamada.argumentos.trim()
+                ? (JSON.parse(llamada.argumentos) as unknown)
+                : {};
+              const salida = await ejecutarHerramienta(llamada.nombre, argumentos, edicion);
               referencias.push(...salida.referencias);
-              resultados.push({
-                type: "tool_result",
-                tool_use_id: llamada.id,
-                content: salida.contenido,
-              });
+              contenido = salida.contenido;
             } catch (causa) {
-              resultados.push({
-                type: "tool_result",
-                tool_use_id: llamada.id,
-                is_error: true,
-                content:
+              // El error vuelve al modelo como resultado, no corta la respuesta:
+              // puede explicarle a la persona que esa consulta no se pudo hacer.
+              contenido = JSON.stringify({
+                error:
                   causa instanceof Error
                     ? `La consulta falló: ${causa.message}`
                     : "La consulta falló.",
               });
             }
-          }
 
-          mensajes.push({ role: "user", content: resultados });
+            mensajes.push({
+              role: "tool",
+              tool_call_id: llamada.id,
+              content: contenido,
+            });
+          }
+        }
+
+        // Se agotaron las vueltas sin respuesta final: antes terminaba en
+        // silencio y la persona se quedaba mirando una respuesta a medias.
+        if (!cerroSolo) {
+          enviar({
+            tipo: "error",
+            mensaje:
+              "No pude terminar de armar la respuesta. Probá preguntando de otra manera.",
+          });
         }
 
         const unicas = [
@@ -298,24 +354,26 @@ export async function POST(request: Request) {
           respuesta,
           herramientas: usadas,
           modelo,
+          consumo,
           ms: Date.now() - inicio,
           ipHash,
-          ok: true,
+          ok: cerroSolo,
         });
       } catch (causa) {
-        const mensaje =
-          causa instanceof Anthropic.RateLimitError
-            ? "El asistente está recibiendo muchas consultas. Probá de nuevo en un minuto."
-            : causa instanceof Anthropic.AuthenticationError
-              ? "El asistente no está configurado correctamente en el servidor."
-              : "Hubo un problema al responder. Podés buscar el proyecto en /proyectos.";
         console.error("[chat]", causa);
-        enviar({ tipo: "error", mensaje });
+        enviar({
+          tipo: "error",
+          mensaje: mensajeDeError(
+            causa,
+            "Hubo un problema al responder. Podés buscar el proyecto en /proyectos.",
+          ),
+        });
         await registrar({
           pregunta,
           respuesta: respuesta || null,
           herramientas: usadas,
           modelo,
+          consumo,
           ms: Date.now() - inicio,
           ipHash,
           ok: false,
@@ -329,6 +387,9 @@ export async function POST(request: Request) {
   return new Response(cuerpo, { headers: cabecerasSse });
 }
 
+/** Una llamada a herramienta mientras se rearma desde los trozos del stream. */
+type LlamadaParcial = { id: string; nombre: string; argumentos: string };
+
 const cabecerasSse = {
   "Content-Type": "text/event-stream; charset=utf-8",
   "Cache-Control": "no-cache, no-transform",
@@ -341,16 +402,21 @@ async function registrar(datos: {
   respuesta: string | null;
   herramientas: string[];
   modelo: string | null;
+  consumo: Consumo;
   ms: number;
   ipHash: string;
   ok: boolean;
 }) {
   try {
     await db.insert(chatConsultas).values({
+      origen: "chat",
       pregunta: datos.pregunta,
       respuesta: datos.respuesta,
       herramientas: datos.herramientas,
       modelo: datos.modelo,
+      tokensEntrada: datos.consumo.tokensEntrada,
+      tokensSalida: datos.consumo.tokensSalida,
+      cacheLectura: datos.consumo.cacheLectura,
       ms: datos.ms,
       ipHash: datos.ipHash,
       ok: datos.ok,
