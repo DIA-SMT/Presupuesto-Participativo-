@@ -66,3 +66,8 @@ test("la version del consentimiento tiene forma de periodo", async () => {
   const { VERSION_CONSENTIMIENTO } = await avisos();
   assert.match(VERSION_CONSENTIMIENTO, /^\d{4}-\d{2}$/);
 });
+
+test("la version del aviso legal tiene forma de periodo", async () => {
+  const { VERSION_AVISO_LEGAL } = await avisos();
+  assert.match(VERSION_AVISO_LEGAL, /^\d{4}-\d{2}$/);
+});
