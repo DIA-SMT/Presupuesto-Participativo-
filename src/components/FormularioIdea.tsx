@@ -37,7 +37,7 @@
  * LARGO de los tres campos largos, que es lo que habilita cada boton de ayuda;
  * eso no vuelve controlado al campo, porque no le devolvemos el `value`.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Mapa from "@/components/Mapa";
 import type { RespuestaAsistente } from "@/app/api/ideas/asistente/route";
 import type { RespuestaRedactar } from "@/app/api/ideas/redactar/route";
@@ -73,7 +73,13 @@ const MINIMO_DE_CONTEXTO = 25;
 type EstadoAyuda =
   | { tipo: "quieto" }
   | { tipo: "pidiendo" }
-  | { tipo: "propuesta"; texto: string; modo: RespuestaRedactar["modo"] }
+  | {
+      tipo: "propuesta";
+      texto: string;
+      modo: RespuestaRedactar["modo"];
+      /** Aspectos de obra que se ofrecen para tildar. Solo en `solucion`. */
+      detalles: string[];
+    }
   | { tipo: "error"; mensaje: string };
 
 const AYUDAS_QUIETAS: Record<CampoLargo, EstadoAyuda> = {
@@ -85,9 +91,16 @@ const AYUDAS_QUIETAS: Record<CampoLargo, EstadoAyuda> = {
 export default function FormularioIdea({
   categorias,
   abierta,
+  conIA,
 }: {
   categorias: Categoria[];
   abierta: boolean;
+  /**
+   * Si hay clave del modelo. Sin ella los botones de redaccion no se dibujan:
+   * la regla del proyecto es que nada se rompe por falta de clave, y el aviso
+   * legal ya promete que estas funciones "simplemente no aparecen".
+   */
+  conIA: boolean;
 }) {
   const [punto, setPunto] = useState<{ lat: number; lon: number } | null>(null);
   const [distrito, setDistrito] = useState<number | null>(null);
@@ -216,7 +229,7 @@ export default function FormularioIdea({
    * Pide a la IA el texto de UN campo. Nunca escribe sola: deja la propuesta a
    * la vista y la persona decide si la usa.
    */
-  async function pedirAyuda(campo: CampoLargo) {
+  async function pedirAyuda(campo: CampoLargo, agregar?: string[]) {
     setAyudas((previo) => ({ ...previo, [campo]: { tipo: "pidiendo" } }));
     try {
       const respuesta = await fetch("/api/ideas/redactar", {
@@ -231,6 +244,8 @@ export default function FormularioIdea({
           problema: refProblema.current?.value || null,
           solucion: refSolucion.current?.value || null,
           beneficios: refBeneficios.current?.value || null,
+          // Los aspectos que la persona tildo, si volvio a pedir con alguno.
+          ...(agregar?.length ? { agregar } : {}),
           // Ni nombre ni correo: para redactar no hace falta saber quien escribe.
         }),
       });
@@ -245,7 +260,12 @@ export default function FormularioIdea({
 
       setAyudas((previo) => ({
         ...previo,
-        [campo]: { tipo: "propuesta", texto: cuerpo.texto, modo: cuerpo.modo },
+        [campo]: {
+          tipo: "propuesta",
+          texto: cuerpo.texto,
+          modo: cuerpo.modo,
+          detalles: cuerpo.detalles ?? [],
+        },
       }));
     } catch (causa) {
       setAyudas((previo) => ({
@@ -547,39 +567,19 @@ export default function FormularioIdea({
               adentro de un label es contenido interactivo anidado, que roba el
               clic del campo etiquetado. El <div> mantiene al par junto pese al
               space-y de la seccion. */}
+          {/*
+            El orden de estas dos preguntas esta invertido respecto de las
+            columnas de la base, y es a proposito (pedido de Lucas, 26/08/2026):
+            la gente llega con "quiero una plaza", no con "el problema es la
+            carencia de espacios verdes". Primero se le pregunta QUE quiere
+            (columna `solucion`) y despues POR QUE hace falta (columna
+            `problema`). Las columnas siguen significando lo mismo que siempre;
+            lo unico que cambia es el orden en pantalla y como se pregunta.
+          */}
           <div>
             <Campo
-              etiqueta="¿Qué problema querés resolver?"
-              ayuda="¿A quiénes afecta y cómo? Escribilo con tus palabras, después la IA te lo puede ordenar."
-            >
-              <textarea
-                ref={refProblema}
-                name="problema"
-                required
-                rows={5}
-                maxLength={LARGOS.problema}
-                disabled={!abierta || ocupado}
-                onInput={(evento) => anotarLargo("problema", evento.currentTarget.value)}
-                className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
-                style={campoEstilo}
-              />
-            </Campo>
-            <AyudaDeRedaccion
-              estado={ayudas.problema}
-              etiqueta="Formalizar con IA"
-              habilitado={largos.problema >= MINIMO_PARA_FORMALIZAR}
-              motivo="Escribí unas palabras, aunque sea corto y con errores, y la IA te lo ordena. No lo escribe por vos."
-              deshabilitado={!abierta || ocupado}
-              onPedir={() => void pedirAyuda("problema")}
-              onUsar={(texto) => usarAyuda("problema", texto)}
-              onDescartar={() => descartarAyuda("problema")}
-            />
-          </div>
-
-          <div>
-            <Campo
-              etiqueta="¿Cómo lo resolverías?"
-              ayuda="Describí la obra o la intervención que propones. Con tus palabras alcanza."
+              etiqueta="¿Qué querés proponer?"
+              ayuda="Contá qué obra o mejora querés para tu barrio. Con tus palabras alcanza."
             >
               <textarea
                 ref={refSolucion}
@@ -588,21 +588,57 @@ export default function FormularioIdea({
                 rows={5}
                 maxLength={LARGOS.solucion}
                 disabled={!abierta || ocupado}
+                placeholder="Una canchita para que los chicos jueguen…"
                 onInput={(evento) => anotarLargo("solucion", evento.currentTarget.value)}
                 className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={campoEstilo}
               />
             </Campo>
-            <AyudaDeRedaccion
-              estado={ayudas.solucion}
-              etiqueta="Formalizar con IA"
-              habilitado={largos.solucion >= MINIMO_PARA_FORMALIZAR}
-              motivo="Contá con tus palabras qué obra propones y la IA te lo ordena. No lo escribe por vos."
-              deshabilitado={!abierta || ocupado}
-              onPedir={() => void pedirAyuda("solucion")}
-              onUsar={(texto) => usarAyuda("solucion", texto)}
-              onDescartar={() => descartarAyuda("solucion")}
-            />
+            {conIA && (
+              <AyudaDeRedaccion
+                estado={ayudas.solucion}
+                etiqueta="Formalizar con IA"
+                habilitado={largos.solucion >= MINIMO_PARA_FORMALIZAR}
+                motivo="Escribí qué querés, aunque sea corto y con errores, y la IA te lo ordena. No lo escribe por vos."
+                deshabilitado={!abierta || ocupado}
+                onPedir={() => void pedirAyuda("solucion")}
+                onUsar={(texto) => usarAyuda("solucion", texto)}
+                onDescartar={() => descartarAyuda("solucion")}
+                onAgregar={(detalles) => void pedirAyuda("solucion", detalles)}
+              />
+            )}
+          </div>
+
+          <div>
+            <Campo
+              etiqueta="¿Por qué hace falta?"
+              ayuda="¿Qué pasa hoy en el barrio? ¿A quiénes afecta?"
+            >
+              <textarea
+                ref={refProblema}
+                name="problema"
+                required
+                rows={5}
+                maxLength={LARGOS.problema}
+                disabled={!abierta || ocupado}
+                placeholder="Hoy no hay ningún lugar donde jugar…"
+                onInput={(evento) => anotarLargo("problema", evento.currentTarget.value)}
+                className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={campoEstilo}
+              />
+            </Campo>
+            {conIA && (
+              <AyudaDeRedaccion
+                estado={ayudas.problema}
+                etiqueta="Formalizar con IA"
+                habilitado={largos.problema >= MINIMO_PARA_FORMALIZAR}
+                motivo="Escribí unas palabras, aunque sea corto y con errores, y la IA te lo ordena. No lo escribe por vos."
+                deshabilitado={!abierta || ocupado}
+                onPedir={() => void pedirAyuda("problema")}
+                onUsar={(texto) => usarAyuda("problema", texto)}
+                onDescartar={() => descartarAyuda("problema")}
+              />
+            )}
           </div>
 
           {/*
@@ -613,8 +649,8 @@ export default function FormularioIdea({
           */}
           <div>
             <Campo
-              etiqueta="Beneficios para el barrio"
-              ayuda="Opcional. ¿Quiénes se benefician y de qué manera? La IA puede redactarlo a partir de lo que contaste arriba."
+              etiqueta="¿Quiénes se benefician?"
+              ayuda="Opcional. La IA puede escribirlo a partir de lo que contaste arriba."
             >
               <textarea
                 ref={refBeneficios}
@@ -627,19 +663,21 @@ export default function FormularioIdea({
                 style={campoEstilo}
               />
             </Campo>
-            <AyudaDeRedaccion
-              estado={ayudas.beneficios}
-              etiqueta={largos.beneficios > 0 ? "Completar con IA" : "Redactar con IA"}
-              habilitado={
-                largos.problema >= MINIMO_DE_CONTEXTO &&
-                largos.solucion >= MINIMO_DE_CONTEXTO
-              }
-              motivo="Completá antes el problema y la solución: los beneficios salen de ahí."
-              deshabilitado={!abierta || ocupado}
-              onPedir={() => void pedirAyuda("beneficios")}
-              onUsar={(texto) => usarAyuda("beneficios", texto)}
-              onDescartar={() => descartarAyuda("beneficios")}
-            />
+            {conIA && (
+              <AyudaDeRedaccion
+                estado={ayudas.beneficios}
+                etiqueta={largos.beneficios > 0 ? "Completar con IA" : "Redactar con IA"}
+                habilitado={
+                  largos.problema >= MINIMO_DE_CONTEXTO &&
+                  largos.solucion >= MINIMO_DE_CONTEXTO
+                }
+                motivo="Completá antes el problema y la solución: los beneficios salen de ahí."
+                deshabilitado={!abierta || ocupado}
+                onPedir={() => void pedirAyuda("beneficios")}
+                onUsar={(texto) => usarAyuda("beneficios", texto)}
+                onDescartar={() => descartarAyuda("beneficios")}
+              />
+            )}
           </div>
         </section>
 
@@ -795,6 +833,7 @@ function AyudaDeRedaccion({
   onPedir,
   onUsar,
   onDescartar,
+  onAgregar,
 }: {
   estado: EstadoAyuda;
   /** Que dice el boton. Cambia segun el campo tenga texto o no. */
@@ -808,8 +847,17 @@ function AyudaDeRedaccion({
   onPedir: () => void;
   onUsar: (texto: string) => void;
   onDescartar: () => void;
+  /** Rehace el texto incluyendo los aspectos tildados. Solo en `solucion`. */
+  onAgregar?: (detalles: string[]) => void;
 }) {
   const pidiendo = estado.tipo === "pidiendo";
+  const [tildados, setTildados] = useState<string[]>([]);
+  const propuesta = estado.tipo === "propuesta" ? estado.texto : null;
+
+  // Cada propuesta nueva empieza con las casillas limpias: las de la anterior
+  // ya se incorporaron al texto, y dejarlas tildadas invitaria a agregarlas
+  // dos veces.
+  useEffect(() => setTildados([]), [propuesta]);
 
   return (
     <div className="mt-2">
@@ -869,6 +917,59 @@ function AyudaDeRedaccion({
           >
             {estado.texto}
           </p>
+
+          {/*
+            Los aspectos de obra. Van como casillas y NO dentro del texto: es la
+            unica via por la que aparece vocabulario tecnico que la persona no
+            escribio, y lo que la hace legitima es que lo elige ella. El por que
+            esta en src/lib/redaccion-prompts.ts.
+          */}
+          {onAgregar && estado.detalles.length > 0 && (
+            <div
+              className="mt-3 rounded-xl p-3"
+              style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+            >
+              <p className="text-xs font-semibold">
+                ¿Querés agregar alguno de estos? Los elegís vos
+              </p>
+              <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+                Son cosas que el municipio suele pedir para una obra así y que no escribiste. Tildá
+                solo las que quieras.
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                {estado.detalles.map((detalle) => (
+                  <label key={detalle} className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={tildados.includes(detalle)}
+                      onChange={(evento) =>
+                        setTildados((previo) =>
+                          evento.target.checked
+                            ? [...previo, detalle]
+                            : previo.filter((d) => d !== detalle),
+                        )
+                      }
+                    />
+                    {detalle}
+                  </label>
+                ))}
+              </div>
+              {tildados.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onAgregar(tildados)}
+                  className="mt-3 rounded-lg px-3 py-2 text-xs font-semibold"
+                  style={{
+                    background: "var(--fondo-tarjeta)",
+                    border: "1px solid var(--borde-control)",
+                    color: "var(--color-marca-700)",
+                  }}
+                >
+                  Agregar {tildados.length === 1 ? "lo elegido" : `los ${tildados.length} elegidos`}
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
@@ -940,7 +1041,7 @@ function PanelRevision({
   reescrituraAplicada: boolean;
   onUsarReescritura: () => void;
 }) {
-  const { faltantes, parecidas, senalamientos, reescritura, aviso } = revision;
+  const { modo, faltantes, parecidas, senalamientos, reescritura, aviso } = revision;
   const todoBien =
     !faltantes.length && !parecidas.length && !senalamientos.length && !aviso;
 
@@ -1036,9 +1137,11 @@ function PanelRevision({
             className="mt-3 space-y-3 rounded-xl p-4 text-sm leading-relaxed"
             style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
           >
+            {/* En el orden en que la persona los vio en el formulario: primero
+                qué propone, después por qué hace falta. */}
             <p className="font-semibold">{reescritura.titulo}</p>
-            <p>{reescritura.problema}</p>
             <p>{reescritura.solucion}</p>
+            <p>{reescritura.problema}</p>
             {reescritura.beneficios && <p>{reescritura.beneficios}</p>}
           </div>
 
@@ -1065,18 +1168,34 @@ function PanelRevision({
 
       {/* Cierra el panel entero, no solo la reescritura: el miedo razonable de
           quien lee una revision automatica es que la maquina este puntuando su
-          idea, y el lugar para desmentirlo es el pie de la revision. */}
-      <p
-        className="mt-5 border-t pt-3 text-xs leading-relaxed"
-        style={{ borderColor: "var(--borde)", color: "var(--texto-suave)" }}
-      >
-        Esta revisión la hace un asistente de inteligencia artificial y puede equivocarse.{" "}
-        <strong>No evalúa tu propuesta ni decide si se publica</strong>: eso lo hace el equipo del
-        programa, y podés enviarla igual sin aplicar ningún cambio.{" "}
-        <a href="#aviso-ia" className="underline" style={{ color: "inherit" }}>
-          Aviso legal
-        </a>
-      </p>
+          idea, y el lugar para desmentirlo es el pie de la revision.
+
+          Solo en modo "ia". En modo "basico" no intervino ningun modelo (los
+          minimos y las propuestas parecidas se calculan con codigo comun), y
+          decir que reviso una IA seria atribuirle algo que no hizo: exactamente
+          el tipo de afirmacion que este pie existe para evitar. */}
+      {modo === "ia" ? (
+        <p
+          className="mt-5 border-t pt-3 text-xs leading-relaxed"
+          style={{ borderColor: "var(--borde)", color: "var(--texto-suave)" }}
+        >
+          Esta revisión la hace un asistente de inteligencia artificial y puede equivocarse.{" "}
+          <strong>No evalúa tu propuesta ni decide si se publica</strong>: eso lo hace el equipo del
+          programa, y podés enviarla igual sin aplicar ningún cambio.{" "}
+          <a href="#aviso-ia" className="underline" style={{ color: "inherit" }}>
+            Aviso legal
+          </a>
+        </p>
+      ) : (
+        <p
+          className="mt-5 border-t pt-3 text-xs leading-relaxed"
+          style={{ borderColor: "var(--borde)", color: "var(--texto-suave)" }}
+        >
+          Esta revisión son chequeos automáticos sobre lo que cargaste, sin inteligencia
+          artificial. <strong>No evalúa tu propuesta ni decide si se publica</strong>: eso lo hace
+          el equipo del programa, y podés enviarla igual sin cambiar nada.
+        </p>
+      )}
     </section>
   );
 }

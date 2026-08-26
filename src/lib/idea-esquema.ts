@@ -86,14 +86,18 @@ export function faltantesBasicos(datos: {
       `El título es muy corto: necesita al menos ${MINIMOS.titulo} caracteres.`,
     );
   }
-  if (largo(datos.problema) < MINIMOS.problema) {
-    faltan.push(
-      `Contá un poco más el problema: necesita al menos ${MINIMOS.problema} caracteres.`,
-    );
-  }
+  // Los mensajes nombran las preguntas como las ve la persona en el formulario
+  // ("¿Qué querés proponer?", "¿Por qué hace falta?") y no las columnas de la
+  // base: nadie que carga una idea vio nunca las palabras "problema" ni
+  // "solución" en pantalla.
   if (largo(datos.solucion) < MINIMOS.solucion) {
     faltan.push(
-      `Contá un poco más la solución: necesita al menos ${MINIMOS.solucion} caracteres.`,
+      `Contá un poco más qué querés proponer: necesita al menos ${MINIMOS.solucion} caracteres.`,
+    );
+  }
+  if (largo(datos.problema) < MINIMOS.problema) {
+    faltan.push(
+      `Contá un poco más por qué hace falta: necesita al menos ${MINIMOS.problema} caracteres.`,
     );
   }
   return faltan;
