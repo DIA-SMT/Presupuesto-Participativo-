@@ -69,7 +69,12 @@ export default async function NuevaIdea() {
         error dejaba a ese texto mintiendo. Se evalua en el servidor porque la
         clave es del servidor y no tiene por que viajar al navegador.
       */}
-      <FormularioIdea categorias={categorias} abierta={abierta} conIA={hayClave()} />
+      <FormularioIdea
+        categorias={categorias}
+        abierta={abierta}
+        conIA={hayClave()}
+        anio={edicion?.anio ?? new Date().getFullYear()}
+      />
     </div>
   );
 }

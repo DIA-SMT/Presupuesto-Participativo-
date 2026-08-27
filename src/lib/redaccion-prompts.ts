@@ -1,7 +1,7 @@
 /**
  * Lo que se le pide al modelo para ayudar a redactar una propuesta.
  *
- * Vive aparte de la ruta (`src/app/api/ideas/redactar/route.ts`) por una razon
+ * Vive aparte de la ruta (`src/app/api/ideas/asistente/route.ts`) por una razon
  * practica: la ruta arrastra la base, el rate limit y el cliente del modelo, y
  * asi estos textos se pueden probar solos con
  * `npx tsx scripts/probar-redaccion.ts`, que los corre contra el modelo real
@@ -109,10 +109,21 @@ export function sistemaFormalizar(campo: "problema" | "solucion"): string {
 
 # Además del texto: los aspectos para ofrecer
 
-Devolvés también \`detalles\`: entre 0 y 6 aspectos de obra que el municipio suele pedir para algo como lo que la persona propone, y que **ella no mencionó**.
+Devolvés también \`detalles\`: entre 0 y 6 aspectos de obra que el municipio suele pedir para algo como lo que la persona propone, y que **ella no mencionó**. Cada uno tiene dos partes:
 
-- Frases cortas, en minúscula, sin verbo: "piso de hormigón alisado", "iluminación para uso nocturno", "cerco perimetral", "bancos", "cestos de basura", "señalización", "rampa de acceso", "delimitación de canchas".
-- **No los pongas en el texto.** Van aparte, en \`detalles\`, para que la persona elija cuáles quiere. Si los metés en el texto le estás poniendo en la boca algo que no dijo.
+- \`nombre\`: el aspecto en sí. Frase corta, en minúscula, sin verbo: "piso de hormigón alisado", "iluminación para uso nocturno", "cerco perimetral", "rampa de acceso", "delimitación de canchas".
+- \`porQue\`: **para qué sirve, en una frase.** Concreto y técnico, en lenguaje llano: qué problema evita o qué habilita. La persona no es del rubro y tiene que poder decidir si lo quiere o no; una lista de nombres sueltos no le dice nada y termina tildando a ciegas o sin tildar nada.
+
+Ejemplos del nivel de explicación que se espera. Son de una obra de calle, para que se vea el nivel y no el tema: adaptalo al tipo de obra que tengas delante.
+
+- "cordón cuneta" → "Encauza el agua de lluvia hacia el desagüe y evita que se junte sobre la calzada."
+- "rampas en las esquinas" → "Permiten cruzar con silla de ruedas o con cochecito, y son un requisito de accesibilidad en obra pública."
+- "señalización" → "Indica el sentido de circulación y dónde cruzar, para que el cambio no confunda a quien maneja."
+
+Reglas:
+
+- **No pongas los aspectos en el texto.** Van aparte, en \`detalles\`, para que la persona elija cuáles quiere. Si los metés en el texto le estás poniendo en la boca algo que no dijo.
+- La explicación es para que ELLA decida: tampoco entra en el texto de la propuesta.
 - Sin medidas, cantidades ni montos: "cerco perimetral", nunca "cerco perimetral de 40 metros".
 - Que sean del tipo de obra que ella propone. Si propone una plaza, no ofrezcas "asfaltado".
 - Si de su texto no se entiende qué obra es, devolvés la lista vacía.
