@@ -31,18 +31,28 @@
  *     solo el puede hacer: mirar la propuesta completa y compararla con las
  *     demas del distrito.
  *
- * Ninguna de las dos es obligatoria. "Enviar sin revisar" esta siempre
+ * Ninguna de las dos es obligatoria: el boton de enviar esta siempre
  * disponible, los botones de ayuda se pueden ignorar, y si el modelo falla o no
  * hay clave el envio no se entera.
  *
- * Los campos siguen SIN ser controlados. Para poder aplicar un texto generado
- * alcanza con una referencia por campo y escribir su `.value`: el FormData del
- * envio lo levanta igual. Pasarlos a controlados habria sido rehacer el
- * formulario entero para no ganar nada. Lo unico que se sigue en estado es el
- * LARGO de los tres campos largos, que es lo que habilita cada boton de ayuda;
- * eso no vuelve controlado al campo, porque no le devolvemos el `value`.
+ * La pantalla: formulario a la izquierda, documento a la derecha
+ * --------------------------------------------------------------
+ * A la derecha estaba el mapa. Se movio porque el jefe del programa dijo que el
+ * formulario era "poco predictivo": se cargaban campos sueltos y la propuesta
+ * recien se veia despues de enviarla. Ahora la derecha la ocupa
+ * DocumentoIdea, que dibuja la propuesta mientras se escribe, sin IA y sin
+ * esperar nada, y que es el mismo componente que sale impreso en el PDF. El
+ * mapa quedo como primera pregunta a la izquierda, que es donde ya estaba
+ * numerado ("1. ¿Dónde sería?").
+ *
+ * Los campos siguen SIN ser controlados: nadie les pasa `value`, asi que el
+ * cursor no puede saltar. Lo que hay es un espejo en estado (`valores`) que se
+ * actualiza en cada tecla y es lo que dibuja el documento. Antes ese espejo
+ * guardaba solo el largo del texto, que alcanzaba para habilitar los botones de
+ * IA; ahora guarda el texto entero, porque hay que mostrarlo.
  */
 import { useEffect, useRef, useState } from "react";
+import DocumentoIdea, { type BloqueActivo } from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
 import type { RespuestaAsistente } from "@/app/api/ideas/asistente/route";
 import type { RespuestaRedactar } from "@/app/api/ideas/redactar/route";
@@ -114,9 +124,12 @@ export default function FormularioIdea({
   categorias,
   abierta,
   conIA,
+  anio,
 }: {
   categorias: Categoria[];
   abierta: boolean;
+  /** Año de la edición activa, para el encabezado del documento. */
+  anio: number;
   /**
    * Si hay clave del modelo. Sin ella los botones de redaccion no se dibujan:
    * la regla del proyecto es que nada se rompe por falta de clave, y el aviso
@@ -136,12 +149,43 @@ export default function FormularioIdea({
 
   /** Estado de la ayuda de redaccion de cada campo largo. */
   const [ayudas, setAyudas] = useState<Record<CampoLargo, EstadoAyuda>>(AYUDAS_QUIETAS);
-  /** Largo de cada campo largo: es lo que habilita o no cada boton de ayuda. */
-  const [largos, setLargos] = useState<Record<CampoLargo, number>>({
-    problema: 0,
-    solucion: 0,
-    beneficios: 0,
+
+  /**
+   * El texto de cada campo, espejado en estado.
+   *
+   * Los campos siguen sin ser controlados (nadie les pasa `value`), asi que no
+   * hay riesgo de que el cursor salte. Lo que se guarda aca es una copia que se
+   * actualiza en cada tecla, y existe por una razon nueva: el documento de la
+   * derecha se dibuja con esto. Antes alcanzaba con el largo del texto para
+   * habilitar los botones de IA; ahora hace falta el texto entero para poder
+   * mostrarlo mientras se escribe.
+   */
+  const [valores, setValores] = useState({
+    titulo: "",
+    categoria: "",
+    barrio: "",
+    problema: "",
+    solucion: "",
+    beneficios: "",
   });
+  const largos: Record<CampoLargo, number> = {
+    problema: valores.problema.trim().length,
+    solucion: valores.solucion.trim().length,
+    beneficios: valores.beneficios.trim().length,
+  };
+
+  /**
+   * Contorno del distrito activo, para el mapita del documento. Se pide una vez
+   * y se queda: es el mismo archivo que ya bajo el mapa grande, asi que sale
+   * del cache del navegador.
+   */
+  const [poligono, setPoligono] = useState<number[][] | null>(null);
+  /** Mientras el navegador pregunta por la ubicacion. */
+  const [buscandoGps, setBuscandoGps] = useState(false);
+  /** Si el punto lo puso el GPS, para poder avisar que se puede corregir. */
+  const [puntoPorGps, setPuntoPorGps] = useState(false);
+  /** Que bloque del documento se esta editando, para marcarlo alla. */
+  const [bloqueActivo, setBloqueActivo] = useState<BloqueActivo>(null);
 
   // Referencias a los campos de contenido: se leen para revisar y para armar el
   // contexto de la ayuda, y se escriben al aceptar un texto generado, sin
@@ -194,12 +238,73 @@ export default function FormularioIdea({
         campo.value = cuerpo.barrio;
         barrioPuesto.current = cuerpo.barrio;
         setBarrioAutomatico(true);
+        anotarValor("barrio", cuerpo.barrio);
       }
+      if (cuerpo.distrito) void cargarPoligono(cuerpo.distrito);
     } catch {
       setDistrito(null);
     } finally {
       setUbicando(false);
     }
+  }
+
+  /**
+   * El contorno del distrito, para el mapita del documento.
+   *
+   * Sale del mismo /geo/distritos.geojson que ya bajo el mapa grande, asi que
+   * en la practica lo sirve el cache. Si falla no se avisa nada: el documento
+   * dibuja solo el punto y las coordenadas van en texto igual, asi que no se
+   * pierde informacion.
+   */
+  async function cargarPoligono(numero: number) {
+    try {
+      const geo = (await (await fetch("/geo/distritos.geojson")).json()) as {
+        features: Array<{
+          properties: { numero: number };
+          geometry: { coordinates: number[][][][] };
+        }>;
+      };
+      const f = geo.features.find((x) => x.properties.numero === numero);
+      // El anillo exterior del primer poligono alcanza para dibujar el contorno.
+      setPoligono(f?.geometry.coordinates?.[0]?.[0] ?? null);
+    } catch {
+      setPoligono(null);
+    }
+  }
+
+  /**
+   * "Usar mi ubicacion". Deja un punto que se puede corregir, no una respuesta
+   * final: el vecino puede estar en su casa proponiendo una obra a tres cuadras.
+   * Nunca se dispara solo, siempre lo aprieta la persona, y no guarda su
+   * ubicacion en ningun lado: lo unico que se guarda es el punto de la
+   * propuesta, que ya se guardaba y que ademas es publico porque se dibuja en el
+   * mapa del sitio.
+   */
+  function usarMiUbicacion() {
+    if (!navigator.geolocation) {
+      setEstado({
+        tipo: "error",
+        mensaje: "Este navegador no puede darnos tu ubicación. Marcá el lugar en el mapa.",
+      });
+      return;
+    }
+    setBuscandoGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setBuscandoGps(false);
+        setPuntoPorGps(true);
+        void elegirPunto({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      },
+      () => {
+        setBuscandoGps(false);
+        setEstado({
+          tipo: "error",
+          mensaje:
+            "No pudimos obtener tu ubicación. Puede que el navegador no tenga permiso. Marcá el lugar en el mapa.",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
   }
 
   /**
@@ -330,9 +435,11 @@ export default function FormularioIdea({
     const campoDom = refDe[campo].current;
     if (campoDom) {
       campoDom.value = texto;
-      setLargos((previo) => ({ ...previo, [campo]: texto.length }));
       campoDom.focus();
     }
+    // Escribir `.value` no dispara onInput, asi que el espejo se actualiza a
+    // mano: si no, el documento seguiria mostrando el texto anterior.
+    anotarValor(campo, texto);
     setAyudas((previo) => ({ ...previo, [campo]: { tipo: "quieto" } }));
   }
 
@@ -340,13 +447,9 @@ export default function FormularioIdea({
     setAyudas((previo) => ({ ...previo, [campo]: { tipo: "quieto" } }));
   }
 
-  /** Un campo largo cambio: solo se anota el largo, el valor lo tiene el DOM. */
-  function anotarLargo(campo: CampoLargo, valor: string) {
-    setLargos((previo) =>
-      previo[campo] === valor.trim().length
-        ? previo
-        : { ...previo, [campo]: valor.trim().length },
-    );
+  /** Un campo cambio: se espeja en estado para redibujar el documento. */
+  function anotarValor(campo: keyof typeof valores, valor: string) {
+    setValores((previo) => (previo[campo] === valor ? previo : { ...previo, [campo]: valor }));
   }
 
   async function enviar(datos: FormData) {
@@ -481,16 +584,46 @@ export default function FormularioIdea({
       onSubmit={alEnviarFormulario}
       className="mt-8 grid gap-8 lg:grid-cols-[1fr_1fr] lg:items-start"
     >
+      {/*
+        La izquierda es TODO el formulario y la derecha es el documento. Antes la
+        derecha era el mapa: se movio porque el mapa es una pregunta mas ("dónde
+        sería") y el lugar de la derecha lo necesitaba algo que no existia, que
+        es ver lo que se va a presentar. El mapa quedo como primera pregunta,
+        que ademas es el orden en que ya estaba numerado.
+      */}
+      <div className="space-y-6">
       {/* --- Ubicación ----------------------------------------------------- */}
-      <section className="order-1 lg:order-2">
+      <section>
         <h2 className="text-lg font-bold">1. ¿Dónde sería?</h2>
         <p className="mt-1.5 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Tocá el mapa en el lugar de la obra. El distrito se completa solo.
+          Tocá el mapa en el lugar de la obra. El distrito y el barrio se completan solos.
         </p>
+
+        {/* En el telefono marcar un punto con el dedo es incomodo, y el vecino
+            suele estar cerca de donde propone la obra. */}
+        <button
+          type="button"
+          onClick={usarMiUbicacion}
+          disabled={!abierta || ocupado || buscandoGps}
+          className="mt-3 inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition disabled:opacity-50"
+          style={{
+            background: "var(--fondo-tarjeta)",
+            border: "1px solid var(--borde-control)",
+            color: "var(--color-marca-700)",
+          }}
+        >
+          <IconoMira />
+          {buscandoGps ? "Buscando tu ubicación…" : "Usar mi ubicación"}
+        </button>
+
         <div className="mt-3">
           <Mapa
             modo="seleccionar"
-            onSeleccionar={elegirPunto}
+            onSeleccionar={(p) => {
+              // Un clic a mano deja de ser "el punto del GPS".
+              setPuntoPorGps(false);
+              void elegirPunto(p);
+            }}
             puntoElegido={punto}
             distritoActivo={distrito ?? undefined}
             distritos={Array.from({ length: 20 }, (_, i) => ({
@@ -522,6 +655,14 @@ export default function FormularioIdea({
               <span style={{ color: "var(--texto-suave)" }}>
                 {punto.lat.toFixed(5)}, {punto.lon.toFixed(5)}
               </span>
+              {puntoPorGps && (
+                <>
+                  {" "}
+                  <span style={{ color: "var(--texto-suave)" }}>
+                    Te ubicamos ahí. Si la obra es en otro lugar, tocá el mapa y se corrige.
+                  </span>
+                </>
+              )}
             </>
           )}
           {punto && !ubicando && !distrito && (
@@ -531,7 +672,7 @@ export default function FormularioIdea({
       </section>
 
       {/* --- Contenido ----------------------------------------------------- */}
-      <div className="order-2 space-y-6 lg:order-1">
+      <div className="space-y-6">
         <section className="space-y-4">
           <h2 className="text-lg font-bold">2. Contanos tu idea</h2>
           {/*
@@ -560,6 +701,7 @@ export default function FormularioIdea({
               required
               maxLength={LARGOS.titulo}
               disabled={!abierta || ocupado}
+              onInput={(evento) => anotarValor("titulo", evento.currentTarget.value)}
               placeholder="Puesta en valor de la plaza del barrio…"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
@@ -572,6 +714,7 @@ export default function FormularioIdea({
               name="categoria"
               required
               disabled={!abierta || ocupado}
+              onChange={(evento) => anotarValor("categoria", evento.currentTarget.value)}
               defaultValue=""
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
@@ -608,7 +751,10 @@ export default function FormularioIdea({
               maxLength={120}
               disabled={!abierta || ocupado}
               // Si lo edita a mano deja de ser nuestro y el mapa no lo pisa mas.
-              onInput={() => setBarrioAutomatico(false)}
+              onInput={(evento) => {
+                setBarrioAutomatico(false);
+                anotarValor("barrio", evento.currentTarget.value);
+              }}
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
@@ -640,7 +786,8 @@ export default function FormularioIdea({
                 maxLength={LARGOS.solucion}
                 disabled={!abierta || ocupado}
                 placeholder="Una canchita para que los chicos jueguen…"
-                onInput={(evento) => anotarLargo("solucion", evento.currentTarget.value)}
+                onInput={(evento) => anotarValor("solucion", evento.currentTarget.value)}
+                onFocus={() => setBloqueActivo("solucion")}
                 className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={campoEstilo}
               />
@@ -673,7 +820,8 @@ export default function FormularioIdea({
                 maxLength={LARGOS.problema}
                 disabled={!abierta || ocupado}
                 placeholder="Hoy no hay ningún lugar donde jugar…"
-                onInput={(evento) => anotarLargo("problema", evento.currentTarget.value)}
+                onInput={(evento) => anotarValor("problema", evento.currentTarget.value)}
+                onFocus={() => setBloqueActivo("problema")}
                 className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={campoEstilo}
               />
@@ -709,7 +857,8 @@ export default function FormularioIdea({
                 rows={3}
                 maxLength={LARGOS.beneficios}
                 disabled={!abierta || ocupado}
-                onInput={(evento) => anotarLargo("beneficios", evento.currentTarget.value)}
+                onInput={(evento) => anotarValor("beneficios", evento.currentTarget.value)}
+                onFocus={() => setBloqueActivo("beneficios")}
                 className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
                 style={campoEstilo}
               />
@@ -815,6 +964,14 @@ export default function FormularioIdea({
           <PanelRevision revision={revision} conIA={conIA} />
         )}
 
+        {/*
+          El boton principal SIEMPRE envia y siempre dice lo mismo.
+          Antes cambiaba de funcion solo: la primera vez decia "Revisar mi idea"
+          y no enviaba, la segunda decia "Enviar mi idea" y si. Quien lo apretaba
+          dos veces seguidas enviaba sin querer, y eso es exactamente lo que el
+          jefe del programa llamo "poco predictivo". Revisar paso a ser una
+          accion aparte, disponible siempre y todas las veces que haga falta.
+        */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <button
             type="submit"
@@ -822,60 +979,84 @@ export default function FormularioIdea({
             className="w-full rounded-xl px-5 py-3.5 text-sm font-semibold text-white transition disabled:opacity-50 sm:w-auto"
             style={{ background: "var(--color-acento-600)" }}
           >
-            {revisando
-              ? "Revisando…"
-              : enviando
-                ? "Enviando…"
-                : revision
-                  ? "Enviar mi idea"
-                  : "Revisar mi idea"}
+            {enviando ? "Enviando…" : "Enviar mi idea"}
           </button>
 
-          {/* Salida siempre disponible: la revision ayuda, no condiciona. */}
-          {!revision && (
-            <button
-              type="button"
-              disabled={!abierta || ocupado}
-              onClick={(evento) => {
-                const formulario = evento.currentTarget.form;
-                if (formulario) void enviar(new FormData(formulario));
-              }}
-              className="text-sm underline disabled:opacity-50"
-              style={{ color: "var(--texto-suave)" }}
-            >
-              Enviar sin revisar
-            </button>
-          )}
-
-          {/*
-            Volver a revisar. Sin esto el circuito que propone el panel no se
-            puede cerrar: despues de la primera revision el boton de submit pasa
-            a enviar, y la persona que corrige lo que se le senalo no tiene forma
-            de confirmar que quedo bien.
-          */}
-          {revision && (
-            <button
-              type="button"
-              disabled={!abierta || ocupado}
-              onClick={(evento) => {
-                const formulario = evento.currentTarget.form;
-                if (formulario && distrito) void revisar(new FormData(formulario), distrito);
-              }}
-              className="text-sm underline disabled:opacity-50"
-              style={{ color: "var(--texto-suave)" }}
-            >
-              Revisar de nuevo
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={!abierta || ocupado}
+            onClick={(evento) => {
+              const formulario = evento.currentTarget.form;
+              if (formulario && distrito) void revisar(new FormData(formulario), distrito);
+            }}
+            className="rounded-xl px-4 py-3 text-sm font-semibold transition disabled:opacity-50"
+            style={{
+              background: "var(--fondo-tarjeta)",
+              border: "1px solid var(--borde-control)",
+              color: "var(--color-marca-700)",
+            }}
+          >
+            {revisando ? "Revisando…" : revision ? "Revisar de nuevo" : "Revisar mi idea"}
+          </button>
         </div>
 
         {!revision && !revisando && (
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-            Antes de enviar podemos revisar tu idea: te decimos qué le falta para que se entienda
-            mejor y si ya hay una propuesta parecida en tu distrito. Después decidís vos.
+            Antes de enviar podés pedirnos una revisión: te decimos qué le falta para que se
+            entienda mejor y si ya hay una propuesta parecida en tu distrito. No es obligatorio.
           </p>
         )}
       </div>
+      </div>
+
+      {/* --- El documento --------------------------------------------------- */}
+      <aside className="lg:sticky lg:top-24">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p
+            className="text-xs font-semibold uppercase tracking-[0.14em]"
+            style={{ color: "var(--texto-suave)" }}
+          >
+            Así se va a presentar
+          </p>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="rounded-lg px-3 py-2 text-xs font-semibold transition"
+            style={{
+              background: "var(--fondo-tarjeta)",
+              border: "1px solid var(--borde-control)",
+              color: "var(--color-marca-700)",
+            }}
+          >
+            Descargar PDF
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <DocumentoIdea
+            anio={anio}
+            poligono={poligono}
+            activo={bloqueActivo}
+            datos={{
+              titulo: valores.titulo,
+              // El nombre de la categoria, no el slug: esto lo lee una persona.
+              categoria:
+                categorias.find((c) => c.slug === valores.categoria)?.nombre ?? "",
+              barrio: valores.barrio,
+              distrito,
+              punto,
+              solucion: valores.solucion,
+              problema: valores.problema,
+              beneficios: valores.beneficios,
+            }}
+          />
+        </div>
+
+        <p className="mt-3 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+          Se arma con lo que escribís, sin inteligencia artificial y sin esperar nada. El PDF que
+          se descarga es este mismo documento.
+        </p>
+      </aside>
     </form>
   );
 }
@@ -1273,5 +1454,26 @@ function Campo({
       )}
       <span className="mt-1.5 block">{children}</span>
     </label>
+  );
+}
+
+/** Mira de puntería: el gesto de "ubicarme" sin depender del color. */
+function IconoMira() {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </svg>
   );
 }
