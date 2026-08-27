@@ -101,7 +101,7 @@ type EstadoAyuda =
       texto: string;
       modo: RespuestaRedactar["modo"];
       /** Aspectos de obra que se ofrecen para tildar. Solo en `solucion`. */
-      detalles: string[];
+      detalles: NonNullable<RespuestaRedactar["detalles"]>;
     }
   | { tipo: "error"; mensaje: string };
 
@@ -1555,27 +1555,41 @@ function AyudaDeRedaccion({
                 ¿Querés agregar alguno de estos? Los elegís vos
               </p>
               <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-                Son cosas que el municipio suele pedir para una obra así y que no escribiste. Tildá
-                solo las que quieras.
+                Son cosas que el municipio suele pedir para una obra así y que no escribiste. Abajo
+                de cada una dice para qué sirve. Tildá solo las que quieras.
               </p>
-              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+              {/* Cada opcion con su explicacion: sin eso la IA las enumera y la
+                  persona tilda a ciegas. La explicacion es para decidir y NO
+                  entra en el texto de la propuesta. */}
+              <ul className="mt-2.5 grid gap-2.5">
                 {estado.detalles.map((detalle) => (
-                  <label key={detalle} className="flex items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={tildados.includes(detalle)}
-                      onChange={(evento) =>
-                        setTildados((previo) =>
-                          evento.target.checked
-                            ? [...previo, detalle]
-                            : previo.filter((d) => d !== detalle),
-                        )
-                      }
-                    />
-                    {detalle}
-                  </label>
+                  <li key={detalle.nombre}>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 shrink-0"
+                        checked={tildados.includes(detalle.nombre)}
+                        onChange={(evento) =>
+                          setTildados((previo) =>
+                            evento.target.checked
+                              ? [...previo, detalle.nombre]
+                              : previo.filter((d) => d !== detalle.nombre),
+                          )
+                        }
+                      />
+                      <span>
+                        <span className="block text-xs font-semibold">{detalle.nombre}</span>
+                        <span
+                          className="mt-0.5 block text-xs leading-relaxed"
+                          style={{ color: "var(--texto-suave)" }}
+                        >
+                          {detalle.porQue}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
                 ))}
-              </div>
+              </ul>
               {tildados.length > 0 && (
                 <button
                   type="button"

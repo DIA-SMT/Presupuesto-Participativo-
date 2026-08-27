@@ -116,6 +116,16 @@ const CASOS: Caso[] = [
     prohibido: ["hormigón", "LED", "perimetral", "reglamentaria", "metros", "$"],
   },
   {
+    // Otro rubro, para ver si EXPLICA o si copia los ejemplos del prompt. Los
+    // ejemplos son de una obra de calle, asi que si aca aparecen "cordon
+    // cuneta" o "rampas en las esquinas" es que no adapto nada.
+    nombre: "otra obra: tiene que explicar sin copiar los ejemplos",
+    campo: "solucion",
+    texto: "que arreglen el salon del centro vecinal que se llueve y no tiene banos",
+    saltoEsperado: 20,
+    prohibido: ["cordón cuneta", "rampas en las esquinas", "metros", "$", "hormigón alisado"],
+  },
+  {
     nombre: "beneficios deducidos del contexto",
     campo: "beneficios",
     texto: "",
@@ -146,7 +156,10 @@ const ROJO = "[31m";
 const GRIS = "[90m";
 const FIN = "[0m";
 
-async function pedir(caso: Caso): Promise<{ texto: string; detalles: string[] }> {
+/** Un aspecto de obra para ofrecer: que es y para que sirve. */
+type Detalle = { nombre: string; porQue: string };
+
+async function pedir(caso: Caso): Promise<{ texto: string; detalles: Detalle[] }> {
   const cliente = crearCliente();
   const sistema =
     caso.campo === "beneficios" ? SISTEMA_BENEFICIOS : sistemaFormalizar(caso.campo);
@@ -188,7 +201,18 @@ async function pedir(caso: Caso): Promise<{ texto: string; detalles: string[] }>
                 type: "object",
                 properties: {
                   texto: { type: "string" },
-                  detalles: { type: "array", items: { type: "string" } },
+                  detalles: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        nombre: { type: "string" },
+                        porQue: { type: "string" },
+                      },
+                      required: ["nombre", "porQue"],
+                      additionalProperties: false,
+                    },
+                  },
                 },
                 required: ["texto", "detalles"],
                 additionalProperties: false,
@@ -204,10 +228,10 @@ async function pedir(caso: Caso): Promise<{ texto: string; detalles: string[] }>
   });
 
   const crudo = respuesta.choices[0]?.message?.content ?? "{}";
-  const salida = JSON.parse(crudo) as { texto?: string; detalles?: string[] };
+  const salida = JSON.parse(crudo) as { texto?: string; detalles?: Detalle[] };
   return {
     texto: String(salida.texto ?? "").trim(),
-    detalles: (salida.detalles ?? []).map((d) => d.trim()).filter(Boolean),
+    detalles: salida.detalles ?? [],
   };
 }
 
@@ -268,15 +292,20 @@ async function main() {
       console.log(`${VERDE}DEVOLVIO:${FIN} ${salida}\n`);
 
       if (detalles.length) {
-        console.log(`${VERDE}OFRECE PARA TILDAR:${FIN} ${detalles.join("  ·  ")}\n`);
+        console.log(`${VERDE}OFRECE PARA TILDAR:${FIN}`);
+        for (const d of detalles) {
+          console.log(`  · ${d.nombre}`);
+          console.log(`    ${GRIS}${d.porQue}${FIN}`);
+        }
+        console.log("");
       }
 
       const m = medir(caso, salida);
       // El punto de los aspectos de obra es que van APARTE. Si alguno se colo
       // dentro del texto, la persona no lo eligio y la regla se rompio.
-      const colados = detalles.filter((d) =>
-        salida.toLowerCase().includes(d.toLowerCase()),
-      );
+      const colados = detalles
+        .filter((d) => salida.toLowerCase().includes(d.nombre.toLowerCase()))
+        .map((d) => d.nombre);
       if (colados.length) {
         console.log(`${ROJO}METIO EN EL TEXTO lo que tenia que ofrecer: ${colados.join(", ")}${FIN}`);
       }

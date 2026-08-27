@@ -73,17 +73,23 @@ export type RespuestaRedactar = {
   modo: "formalizado" | "redactado";
   texto: string;
   /**
-   * Aspectos tecnicos que el municipio suele pedir para una obra asi y que la
-   * persona no menciono. Van SEPARADOS del texto a proposito: son una oferta,
-   * no un agregado. El formulario los muestra como casillas y solo entran al
-   * texto si la persona los tilda, y en ese caso vuelven en `agregar`.
+   * Aspectos de obra que el municipio suele pedir para algo asi y que la persona
+   * no menciono. Van SEPARADOS del texto a proposito: son una oferta, no un
+   * agregado. El formulario los muestra como casillas y solo entran al texto si
+   * la persona los tilda, y en ese caso vuelven en `agregar`.
    *
    * Es la unica via por la que aparece vocabulario tecnico que la persona no
    * escribio, y existe porque sin eso una propuesta de vecino no llega nunca al
    * nivel de las que ganan (ver el comentario de src/lib/redaccion-prompts.ts).
    * La diferencia con inventar es quien decide: acá decide ella, tildando.
+   *
+   * Cada uno trae `porQue`: para que sirve, en una frase. Sin eso la IA los
+   * enumera y la persona tilda a ciegas, que era justo lo que pasaba. La
+   * explicacion es para DECIDIR y no entra nunca en el texto de la propuesta:
+   * si entrara, le estariamos poniendo en la boca la justificacion tecnica del
+   * municipio.
    */
-  detalles?: string[];
+  detalles?: Array<{ nombre: string; porQue: string }>;
 };
 
 /**
@@ -130,8 +136,19 @@ const ESQUEMA_SALIDA_SOLUCION = {
     detalles: {
       type: "array",
       description:
-        "Entre 0 y 6 aspectos tecnicos que la persona NO menciono, como frases cortas. Van aparte del texto.",
-      items: { type: "string" },
+        "Entre 0 y 6 aspectos de obra que la persona NO menciono. Van aparte del texto.",
+      items: {
+        type: "object",
+        properties: {
+          nombre: { type: "string", description: "El aspecto, en una frase corta." },
+          porQue: {
+            type: "string",
+            description: "Para que sirve, en una frase. Concreto y en lenguaje llano.",
+          },
+        },
+        required: ["nombre", "porQue"],
+        additionalProperties: false,
+      },
     },
   },
   required: ["texto", "detalles"],
@@ -140,7 +157,15 @@ const ESQUEMA_SALIDA_SOLUCION = {
 
 const salidaModelo = z.object({
   texto: z.string().min(1).max(5000),
-  detalles: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
+  detalles: z
+    .array(
+      z.object({
+        nombre: z.string().trim().min(1).max(120),
+        porQue: z.string().trim().min(1).max(300),
+      }),
+    )
+    .max(8)
+    .optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -268,9 +293,9 @@ export async function POST(request: Request) {
 
     // Se filtran los que la persona ya eligio: volver a ofrecerlos despues de
     // haberlos agregado deja casillas que no hacen nada.
-    const detalles = (salida.detalles ?? [])
-      .map((d) => d.trim())
-      .filter((d) => d && !elegidos.some((e) => e.toLowerCase() === d.toLowerCase()));
+    const detalles = (salida.detalles ?? []).filter(
+      (d) => !elegidos.some((e) => e.toLowerCase() === d.nombre.toLowerCase()),
+    );
 
     return Response.json({
       campo,
