@@ -15,6 +15,23 @@ import { useActionState, useState } from "react";
 import { ChipEstado } from "@/components/ui";
 import { DESCRIPCION_ESTADO, formatearFecha } from "@/lib/formato";
 
+/**
+ * Estados en los que la evaluacion ya termino. Si una idea esta en uno de
+ * estos y no tiene devolucion escrita, la devolucion no esta "en camino":
+ * prometerla seria mentirle al vecino.
+ */
+const ESTADOS_CERRADOS = new Set(["factible", "no_factible", "integrado", "ganador"]);
+
+/**
+ * Como entro una idea que no se cargo en este sitio. Sirve para explicarle al
+ * vecino por que no hay una devolucion escrita para leer.
+ */
+const ORIGEN_FUERA_DEL_SITIO: Record<string, string> = {
+  asamblea: "se presentó en una asamblea de vecinos",
+  municipio: "la cargó el equipo del municipio",
+  migracion: "se importó de un registro anterior",
+};
+
 export type IdeaSeguida = {
   anio: number;
   numero: number;
@@ -22,6 +39,13 @@ export type IdeaSeguida = {
   estado: string;
   /** Devolucion tecnica del equipo (ideas.motivo_estado). */
   devolucion: string | null;
+  /**
+   * Canal de entrada (ideas.canal). Se usa para un solo caso: si no hay
+   * devolucion escrita, decide si todavia puede llegar o si nunca existio.
+   * Se escribe como string, igual que `estado`, para no traer tipos de la base
+   * a un componente de cliente.
+   */
+  canal: string;
   distrito: number | null;
   fecha: string | null;
   publicada: boolean;
@@ -179,6 +203,23 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
               ))}
           </div>
         </div>
+      ) : ESTADOS_CERRADOS.has(idea.estado) ? (
+        /*
+         * La evaluacion ya termino y no hay texto que mostrar. No se promete
+         * nada: se explica por que no esta. En las ideas que entraron por fuera
+         * del sitio el detalle escrito no existe y no va a existir; en las que
+         * entraron por el sitio, todavia puede escribirse.
+         */
+        <p className="mt-5 text-sm" style={{ color: "var(--texto-suave)" }}>
+          {ORIGEN_FUERA_DEL_SITIO[idea.canal]
+            ? "La evaluación de esta idea se hizo por fuera de este sitio: " +
+              ORIGEN_FUERA_DEL_SITIO[idea.canal] +
+              " en " +
+              idea.anio +
+              ". Su detalle escrito no quedó registrado en el sistema, así que no podemos " +
+              "mostrarlo acá."
+            : "La evaluación ya está cerrada, pero el equipo todavía no publicó el detalle escrito."}
+        </p>
       ) : (
         <p className="mt-5 text-sm" style={{ color: "var(--texto-suave)" }}>
           Todavía no hay una devolución escrita. Cuando el equipo termine de evaluar tu idea, la vas

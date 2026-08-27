@@ -40,6 +40,13 @@ import {
   votantes,
 } from "./schema";
 
+/**
+ * Por donde entro la idea. Solo "web" significa que la cargo una persona en
+ * este sitio: los otros tres canales son carga del equipo o migracion de
+ * ediciones que se hicieron por fuera.
+ */
+export type CanalCarga = "web" | "asamblea" | "municipio" | "migracion";
+
 export type EstadoIdea =
   | "borrador"
   | "pendiente"
@@ -928,7 +935,7 @@ export type IdeaAdmin = IdeaVista & {
   notasMigracion: string[];
   tituloOriginal: string | null;
   coordenadasOriginales: string | null;
-  canal: "web" | "asamblea" | "municipio" | "migracion";
+  canal: CanalCarga;
   cargadoPor: string | null;
   autorNombre: string | null;
   /** Nunca el mail: solo si hay contacto para avisarle al autor. */
@@ -1123,6 +1130,13 @@ export type ResumenAdmin = {
   publicadas: number;
   sinPublicar: number;
   porEstado: Record<EstadoIdea, number>;
+  /**
+   * Ideas por canal de entrada. El tablero lo usa para decir en pantalla si la
+   * edicion se corrio en el sitio o se cargo por fuera: en una edicion
+   * importada, "votos registrados" y "empadronados" valen cero por definicion y
+   * no por un error.
+   */
+  porCanal: Record<CanalCarga, number>;
   /** Votos emitidos por este sitio en la edicion (filas de `votos`). */
   votosRegistrados: number;
   /**
@@ -1161,6 +1175,13 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
      GROUP BY estado
   `);
 
+  const canales = await consultar<{ canal: CanalCarga; cantidad: number }>(sql`
+    SELECT canal, count(*)::int AS cantidad
+      FROM ideas
+     WHERE edicion_id = ${edicionId}
+     GROUP BY canal
+  `);
+
   const [padron] = await consultar<{ votos: number; empadronados: number; presupuesto: string | null }>(sql`
     SELECT (SELECT count(*) FROM votos v WHERE v.edicion_id = ${edicionId})::int AS votos,
            (SELECT count(*) FROM votantes)::int AS empadronados,
@@ -1177,6 +1198,14 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
   };
   for (const fila of estados) porEstado[fila.estado] = Number(fila.cantidad);
 
+  const porCanal: Record<CanalCarga, number> = {
+    web: 0,
+    asamblea: 0,
+    municipio: 0,
+    migracion: 0,
+  };
+  for (const fila of canales) porCanal[fila.canal] = Number(fila.cantidad);
+
   const ideasTotales = Number(totales?.ideas ?? 0);
   const publicadas = Number(totales?.publicadas ?? 0);
 
@@ -1185,6 +1214,7 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
     publicadas,
     sinPublicar: ideasTotales - publicadas,
     porEstado,
+    porCanal,
     votosRegistrados: Number(padron?.votos ?? 0),
     votosEnIdeas: Number(totales?.votos_en_ideas ?? 0),
     votantesEmpadronados: Number(padron?.empadronados ?? 0),
@@ -1839,6 +1869,8 @@ export type SeguimientoIdea = {
   slug: string;
   estado: EstadoIdea;
   motivoEstado: string | null;
+  /** Por donde entro: decide que se le dice si no hay devolucion escrita. */
+  canal: CanalCarga;
   distrito: number | null;
   fecha: string | null;
   publicada: boolean;
@@ -1864,6 +1896,7 @@ export async function getSeguimientoIdea(
       slug: ideas.slug,
       estado: ideas.estado,
       motivoEstado: ideas.motivoEstado,
+      canal: ideas.canal,
       distrito: distritos.numero,
       fecha: ideas.fecha,
       publicada: ideas.publicada,

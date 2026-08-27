@@ -73,6 +73,7 @@ async function consultarSeguimiento(
         titulo: idea.titulo,
         estado: idea.estado,
         devolucion: idea.motivoEstado,
+        canal: idea.canal,
         distrito: idea.distrito,
         fecha: idea.fecha,
         publicada: idea.publicada,
