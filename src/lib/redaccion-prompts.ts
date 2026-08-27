@@ -1,7 +1,7 @@
 /**
  * Lo que se le pide al modelo para ayudar a redactar una propuesta.
  *
- * Vive aparte de la ruta (`src/app/api/ideas/redactar/route.ts`) por una razon
+ * Vive aparte de la ruta (`src/app/api/ideas/asistente/route.ts`) por una razon
  * practica: la ruta arrastra la base, el rate limit y el cliente del modelo, y
  * asi estos textos se pueden probar solos con
  * `npx tsx scripts/probar-redaccion.ts`, que los corre contra el modelo real

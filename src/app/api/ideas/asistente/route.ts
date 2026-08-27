@@ -1,32 +1,41 @@
 /**
- * Asistente de carga: revisa la propuesta ANTES de que el vecino la envie.
+ * El asistente de carga: UN pedido, todo lo que la IA puede hacer por la
+ * propuesta.
  *
- * Tres cosas, en este orden y con este criterio:
+ * Antes habia cuatro botones de IA en la pantalla —uno por campo, mas la
+ * revision— y el jefe del programa lo dijo claro: son demasiados. Ahora hay uno
+ * solo, y esta ruta es lo que hay detras.
  *
- *  1. Lo que se puede saber sin modelo se resuelve sin modelo. Los minimos de
- *     largo salen del esquema compartido y las propuestas parecidas salen de
- *     `similitud()`, la misma funcion Jaccard que uso el ETL para encontrar los
- *     duplicados de 2025. Gratis, instantaneo y siempre disponible.
- *  2. Lo que necesita leer el texto se le pide al modelo: que le falta a la
- *     propuesta y si la categoria elegida corresponde.
- *  3. Nada de esto es obligatorio. Si el modelo falla, tarda o no hay clave, la
- *     respuesta igual trae los puntos determinísticos y el formulario deja
- *     enviar. El asistente nunca esta en el camino critico.
+ * Por que despacha en paralelo en lugar de usar un prompt unico
+ * -------------------------------------------------------------
+ * Un boton no obliga a una sola llamada. Fusionar todo en un prompt gigante
+ * (formalizar tres campos, señalar lo que falta, ofrecer los aspectos de obra y
+ * sugerir un titulo) habria tirado a la basura los prompts que ya estan
+ * afinados y auditados uno por uno: la version timida de `formalizar` que Lucas
+ * rechazo, los tres agujeros que encontro la auditoria de fidelidad, la regla de
+ * los ejes en beneficios. Todo eso se verifico por separado, con su caso de
+ * prueba, y un prompt nuevo que haga las cuatro cosas a la vez habria que
+ * volver a auditarlo entero.
  *
- * Lo que el modelo NO recibe: nombre ni correo de quien carga. El vecino
- * consintio ese dato para que le cuenten como sigue su idea, no para esto.
+ * Asi que los prompts quedan como estan y esta ruta los orquesta. Las llamadas
+ * salen juntas, asi que la espera es la de la mas lenta y no la suma. Y el costo
+ * no sube: antes, para tener todo esto, la persona apretaba cuatro botones.
+ *
+ * Lo que se hace sin modelo, se hace sin modelo: los minimos de largo y las
+ * propuestas parecidas del distrito salen de codigo comun y estan siempre, aun
+ * sin clave. Nada de esto es obligatorio: si el modelo falla o no hay clave, la
+ * respuesta igual trae lo determinístico y el formulario deja enviar.
+ *
+ * Lo que el modelo NO recibe: nombre ni correo de quien carga.
  */
 import { z } from "zod";
 import { db } from "@/db";
 import { chatConsultas } from "@/db/schema";
-import {
-  getCategorias,
-  getEdicionActiva,
-  getIdeasParaComparar,
-} from "@/db/queries";
-import { contenidoIdea, faltantesBasicos } from "@/lib/idea-esquema";
+import { getCategorias, getEdicionActiva, getIdeasParaComparar } from "@/db/queries";
+import { faltantesBasicos, LARGOS } from "@/lib/idea-esquema";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 import { similitud } from "@/lib/texto";
+import { SISTEMA_BENEFICIOS, sistemaFormalizar } from "@/lib/redaccion-prompts";
 import {
   CONSUMO_VACIO,
   crearCliente,
@@ -40,14 +49,34 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Revisiones por hora y por IP. Clave propia: no toca el tope del alta. */
-const TOPE_POR_HORA = 12;
+/** Pedidos por hora y por IP. Uno solo alcanza para toda la propuesta. */
+const TOPE_POR_HORA = 15;
+const MAX_TOKENS = 900;
 /** Arriba de esto dos propuestas hablan de lo mismo (calibrado en el ETL). */
 const UMBRAL_PARECIDA = 0.55;
-const MAX_TOKENS = 700;
 
-const esquema = contenidoIdea.extend({
+/**
+ * Cuanto tiene que haber escrito la persona para que la IA toque un campo.
+ *
+ * En `problema` y `solucion` la IA no escribe desde cero: la persona pone el
+ * texto y la IA lo formaliza. Es un pedido explicito de Lucas y no es capricho,
+ * son los dos campos con los que el equipo tecnico evalua la propuesta. Por eso
+ * el minimo se aplica ACA y no solo en el navegador.
+ */
+const MINIMO_PARA_FORMALIZAR = 15;
+/** Para deducir los beneficios hace falta sustancia en los otros dos campos. */
+const MINIMO_DE_CONTEXTO = 25;
+
+const esquema = z.object({
+  titulo: z.string().trim().max(LARGOS.titulo).nullish(),
+  categoria: z.string().trim().max(60).nullish(),
+  barrio: z.string().trim().max(LARGOS.barrio).nullish(),
   distrito: z.number().int().min(1).max(20),
+  problema: z.string().trim().max(LARGOS.problema).nullish(),
+  solucion: z.string().trim().max(LARGOS.solucion).nullish(),
+  beneficios: z.string().trim().max(LARGOS.beneficios).nullish(),
+  /** Aspectos de obra que la persona tildo de la lista que se le ofrecio. */
+  agregar: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
 });
 
 export type Senalamiento = {
@@ -55,9 +84,20 @@ export type Senalamiento = {
   texto: string;
 };
 
-export type Parecida = {
+export type Parecida = { titulo: string | null; url: string | null };
+
+export type Detalle = { nombre: string; porQue: string };
+
+/**
+ * El texto que la IA propone para cada campo. `null` significa "no lo toco", y
+ * puede ser porque la persona no escribio nada (y entonces no se escribe por
+ * ella) o porque el modelo no devolvio nada util.
+ */
+export type PropuestaIA = {
   titulo: string | null;
-  url: string | null;
+  solucion: string | null;
+  problema: string | null;
+  beneficios: string | null;
 };
 
 export type RespuestaAsistente = {
@@ -65,20 +105,50 @@ export type RespuestaAsistente = {
   faltantes: string[];
   parecidas: Parecida[];
   senalamientos: Senalamiento[];
+  propuesta: PropuestaIA | null;
+  detalles: Detalle[];
   aviso: string | null;
 };
 
 // ---------------------------------------------------------------------------
-// Lo que le pedimos al modelo
+// Esquemas de salida
 // ---------------------------------------------------------------------------
 
-const ESQUEMA_SALIDA = {
+const ESQ_TEXTO = {
+  type: "object",
+  properties: { texto: { type: "string" } },
+  required: ["texto"],
+  additionalProperties: false,
+} as const;
+
+const ESQ_TEXTO_Y_DETALLES = {
+  type: "object",
+  properties: {
+    texto: { type: "string" },
+    detalles: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          nombre: { type: "string" },
+          porQue: { type: "string" },
+        },
+        required: ["nombre", "porQue"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["texto", "detalles"],
+  additionalProperties: false,
+} as const;
+
+const ESQ_REVISION = {
   type: "object",
   properties: {
     senalamientos: {
       type: "array",
       description:
-        "Entre 1 y 4 observaciones concretas sobre lo que le falta a la propuesta. Vacio si esta bien.",
+        "Entre 0 y 4 observaciones concretas sobre lo que le falta a la propuesta.",
       items: {
         type: "object",
         properties: {
@@ -86,22 +156,35 @@ const ESQUEMA_SALIDA = {
             type: "string",
             enum: ["titulo", "problema", "solucion", "beneficios", "categoria"],
           },
-          texto: {
-            type: "string",
-            description:
-              "Que le falta, en una frase corta, dirigida a la persona y con voseo.",
-          },
+          texto: { type: "string" },
         },
         required: ["campo", "texto"],
         additionalProperties: false,
       },
     },
+    titulo: {
+      type: "string",
+      description:
+        "Un titulo corto que resuma la propuesta. Cadena vacia si el que ya tiene esta bien.",
+    },
   },
-  required: ["senalamientos"],
+  required: ["senalamientos", "titulo"],
   additionalProperties: false,
 } as const;
 
-const salidaModelo = z.object({
+const salidaTexto = z.object({ texto: z.string().max(5000) });
+const salidaTextoYDetalles = salidaTexto.extend({
+  detalles: z
+    .array(
+      z.object({
+        nombre: z.string().trim().min(1).max(120),
+        porQue: z.string().trim().min(1).max(300),
+      }),
+    )
+    .max(8)
+    .optional(),
+});
+const salidaRevision = z.object({
   senalamientos: z
     .array(
       z.object({
@@ -110,19 +193,27 @@ const salidaModelo = z.object({
       }),
     )
     .max(6),
+  titulo: z.string().trim().max(200),
 });
 
-function construirSistema(
+// ---------------------------------------------------------------------------
+// El prompt de la revision. Los otros tres viven en redaccion-prompts.ts,
+// compartidos con scripts/probar-redaccion.ts.
+// ---------------------------------------------------------------------------
+
+function sistemaRevision(
   categorias: Array<{ slug: string; nombre: string; descripcion: string }>,
   categoriaElegida: string,
 ): string {
-  return `Ayudás a vecinos y vecinas de San Miguel de Tucumán a presentar una propuesta al Presupuesto Participativo. Tu trabajo es que la propuesta se entienda y se pueda evaluar, NO decidir si se aprueba.
+  return `Ayudás a vecinas y vecinos de San Miguel de Tucumán a presentar una propuesta al Presupuesto Participativo. Tu trabajo es que la propuesta se entienda y se pueda evaluar, NO decidir si se aprueba.
 
 # Qué hacés
 
-Señalás lo que le falta a la propuesta. Nada más: no la reescribas, no ofrezcas texto. De reescribir se encarga otra parte del formulario, campo por campo y con la persona decidiendo.
+1. Señalás lo que le falta. No la reescribas: de reescribir se encarga otra parte del asistente.
 
-Entre una y cuatro observaciones, concretas y accionables: "no decís cuántas personas usan la plaza", "no se entiende en qué parte del barrio sería". Si la propuesta ya está completa, devolvés la lista vacía: inventar una observación para no venir con las manos vacías le hace perder tiempo a la persona.
+   Entre cero y cuatro observaciones, concretas y accionables: "no decís cuántas personas usan la plaza", "no se entiende en qué parte del barrio sería". Si la propuesta está completa devolvés la lista vacía: inventar una observación para no venir con las manos vacías le hace perder tiempo a la persona.
+
+2. Sugerís un título, en \`titulo\`. Corto, que se entienda de qué es la propuesta, sacado de lo que la persona escribió. Si el título que ya puso resume bien la propuesta, devolvés una cadena vacía.
 
 # Cómo se escribe una observación
 
@@ -159,35 +250,18 @@ export async function POST(request: Request) {
   const inicio = Date.now();
   const ipHash = hashearIp(ipDe(request));
 
-  // El cuerpo se lee UNA sola vez: despues el stream ya esta consumido.
   const cuerpo: unknown = await request.json().catch(() => null);
   const validacion = esquema.safeParse(cuerpo);
-
   if (!validacion.success) {
-    // Que todavia no valide no es un error del vecino: puede estar a mitad de
-    // escribir. Se responde con lo basico, sin llamar al modelo y sin gastar
-    // una revision de su tope.
-    const parcial = (cuerpo ?? {}) as Record<string, string | null | undefined>;
-    return Response.json({
-      modo: "basico",
-      faltantes: faltantesBasicos(parcial),
-      parecidas: [],
-      senalamientos: [],
-      aviso: null,
-    } satisfies RespuestaAsistente);
+    return Response.json({ error: "No se entendió el pedido." }, { status: 400 });
   }
-
   const entrada = validacion.data;
 
-  const limite = await consumir(`asistente:${ipHash}`, TOPE_POR_HORA, 3600);
-  if (!limite.permitido) {
-    return Response.json(
-      {
-        error: `Ya pediste ${TOPE_POR_HORA} revisiones en la última hora. Podés enviar tu idea igual.`,
-      },
-      { status: 429 },
-    );
-  }
+  const titulo = (entrada.titulo ?? "").trim();
+  const solucion = (entrada.solucion ?? "").trim();
+  const problema = (entrada.problema ?? "").trim();
+  const beneficios = (entrada.beneficios ?? "").trim();
+  const elegidos = entrada.agregar ?? [];
 
   const edicion = await getEdicionActiva();
   if (!edicion) {
@@ -195,69 +269,206 @@ export async function POST(request: Request) {
   }
 
   // -------------------------------------------------------------------------
-  // 1. Lo determinístico, siempre
+  // 1. Lo determinístico: gratis, instantaneo y siempre disponible
   // -------------------------------------------------------------------------
-  const faltantes = faltantesBasicos(entrada);
-  const parecidas = await buscarParecidas(edicion.id, entrada);
+  const faltantes = faltantesBasicos({ titulo, problema, solucion });
+  const parecidas =
+    titulo || problema
+      ? await buscarParecidas(edicion.id, { titulo, problema, distrito: entrada.distrito })
+      : [];
 
-  // -------------------------------------------------------------------------
-  // 2. Lo que necesita el modelo
-  // -------------------------------------------------------------------------
-  if (!hayClave()) {
-    return Response.json({
-      modo: "basico",
-      faltantes,
-      parecidas,
-      senalamientos: [],
-      aviso: null,
-    } satisfies RespuestaAsistente);
+  const sinIa = (aviso: string | null): RespuestaAsistente => ({
+    modo: "basico",
+    faltantes,
+    parecidas,
+    senalamientos: [],
+    propuesta: null,
+    detalles: [],
+    aviso,
+  });
+
+  if (!hayClave()) return Response.json(sinIa(null));
+
+  const limite = await consumir(`asistente:${ipHash}`, TOPE_POR_HORA, 3600);
+  if (!limite.permitido) {
+    return Response.json(
+      {
+        error: `Ya pediste ${TOPE_POR_HORA} ayudas en la última hora. Podés seguir escribiendo a mano y enviar tu idea igual.`,
+      },
+      { status: 429 },
+    );
   }
 
+  // -------------------------------------------------------------------------
+  // 2. El modelo, todo junto y en paralelo
+  // -------------------------------------------------------------------------
   const categorias = await getCategorias();
   const modelo = modeloPara("asistente");
-  let consumo: Consumo = CONSUMO_VACIO;
+  const nombreCategoria =
+    categorias.find((c) => c.slug === entrada.categoria)?.nombre ?? "sin elegir";
+  const ubicacion = [
+    `<barrio>${entrada.barrio ?? "no indicado"}</barrio>`,
+    `<distrito>${entrada.distrito}</distrito>`,
+    `<categoria>${nombreCategoria}</categoria>`,
+  ];
+
+  /** Una llamada al modelo con salida estructurada. */
+  async function pedir<T>(
+    sistema: string,
+    usuario: string,
+    // El SDK pide un objeto indexable por string para el esquema JSON.
+    esquemaSalida: Record<string, unknown>,
+    validar: (crudo: unknown) => T,
+  ): Promise<{ dato: T | null; consumo: Consumo }> {
+    try {
+      const respuesta = await crearCliente().chat.completions.create({
+        model: modelo,
+        max_tokens: MAX_TOKENS,
+        messages: [
+          { role: "system", content: sistema },
+          { role: "user", content: usuario },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "salida", strict: true, schema: esquemaSalida },
+        },
+      });
+      const crudo = respuesta.choices[0]?.message?.content ?? "{}";
+      return { dato: validar(JSON.parse(crudo)), consumo: sumarConsumo(CONSUMO_VACIO, respuesta.usage) };
+    } catch (causa) {
+      console.error("[asistente] una de las llamadas falló", causa);
+      return { dato: null, consumo: CONSUMO_VACIO };
+    }
+  }
+
+  const recorta = (texto: string, tope: number) =>
+    texto.length > tope ? `${texto.slice(0, tope - 1).trimEnd()}…` : texto;
 
   try {
-    const cliente = crearCliente();
-    const respuesta = await cliente.chat.completions.create({
-      model: modelo,
-      max_tokens: MAX_TOKENS,
-      messages: [
-        { role: "system", content: construirSistema(categorias, entrada.categoria) },
-        {
-          role: "user",
-          // Los campos van delimitados para que se lean como datos y no como
-          // instrucciones, aunque el vecino escriba cualquier cosa adentro.
-          content: [
-            "Revisá esta propuesta:",
-            "",
-            `<titulo>${entrada.titulo}</titulo>`,
-            `<barrio>${entrada.barrio ?? "no indicado"}</barrio>`,
-            `<distrito>${entrada.distrito}</distrito>`,
-            // En el orden en que la persona los contesto en el formulario.
-            `<solucion>${entrada.solucion}</solucion>`,
-            `<problema>${entrada.problema}</problema>`,
-            `<beneficios>${entrada.beneficios ?? ""}</beneficios>`,
-          ].join("\n"),
-        },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "revision_de_propuesta",
-          strict: true,
-          schema: ESQUEMA_SALIDA,
-        },
-      },
-    });
+    const [rSolucion, rProblema, rBeneficios, rRevision] = await Promise.all([
+      // La obra que se propone. Es el unico que ofrece aspectos de obra.
+      solucion.length >= MINIMO_PARA_FORMALIZAR
+        ? pedir(
+            sistemaFormalizar("solucion"),
+            [
+              "Formalizá este texto que escribió la persona. Es su solucion.",
+              "",
+              ...ubicacion,
+              `<titulo>${titulo || "sin título"}</titulo>`,
+              `<solucion_escrito_por_la_persona>${solucion}</solucion_escrito_por_la_persona>`,
+              ...(elegidos.length
+                ? [
+                    "",
+                    "La persona eligió agregar estos aspectos a su propuesta. Incorporalos al texto:",
+                    ...elegidos.map((d) => `<aspecto_elegido>${d}</aspecto_elegido>`),
+                  ]
+                : []),
+            ].join("\n"),
+            ESQ_TEXTO_Y_DETALLES,
+            (c) => salidaTextoYDetalles.parse(c),
+          )
+        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
 
-    consumo = sumarConsumo(consumo, respuesta.usage);
-    const crudo = respuesta.choices[0]?.message?.content ?? "";
-    const salida = salidaModelo.parse(JSON.parse(crudo));
+      // Por que hace falta.
+      problema.length >= MINIMO_PARA_FORMALIZAR
+        ? pedir(
+            sistemaFormalizar("problema"),
+            [
+              "Formalizá este texto que escribió la persona. Es su problema.",
+              "",
+              ...ubicacion,
+              `<titulo>${titulo || "sin título"}</titulo>`,
+              `<problema_escrito_por_la_persona>${problema}</problema_escrito_por_la_persona>`,
+            ].join("\n"),
+            ESQ_TEXTO,
+            (c) => salidaTexto.parse(c),
+          )
+        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
+
+      // Quienes se benefician: el unico que puede redactarse con el campo vacio,
+      // y solo si hay de donde deducirlo.
+      problema.length >= MINIMO_DE_CONTEXTO && solucion.length >= MINIMO_DE_CONTEXTO
+        ? pedir(
+            SISTEMA_BENEFICIOS,
+            [
+              beneficios
+                ? "La persona empezó a escribir los beneficios. Partí de su texto y completalo."
+                : "La persona dejó los beneficios vacíos. Deducilos del problema y la solución.",
+              "",
+              ...ubicacion,
+              `<titulo>${titulo || "sin título"}</titulo>`,
+              `<problema>${problema}</problema>`,
+              `<solucion>${solucion}</solucion>`,
+              `<beneficios_escritos_por_la_persona>${beneficios}</beneficios_escritos_por_la_persona>`,
+            ].join("\n"),
+            ESQ_TEXTO,
+            (c) => salidaTexto.parse(c),
+          )
+        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
+
+      // Que le falta, y un titulo si hace falta.
+      solucion || problema
+        ? pedir(
+            sistemaRevision(categorias, nombreCategoria),
+            [
+              "Revisá esta propuesta:",
+              "",
+              `<titulo>${titulo || "sin título"}</titulo>`,
+              ...ubicacion,
+              `<solucion>${solucion}</solucion>`,
+              `<problema>${problema}</problema>`,
+              `<beneficios>${beneficios}</beneficios>`,
+            ].join("\n"),
+            ESQ_REVISION,
+            (c) => salidaRevision.parse(c),
+          )
+        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
+    ]);
+
+    const consumo = [rSolucion, rProblema, rBeneficios, rRevision].reduce<Consumo>(
+      (total, r) => ({
+        tokensEntrada: total.tokensEntrada + r.consumo.tokensEntrada,
+        tokensSalida: total.tokensSalida + r.consumo.tokensSalida,
+        cacheLectura: total.cacheLectura + r.consumo.cacheLectura,
+      }),
+      CONSUMO_VACIO,
+    );
+
+    // Si las cuatro fallaron, no hay nada de IA que mostrar.
+    const algo = rSolucion.dato || rProblema.dato || rBeneficios.dato || rRevision.dato;
+    if (!algo) {
+      await registrar({ titulo, respuesta: null, modelo, consumo, ms: Date.now() - inicio, ipHash, ok: false });
+      return Response.json(
+        sinIa("No se pudo generar la ayuda. Podés seguir escribiendo a mano y enviar tu idea igual."),
+      );
+    }
+
+    const tituloSugerido = (rRevision.dato?.titulo ?? "").trim();
+    const propuesta: PropuestaIA = {
+      // Solo se sugiere si aporta algo: si no hay titulo o el que hay es distinto.
+      titulo:
+        tituloSugerido && tituloSugerido.toLowerCase() !== titulo.toLowerCase()
+          ? recorta(tituloSugerido, LARGOS.titulo)
+          : null,
+      solucion: rSolucion.dato?.texto.trim()
+        ? recorta(rSolucion.dato.texto.trim(), LARGOS.solucion)
+        : null,
+      problema: rProblema.dato?.texto.trim()
+        ? recorta(rProblema.dato.texto.trim(), LARGOS.problema)
+        : null,
+      beneficios: rBeneficios.dato?.texto.trim()
+        ? recorta(rBeneficios.dato.texto.trim(), LARGOS.beneficios)
+        : null,
+    };
+
+    // Los que ya eligio no se vuelven a ofrecer: serian casillas que no hacen nada.
+    const detalles = (rSolucion.dato?.detalles ?? []).filter(
+      (d) => !elegidos.some((e) => e.toLowerCase() === d.nombre.toLowerCase()),
+    );
 
     await registrar({
-      pregunta: entrada.titulo,
-      respuesta: crudo,
+      titulo,
+      respuesta: JSON.stringify({ propuesta, detalles: detalles.map((d) => d.nombre) }),
       modelo,
       consumo,
       ms: Date.now() - inicio,
@@ -269,33 +480,30 @@ export async function POST(request: Request) {
       modo: "ia",
       faltantes,
       parecidas,
-      senalamientos: salida.senalamientos,
+      senalamientos: rRevision.dato?.senalamientos ?? [],
+      propuesta,
+      detalles,
       aviso: null,
     } satisfies RespuestaAsistente);
   } catch (causa) {
     console.error("[asistente]", causa);
     await registrar({
-      pregunta: entrada.titulo,
+      titulo,
       respuesta: null,
       modelo,
-      consumo,
+      consumo: CONSUMO_VACIO,
       ms: Date.now() - inicio,
       ipHash,
       ok: false,
     });
-
-    // Se devuelve 200 con lo determinístico: el vecino no tiene por que
-    // quedarse sin revision porque el proveedor tuvo un mal momento.
-    return Response.json({
-      modo: "basico",
-      faltantes,
-      parecidas,
-      senalamientos: [],
-      aviso: mensajeDeError(
-        causa,
-        "No se pudo hacer la revisión completa. Podés enviar tu idea igual.",
+    return Response.json(
+      sinIa(
+        mensajeDeError(
+          causa,
+          "No se pudo generar la ayuda. Podés seguir escribiendo a mano y enviar tu idea igual.",
+        ),
       ),
-    } satisfies RespuestaAsistente);
+    );
   }
 }
 
@@ -303,7 +511,8 @@ export async function POST(request: Request) {
 
 /**
  * Propuestas parecidas del mismo distrito. Sin modelo: compara el titulo y el
- * problema con `similitud()`.
+ * problema con `similitud()`, la misma funcion Jaccard que uso el ETL para
+ * encontrar los duplicados de 2025.
  *
  * De una idea sin publicar no se revela el titulo: durante la etapa de ideas
  * ninguna esta publicada todavia, y decir "ya existe <titulo>" filtraria el
@@ -334,7 +543,7 @@ async function buscarParecidas(
 }
 
 async function registrar(datos: {
-  pregunta: string;
+  titulo: string;
   respuesta: string | null;
   modelo: string;
   consumo: Consumo;
@@ -345,7 +554,7 @@ async function registrar(datos: {
   try {
     await db.insert(chatConsultas).values({
       origen: "asistente",
-      pregunta: datos.pregunta,
+      pregunta: datos.titulo || "(sin título)",
       respuesta: datos.respuesta,
       herramientas: [],
       modelo: datos.modelo,
@@ -357,6 +566,6 @@ async function registrar(datos: {
       ok: datos.ok,
     });
   } catch (causa) {
-    console.error("[asistente] no se pudo registrar la revisión", causa);
+    console.error("[asistente] no se pudo registrar el pedido", causa);
   }
 }
