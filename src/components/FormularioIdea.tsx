@@ -85,6 +85,14 @@ type CampoLargo = "problema" | "solucion" | "beneficios";
 const MINIMO_PARA_FORMALIZAR = 15;
 const MINIMO_DE_CONTEXTO = 25;
 
+/**
+ * Los minimos del alta, copiados de MINIMOS en src/lib/idea-esquema.ts por la
+ * misma razon que los de arriba: ese modulo importa zod y traerlo al navegador
+ * solo para leer tres numeros no vale el peso. El que manda sigue siendo el
+ * servidor; esto es para poder avisar antes de enviar.
+ */
+const MINIMOS = { titulo: 8, problema: 30, solucion: 30 } as const;
+
 type EstadoAyuda =
   | { tipo: "quieto" }
   | { tipo: "pidiendo" }
@@ -102,6 +110,27 @@ const AYUDAS_QUIETAS: Record<CampoLargo, EstadoAyuda> = {
   solucion: { tipo: "quieto" },
   beneficios: { tipo: "quieto" },
 };
+
+/**
+ * Los cinco pasos, en el orden en que se preguntan.
+ *
+ * Una pregunta a la vez (pedido del jefe del programa, 26/08/2026): con seis
+ * campos vacios en pantalla la persona no sabe donde esta ni cuanto le falta.
+ *
+ * El titulo y la categoria van en el ULTIMO paso y no en el primero, que es el
+ * cambio menos obvio de la lista: pedirle un titulo que resuma la propuesta a
+ * alguien que todavia no la escribio es la parte mas dificil del formulario, y
+ * en el ultimo paso ya tiene todo escrito para poder resumirlo.
+ */
+const PASOS: ReadonlyArray<{ corto: string; titulo: string; opcional?: boolean }> = [
+  { corto: "Dónde", titulo: "¿Dónde sería?" },
+  { corto: "Qué", titulo: "¿Qué querés proponer?" },
+  { corto: "Por qué", titulo: "¿Por qué hace falta?" },
+  { corto: "Quiénes", titulo: "¿Quiénes se benefician?", opcional: true },
+  { corto: "Revisar", titulo: "Revisá y enviá" },
+];
+
+const ULTIMO = PASOS.length;
 
 /**
  * Como se llama cada campo EN PANTALLA.
@@ -167,6 +196,8 @@ export default function FormularioIdea({
     problema: "",
     solucion: "",
     beneficios: "",
+    autorNombre: "",
+    autorEmail: "",
   });
   const largos: Record<CampoLargo, number> = {
     problema: valores.problema.trim().length,
@@ -186,6 +217,69 @@ export default function FormularioIdea({
   const [puntoPorGps, setPuntoPorGps] = useState(false);
   /** Que bloque del documento se esta editando, para marcarlo alla. */
   const [bloqueActivo, setBloqueActivo] = useState<BloqueActivo>(null);
+  /** En que paso esta la persona. Arranca en 1: primero el lugar. */
+  const [paso, setPaso] = useState(1);
+  /** En el telefono el documento se abre a pantalla completa. */
+  const ventanaDoc = useRef<HTMLDialogElement>(null);
+
+  /**
+   * Que le falta a cada paso para estar completo, o null si esta listo.
+   *
+   * Es la misma validacion que hace el servidor (los minimos de
+   * src/lib/idea-esquema.ts), traida aca para poder decir QUE falta y llevar a
+   * la persona AL PASO donde se arregla, en lugar de rechazarle el envio al
+   * final con un mensaje suelto.
+   *
+   * Reemplaza a los `required` del HTML, que con los pasos ocultos no servian:
+   * un campo `required` con display:none hace que el navegador aborte el envio
+   * con "an invalid form control is not focusable" y sin decirle nada a nadie.
+   */
+  function faltaEnElPaso(n: number): string | null {
+    if (n === 1) {
+      if (!punto) return "Marcá en el mapa dónde sería la obra.";
+      if (!distrito) return "Ese punto queda fuera de los 20 distritos. Marcá más cerca.";
+      return null;
+    }
+    if (n === 2) {
+      return largos.solucion >= MINIMOS.solucion
+        ? null
+        : `Contá un poco más qué querés proponer: necesita al menos ${MINIMOS.solucion} caracteres.`;
+    }
+    if (n === 3) {
+      return largos.problema >= MINIMOS.problema
+        ? null
+        : `Contá un poco más por qué hace falta: necesita al menos ${MINIMOS.problema} caracteres.`;
+    }
+    if (n === 4) return null; // opcional
+    if (!valores.titulo.trim() || valores.titulo.trim().length < MINIMOS.titulo) {
+      return `El título es muy corto: necesita al menos ${MINIMOS.titulo} caracteres.`;
+    }
+    if (!valores.categoria) return "Elegí una categoría.";
+    if (avisos && !valores.autorEmail.trim()) {
+      return "Dejaste marcada la casilla del correo: escribilo o desmarcala.";
+    }
+    return null;
+  }
+
+  /**
+   * Si un paso ya se puede dar por hecho, para el tilde del riel.
+   *
+   * No es lo mismo que "se puede avanzar": el paso de los beneficios es
+   * opcional, asi que nunca falta nada y se puede pasar de largo, pero mostrarlo
+   * tildado antes de que la persona lo mire seria decirle que ya lo hizo. Un
+   * paso opcional se tilda cuando tiene contenido, no cuando esta permitido
+   * saltearlo.
+   */
+  const pasoCompleto = (n: number) => {
+    if (faltaEnElPaso(n) !== null) return false;
+    if (PASOS[n - 1].opcional) return largos.beneficios > 0;
+    return true;
+  };
+
+  function irAlPaso(n: number) {
+    setPaso(Math.min(Math.max(n, 1), ULTIMO));
+    setEstado({ tipo: "editando" });
+  }
 
   // Referencias a los campos de contenido: se leen para revisar y para armar el
   // contexto de la ayuda, y se escriben al aceptar un texto generado, sin
@@ -314,20 +408,28 @@ export default function FormularioIdea({
    * recicla el evento apenas hay un await, y `evento.currentTarget` pasa a ser
    * null: cualquier lectura despues del primer await se pierde.
    */
+  /**
+   * El submit ENVIA, siempre. Nada de decidir entre revisar y enviar segun el
+   * estado: el boton dice "Enviar mi idea" y eso es lo que hace.
+   *
+   * Antes de enviar recorre los pasos y, si a alguno le falta algo, lleva a la
+   * persona A ESE paso con el motivo. Es lo que reemplaza a los `required` del
+   * HTML, que con los pasos ocultos abortaban el envio en silencio.
+   */
   async function alEnviarFormulario(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const datos = new FormData(evento.currentTarget);
 
-    if (!punto || !distrito) {
-      setEstado({
-        tipo: "error",
-        mensaje: "Marcá en el mapa dónde sería la obra, dentro del ejido municipal.",
-      });
-      return;
+    for (let n = 1; n <= ULTIMO; n += 1) {
+      const falta = faltaEnElPaso(n);
+      if (falta) {
+        setPaso(n);
+        setEstado({ tipo: "error", mensaje: falta });
+        return;
+      }
     }
 
-    if (revision) await enviar(datos);
-    else await revisar(datos, distrito);
+    await enviar(datos);
   }
 
   /** Pide la revision al asistente. Nunca bloquea el envio: si falla, avisa. */
@@ -591,11 +693,38 @@ export default function FormularioIdea({
         es ver lo que se va a presentar. El mapa quedo como primera pregunta,
         que ademas es el orden en que ya estaba numerado.
       */}
-      <div className="space-y-6">
-      {/* --- Ubicación ----------------------------------------------------- */}
-      <section>
-        <h2 className="text-lg font-bold">1. ¿Dónde sería?</h2>
-        <p className="mt-1.5 text-sm" style={{ color: "var(--texto-suave)" }}>
+      <div className="space-y-5">
+      <RielDePasos
+        paso={paso}
+        completo={pasoCompleto}
+        onIr={irAlPaso}
+        deshabilitado={!abierta || ocupado}
+      />
+
+      <div>
+        <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+          Paso {paso} de {ULTIMO}
+          {PASOS[paso - 1].opcional && " · se puede saltar"}
+        </p>
+        <h2
+          className="mt-1 text-xl font-bold leading-tight sm:text-2xl"
+          style={{ color: "var(--color-marca-900)", textWrap: "balance" }}
+        >
+          {PASOS[paso - 1].titulo}
+        </h2>
+      </div>
+
+      {/*
+        Los pasos inactivos se OCULTAN, no se desmontan. Asi los campos
+        conservan su texto, las referencias siguen valiendo y el FormData del
+        envio los levanta a todos. El precio es que los `required` del HTML no
+        sirven (un campo required con display:none hace que el navegador aborte
+        el envio con "an invalid form control is not focusable", sin decirle nada
+        a nadie), y por eso la validacion la hace faltaEnElPaso.
+      */}
+      {/* --- Paso 1: el lugar ---------------------------------------------- */}
+      <section className={paso === 1 ? "" : "hidden"}>
+        <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
           Tocá el mapa en el lugar de la obra. El distrito y el barrio se completan solos.
         </p>
 
@@ -671,18 +800,19 @@ export default function FormularioIdea({
         </div>
       </section>
 
-      {/* --- Contenido ----------------------------------------------------- */}
+      {/* --- Los campos, cada uno en su paso -------------------------------- */}
       <div className="space-y-6">
         <section className="space-y-4">
-          <h2 className="text-lg font-bold">2. Contanos tu idea</h2>
           {/*
             El orden importa y no es obvio. La revision pide datos que la IA
             tiene prohibido inventar (cuanta gente, desde cuando), asi que
             formalizar antes de contestarlos deja un texto prolijo al que le
-            sigue faltando lo mismo. Se dice una vez, en una linea, y el resto
-            lo guia el panel de la revision cuando corresponde.
+            sigue faltando lo mismo. Se dice una vez, cuando empieza a escribir.
           */}
-          <p className="text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+          <p
+            className={paso === 2 ? "text-sm leading-relaxed" : "hidden"}
+            style={{ color: "var(--texto-suave)" }}
+          >
             Escribilo con tus palabras, como puedas.{" "}
             {conIA ? (
               <>
@@ -694,11 +824,11 @@ export default function FormularioIdea({
             )}
           </p>
 
+          <div className={paso === ULTIMO ? "" : "hidden"}>
           <Campo etiqueta="Título de la idea" ayuda="Una línea que resuma la propuesta.">
             <input
               ref={refTitulo}
               name="titulo"
-              required
               maxLength={LARGOS.titulo}
               disabled={!abierta || ocupado}
               onInput={(evento) => anotarValor("titulo", evento.currentTarget.value)}
@@ -712,7 +842,6 @@ export default function FormularioIdea({
             <select
               ref={refCategoria}
               name="categoria"
-              required
               disabled={!abierta || ocupado}
               onChange={(evento) => anotarValor("categoria", evento.currentTarget.value)}
               defaultValue=""
@@ -736,7 +865,10 @@ export default function FormularioIdea({
               ))}
             </ul>
           </Campo>
+          </div>
 
+          {/* El barrio va con el lugar: lo completa el mapa. */}
+          <div className={paso === 1 ? "" : "hidden"}>
           <Campo
             etiqueta="Barrio"
             ayuda={
@@ -759,6 +891,7 @@ export default function FormularioIdea({
               style={campoEstilo}
             />
           </Campo>
+          </div>
 
           {/* La ayuda va FUERA del <Campo>: Campo es un <label>, y un <button>
               adentro de un label es contenido interactivo anidado, que roba el
@@ -773,7 +906,7 @@ export default function FormularioIdea({
             `problema`). Las columnas siguen significando lo mismo que siempre;
             lo unico que cambia es el orden en pantalla y como se pregunta.
           */}
-          <div>
+          <div className={paso === 2 ? "" : "hidden"}>
             <Campo
               etiqueta="¿Qué querés proponer?"
               ayuda="Contá qué obra o mejora querés para tu barrio. Con tus palabras alcanza."
@@ -781,7 +914,6 @@ export default function FormularioIdea({
               <textarea
                 ref={refSolucion}
                 name="solucion"
-                required
                 rows={5}
                 maxLength={LARGOS.solucion}
                 disabled={!abierta || ocupado}
@@ -807,7 +939,7 @@ export default function FormularioIdea({
             )}
           </div>
 
-          <div>
+          <div className={paso === 3 ? "" : "hidden"}>
             <Campo
               etiqueta="¿Por qué hace falta?"
               ayuda="¿Qué pasa hoy en el barrio? ¿A quiénes afecta?"
@@ -815,7 +947,6 @@ export default function FormularioIdea({
               <textarea
                 ref={refProblema}
                 name="problema"
-                required
                 rows={5}
                 maxLength={LARGOS.problema}
                 disabled={!abierta || ocupado}
@@ -846,7 +977,7 @@ export default function FormularioIdea({
             la solucion que la persona ya escribio. De ahi que el boton pida esos
             dos campos y no este.
           */}
-          <div>
+          <div className={paso === 4 ? "" : "hidden"}>
             <Campo
               etiqueta="¿Quiénes se benefician?"
               ayuda="Opcional. La IA puede escribirlo a partir de lo que contaste arriba."
@@ -881,8 +1012,8 @@ export default function FormularioIdea({
           </div>
         </section>
 
-        <section className="space-y-4">
-          <h2 className="text-lg font-bold">3. Tus datos (opcionales)</h2>
+        <section className={paso === ULTIMO ? "space-y-4" : "hidden"}>
+          <h3 className="text-base font-bold">Tus datos (opcionales)</h3>
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
             Ninguno de estos datos se publica. Al enviar la idea te vamos a dar un{" "}
             <strong>código de seguimiento</strong>: con ese código y el número de tu idea podés ver
@@ -893,6 +1024,7 @@ export default function FormularioIdea({
             <input
               name="autorNombre"
               maxLength={120}
+              onInput={(evento) => anotarValor("autorNombre", evento.currentTarget.value)}
               disabled={!abierta || ocupado}
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
@@ -934,8 +1066,8 @@ export default function FormularioIdea({
                   <input
                     name="autorEmail"
                     type="email"
-                    required
                     maxLength={160}
+                    onInput={(evento) => anotarValor("autorEmail", evento.currentTarget.value)}
                     disabled={!abierta || ocupado}
                     placeholder="tunombre@ejemplo.com"
                     className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
@@ -960,8 +1092,54 @@ export default function FormularioIdea({
           </p>
         )}
 
-        {revision && (
+        {paso === ULTIMO && revision && (
           <PanelRevision revision={revision} conIA={conIA} />
+        )}
+
+        {/* --- Navegación entre pasos ---------------------------------------- */}
+        {paso < ULTIMO && (
+          <div className="flex flex-wrap items-center gap-3">
+            {paso > 1 && (
+              <button
+                type="button"
+                onClick={() => irAlPaso(paso - 1)}
+                disabled={!abierta || ocupado}
+                className="rounded-xl px-4 py-3 text-sm font-semibold transition disabled:opacity-50"
+                style={{
+                  background: "var(--fondo-tarjeta)",
+                  border: "1px solid var(--borde-control)",
+                  color: "var(--color-marca-700)",
+                }}
+              >
+                Atrás
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                // No se traba a nadie: si falta algo se avisa y se sigue.
+                const falta = faltaEnElPaso(paso);
+                if (falta) setEstado({ tipo: "error", mensaje: falta });
+                else irAlPaso(paso + 1);
+              }}
+              disabled={!abierta || ocupado}
+              className="rounded-xl px-5 py-3 text-sm font-semibold text-white transition disabled:opacity-50"
+              style={{ background: "var(--color-marca-700)" }}
+            >
+              Siguiente
+            </button>
+            {PASOS[paso - 1].opcional && (
+              <button
+                type="button"
+                onClick={() => irAlPaso(paso + 1)}
+                disabled={!abierta || ocupado}
+                className="text-sm underline disabled:opacity-50"
+                style={{ color: "var(--texto-suave)" }}
+              >
+                Saltar este paso
+              </button>
+            )}
+          </div>
         )}
 
         {/*
@@ -972,7 +1150,13 @@ export default function FormularioIdea({
           jefe del programa llamo "poco predictivo". Revisar paso a ser una
           accion aparte, disponible siempre y todas las veces que haga falta.
         */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div
+          className={
+            paso === ULTIMO
+              ? "flex flex-wrap items-center gap-x-4 gap-y-3"
+              : "hidden"
+          }
+        >
           <button
             type="submit"
             disabled={!abierta || ocupado}
@@ -1000,7 +1184,7 @@ export default function FormularioIdea({
           </button>
         </div>
 
-        {!revision && !revisando && (
+        {paso === ULTIMO && !revision && !revisando && (
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
             Antes de enviar podés pedirnos una revisión: te decimos qué le falta para que se
             entienda mejor y si ya hay una propuesta parecida en tu distrito. No es obligatorio.
@@ -1009,8 +1193,21 @@ export default function FormularioIdea({
       </div>
       </div>
 
-      {/* --- El documento --------------------------------------------------- */}
-      <aside className="lg:sticky lg:top-24">
+      {/*
+        --- El documento -------------------------------------------------------
+        En pantalla grande vive a la derecha y se queda pegado al hacer scroll.
+        En el telefono no hay derecha: se esconde y lo reemplaza una barra fija
+        abajo que lo abre a pantalla completa. Es el riesgo que quedo anotado en
+        la maqueta —la herramienta que inspiro esto es de escritorio y el vecino
+        entra del celular— y por eso el telefono no hereda la solucion, tiene la
+        suya.
+
+        Ojo con el PDF: en el telefono el <aside> esta en display:none, y lo que
+        no se dibuja no se imprime. Por eso el boton de descargar aparece
+        adentro de la ventana, que es la copia visible cuando se imprime desde
+        un telefono.
+      */}
+      <aside className="panel-doc hidden lg:sticky lg:top-24 lg:block">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p
             className="text-xs font-semibold uppercase tracking-[0.14em]"
@@ -1057,9 +1254,185 @@ export default function FormularioIdea({
           se descarga es este mismo documento.
         </p>
       </aside>
+
+      {/* --- El documento en el teléfono ------------------------------------ */}
+      <div className="barra-doc">
+        <button
+          type="button"
+          onClick={() => ventanaDoc.current?.showModal()}
+          className="flex items-center gap-2 text-sm font-semibold"
+          style={{ color: "var(--color-marca-700)" }}
+        >
+          Ver cómo queda
+          <span aria-hidden="true">▲</span>
+        </button>
+        <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
+          Paso {paso} de {ULTIMO}
+        </span>
+      </div>
+
+      <dialog
+        ref={ventanaDoc}
+        className="ventana-doc"
+        aria-label="Así se va a presentar tu idea"
+        onClick={(evento) => {
+          if (evento.target === ventanaDoc.current) ventanaDoc.current?.close();
+        }}
+      >
+        <div className="ventana-doc-jefe">
+          <p className="text-sm font-bold">Así se va a presentar</p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded-lg px-3 py-2 text-xs font-semibold"
+              style={{
+                background: "var(--fondo-tarjeta)",
+                border: "1px solid var(--borde-control)",
+                color: "var(--color-marca-700)",
+              }}
+            >
+              Descargar PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => ventanaDoc.current?.close()}
+              aria-label="Cerrar"
+              className="rounded-lg px-3 py-2 text-xs font-semibold"
+              style={{
+                background: "var(--fondo-tarjeta)",
+                border: "1px solid var(--borde-control)",
+                color: "var(--texto-suave)",
+              }}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+        <div className="ventana-doc-cuerpo">
+          <DocumentoIdea
+            anio={anio}
+            poligono={poligono}
+            activo={bloqueActivo}
+            datos={{
+              titulo: valores.titulo,
+              categoria: categorias.find((c) => c.slug === valores.categoria)?.nombre ?? "",
+              barrio: valores.barrio,
+              distrito,
+              punto,
+              solucion: valores.solucion,
+              problema: valores.problema,
+              beneficios: valores.beneficios,
+            }}
+          />
+        </div>
+      </dialog>
+
+      <style>{estilosPasos}</style>
     </form>
   );
 }
+
+/**
+ * Lo poco que no se puede escribir con utilidades: la barra fija del telefono y
+ * la ventana del documento. Mismo patron que Mapa, HeroInicio y DocumentoIdea.
+ *
+ * La barra deja aire abajo del formulario con padding en el body, para que no
+ * tape el ultimo boton. Ojo con los backticks adentro de los comentarios: esto
+ * es un template literal.
+ */
+const estilosPasos = `
+/*
+ * La barra existe SOLO abajo de lg, y quien lo decide es esta consulta de medio
+ * y nada mas. Con la utilidad lg:hidden de Tailwind no alcanzaba: son dos
+ * selectores de una clase cada uno, o sea la misma especificidad, y este bloque
+ * va despues en el documento, asi que le ganaba y la barra aparecia tambien en
+ * la compu.
+ */
+.barra-doc {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: color-mix(in srgb, var(--fondo) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--borde);
+}
+
+@media (max-width: 63.999rem) {
+  .barra-doc { display: flex; }
+  /* Que la barra no tape el ultimo control del formulario. */
+  body { padding-bottom: 4rem; }
+}
+
+.ventana-doc {
+  margin: auto;
+  width: min(44rem, calc(100vw - 1.5rem));
+  max-height: min(92dvh, 56rem);
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid var(--borde);
+  border-radius: 1rem;
+  background: var(--fondo-suave);
+  color: var(--texto);
+}
+.ventana-doc[open] { display: flex; }
+.ventana-doc::backdrop {
+  background: color-mix(in srgb, var(--color-marca-950) 45%, transparent);
+}
+.ventana-doc-jefe {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--borde);
+  background: var(--fondo-tarjeta);
+}
+.ventana-doc-cuerpo {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+}
+
+/* Con la ventana abierta la pagina de atras no scrollea. */
+body:has(.ventana-doc[open]) { overflow: hidden; }
+
+/*
+ * Al imprimir desde el telefono la copia visible es la de la ventana. La regla
+ * de impresion de DocumentoIdea ya deja solo el documento; esto saca de la hoja
+ * el marco de la ventana y la barra.
+ */
+@media print {
+  .barra-doc { display: none !important; }
+  .ventana-doc {
+    position: static !important;
+    max-height: none !important;
+    border: 0 !important;
+    background: #fff !important;
+  }
+  .ventana-doc-jefe { display: none !important; }
+  .ventana-doc-cuerpo { overflow: visible !important; padding: 0 !important; }
+
+  /*
+   * En el telefono el panel de la derecha esta en display:none, y lo que no se
+   * dibuja no se imprime: sin esta regla, un Ctrl+P (o el "imprimir" del menu
+   * del navegador) con la ventana cerrada sacaba una hoja en blanco.
+   *
+   * La condicion importa: se muestra el panel SOLO si la ventana esta cerrada.
+   * Si estuviera abierta y ademas mostraramos el panel, en la hoja saldria el
+   * documento dos veces.
+   */
+  body:not(:has(.ventana-doc[open])) .panel-doc { display: block !important; }
+}
+`;
 
 /**
  * La ayuda de redaccion de un campo: el boton, y lo que la IA devolvio.
@@ -1475,5 +1848,72 @@ function IconoMira() {
       <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
       <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
     </svg>
+  );
+}
+
+/**
+ * El riel de pasos: donde estoy, cuanto falta, y que ya quedo listo.
+ *
+ * Es la pieza que hace que "una pregunta a la vez" no se sienta como un tunel:
+ * se puede saltar a cualquier paso, tambien para atras, y los pasos completos
+ * quedan con un tilde. Sin esto la persona no sabe si le quedan dos preguntas o
+ * diez, que es justo la sensacion que habia que sacarse de encima.
+ *
+ * En pantallas chicas queda solo el numero: cinco etiquetas no entran en 390 px
+ * sin encimarse, y el numero mas el titulo grande de abajo alcanzan para saber
+ * donde esta uno.
+ */
+function RielDePasos({
+  paso,
+  completo,
+  onIr,
+  deshabilitado,
+}: {
+  paso: number;
+  completo: (n: number) => boolean;
+  onIr: (n: number) => void;
+  deshabilitado: boolean;
+}) {
+  return (
+    <nav aria-label="Pasos del formulario" className="flex flex-wrap items-center gap-1.5">
+      {PASOS.map((p, i) => {
+        const n = i + 1;
+        const actual = n === paso;
+        const hecho = !actual && completo(n);
+        return (
+          <button
+            key={p.corto}
+            type="button"
+            onClick={() => onIr(n)}
+            disabled={deshabilitado}
+            aria-current={actual ? "step" : undefined}
+            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition disabled:opacity-50"
+            style={{
+              color: actual ? "var(--color-marca-900)" : "var(--texto-suave)",
+              fontWeight: actual ? 600 : 400,
+              background: actual ? "var(--color-marca-50)" : "transparent",
+            }}
+          >
+            <span
+              aria-hidden="true"
+              className="grid h-5.5 w-5.5 shrink-0 place-items-center rounded-full text-[0.6875rem] font-bold"
+              style={{
+                width: "1.375rem",
+                height: "1.375rem",
+                background: actual
+                  ? "var(--color-marca-700)"
+                  : hecho
+                    ? "var(--color-cat-ambiental)"
+                    : "var(--borde)",
+                color: actual || hecho ? "#fff" : "var(--texto-suave)",
+              }}
+            >
+              {hecho ? "✓" : n}
+            </span>
+            <span className="hidden sm:inline">{p.corto}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
