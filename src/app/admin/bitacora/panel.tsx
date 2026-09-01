@@ -152,10 +152,17 @@ export default function PanelBitacora({
     <div>
       <header>
         <h1 className="text-2xl font-bold">Bitácora del sistema</h1>
+        {/*
+          Decia además "Cubre lo que no es una idea ni una cuenta", que es lo
+          mismo que ya explica el ultimo parrafo del aviso de abajo, pero ahi
+          dicho con los dos enlaces a donde SI esta cada historial. Enunciar el
+          limite dos veces, una en negativo y una con los destinos, no agrega
+          nada: quedo la enumeracion de lo que cubre.
+        */}
         <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
-          Quién cambió qué, cuándo, y de qué valor a qué valor. Cubre lo que no es una idea ni una
-          cuenta: la etapa del proceso, las ediciones y su cronograma, los textos y las novedades
-          del sitio, y los avances de obra que ve el vecino.
+          Quién cambió qué, cuándo, y de qué valor a qué valor: la etapa del proceso, las ediciones
+          y su cronograma, los textos y las novedades del sitio, y los avances de obra que ve el
+          vecino.
         </p>
       </header>
 
