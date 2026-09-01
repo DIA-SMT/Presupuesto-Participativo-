@@ -67,8 +67,21 @@ const ESTADOS_FILTRO: EstadoIdea[] = [
   "borrador",
 ];
 
-/** Los estados que ya tienen tarjeta propia arriba no se repiten en la fila chica. */
-const ESTADOS_TARJETA: EstadoIdea[] = ESTADOS_FILTRO.filter((estado) => estado !== "pendiente");
+/**
+ * Etiquetas de la fila de solapas. Son mas cortas y en plural que las de
+ * ETIQUETA_ESTADO (src/lib/formato.ts), que se siguen usando en la tabla, en la
+ * ficha y en el sitio publico: ahi nombran el estado de UNA idea ("Integrada
+ * con otra idea"), y aca encabezan un monton de ellas ("Integradas 2"). En una
+ * fila de seis filtros, la etiqueta larga no entra sin romper el renglon.
+ */
+const ETIQUETA_SOLAPA: Record<EstadoIdea, string> = {
+  pendiente: "Sin evaluar",
+  factible: "Factibles",
+  no_factible: "No factibles",
+  integrado: "Integradas",
+  ganador: "Ganadoras",
+  borrador: "Borradores",
+};
 
 const ETIQUETA_ACCION: Record<AccionRevision, string> = {
   evaluacion: "Evaluación",
@@ -382,96 +395,112 @@ export default function PanelBandeja({
 
   return (
     <div>
-      <header>
+      <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <h1 className="text-2xl font-bold">Ideas · Edición {anio}</h1>
-        <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
-          La lista arranca por lo que necesita trabajo: primero las que nadie evaluó, después los
-          “no” sin devolución escrita y al final el resto, siempre las más antiguas arriba. Tocá el
-          título de una idea para abrir su ficha, evaluarla y ver su historial; cada cambio queda
-          registrado.
+        {/*
+          "emitidos desde esta plataforma" y no "registrados por este sitio":
+          esta cuenta mira la tabla `votos`, donde solo entran los votos que se
+          emitieron aca, mientras que el sitio publico muestra la suma del
+          contador de cada idea, que llego con los datos migrados de 2025. Son
+          dos numeros distintos y muy separados (0 contra 2.069); leerlos sin
+          saber que miden cosas distintas parece un error del sistema.
+        */}
+        <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+          {formatearNumero(votosRegistrados)}{" "}
+          {votosRegistrados === 1 ? "voto emitido" : "votos emitidos"} desde esta plataforma
         </p>
       </header>
 
-      {/* --- Tarjetas accionables: cada una filtra la lista ---------------- */}
-      <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        {deuda > 0 ? (
-          <Link
-            href={enlaceFiltro({ estado: "", sinDevolucion: true })}
-            aria-current={vista.sinDevolucion ? "true" : undefined}
-            className="rounded-2xl px-5 py-4"
-            style={{
-              background: "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
-              border: `1px solid color-mix(in srgb, var(--color-acento-600) ${
-                vista.sinDevolucion ? "80%" : "40%"
-              }, transparent)`,
-            }}
-          >
-            <p className="text-3xl font-bold tracking-tight" style={{ color: "var(--color-acento-700)" }}>
-              {formatearNumero(deuda)}
-            </p>
-            <p className="mt-0.5 text-sm font-semibold" style={{ color: "var(--color-acento-700)" }}>
-              {deuda === 1 ? "idea no factible" : "ideas no factibles"} sin devolución escrita
+      {/* --- La unica alerta de la pantalla: la deuda con el vecino -------- */}
+      {deuda > 0 ? (
+        <Link
+          href={enlaceFiltro({ estado: "", sinDevolucion: true })}
+          aria-current={vista.sinDevolucion ? "true" : undefined}
+          className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 rounded-2xl px-5 py-4"
+          style={{
+            background: "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
+            border: `1px solid color-mix(in srgb, var(--color-acento-600) ${
+              vista.sinDevolucion ? "80%" : "40%"
+            }, transparent)`,
+          }}
+        >
+          <div>
+            <p className="text-sm font-semibold" style={{ color: "var(--color-acento-700)" }}>
+              {textoDeuda(deuda, resumen.porEstado.no_factible)}
             </p>
             <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-              Es la deuda del equipo con los vecinos: a cada una se le dijo que no sin explicarle
-              por qué. Tocá para trabajar solo esas y escribir el texto que se publica en la ficha.
-            </p>
-          </Link>
-        ) : (
-          <div
-            className="rounded-2xl px-5 py-4"
-            style={{
-              background: "color-mix(in srgb, var(--color-cat-ambiental) 8%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--color-cat-ambiental) 35%, transparent)",
-            }}
-          >
-            <p className="text-sm font-semibold" style={{ color: "var(--color-cat-ambiental)" }}>
-              Todas las ideas no factibles tienen su devolución escrita.
-            </p>
-            <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-              No hay ningún vecino con un “no” sin explicación. Se mantiene así escribiendo la
-              devolución en el mismo momento en que se evalúa.
+              Es lo que el equipo le debe al vecino: se le dijo que no sin explicarle por qué.
             </p>
           </div>
-        )}
-
-        <Tarjeta
-          valor={resumen.porEstado.pendiente}
-          etiqueta="pendientes de evaluación"
-          detalle="Nadie las miró todavía. Van primero en la lista."
-          href={enlaceFiltro({ estado: "pendiente", sinDevolucion: false })}
-          activo={vista.estado === "pendiente" && !vista.sinDevolucion}
-          color={resumen.porEstado.pendiente > 0 ? "var(--color-acento-600)" : undefined}
-        />
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {/* "Borrador" solo se muestra si existe: casi nunca hay ideas asi. */}
-        {ESTADOS_TARJETA.filter(
-          (estado) => estado !== "borrador" || resumen.porEstado.borrador > 0,
-        ).map((estado) => (
-          <Contador
-            key={estado}
-            valor={resumen.porEstado[estado]}
-            etiqueta={ETIQUETA_ESTADO[estado] ?? estado}
-            href={enlaceFiltro({ estado, sinDevolucion: false })}
-            activo={vista.estado === estado && !vista.sinDevolucion}
-          />
-        ))}
-      </div>
-
-      {/* --- Metricas de vitrina: van al final y en chico ------------------ */}
-      <p className="mt-3 text-xs" style={{ color: "var(--texto-suave)" }}>
-        Edición completa:{" "}
-        <Link
-          href={enlaceFiltro({ estado: "", distrito: "", q: "", sinDevolucion: false })}
-          className="underline"
+          <span
+            className="text-sm font-semibold underline"
+            style={{ color: "var(--color-acento-700)" }}
+          >
+            {vista.sinDevolucion
+              ? "Estás viendo solo esas"
+              : `Trabajar en esas ${formatearNumero(deuda)}`}
+          </span>
+        </Link>
+      ) : (
+        <p
+          className="mt-4 rounded-2xl px-5 py-3 text-sm font-semibold"
+          style={{
+            background: "color-mix(in srgb, var(--color-cat-ambiental) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--color-cat-ambiental) 35%, transparent)",
+            color: "var(--color-cat-ambiental)",
+          }}
         >
-          {formatearNumero(resumen.total)} {resumen.total === 1 ? "idea" : "ideas"}
-        </Link>{" "}
-        · {formatearNumero(votosRegistrados)}{" "}
-        {votosRegistrados === 1 ? "voto registrado" : "votos registrados"} por este sitio.
-      </p>
+          Ningún vecino tiene un “no” sin explicación: todas las ideas no factibles tienen su
+          devolución escrita.
+        </p>
+      )}
+
+      {/*
+        --- El estado ES el filtro -----------------------------------------
+        Antes esto eran siete tarjetas con un numero grande cada una: se leian
+        como un tablero de metricas, no como controles, asi que no habia forma de
+        anticipar que tocarlas filtraba la lista. En una sola fila de solapas la
+        cuenta se lee de corrido y suma hasta el total sin tener que buscarlo.
+
+        El label dice "De la edición" a proposito: los numeros salen de
+        `getResumenBandeja`, que cuenta la edicion entera y no sabe del filtro de
+        distrito ni de la busqueda por texto. Sin ese anclaje, filtrar por un
+        distrito dejaba una fila de numeros que no coincidian con la lista de
+        abajo. Cuantas filas trae el filtro real lo dice el "Mostrando X–Y de Z"
+        que esta arriba de la tabla.
+      */}
+      <nav
+        aria-label="Filtrar por estado"
+        className="mt-5 flex flex-wrap items-end gap-x-1"
+        style={{ borderBottom: "1px solid var(--borde)" }}
+      >
+        <span className="mb-2 mr-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+          De la edición:
+        </span>
+        <ul className="-mb-px flex flex-wrap items-end">
+          <li>
+            <SolapaFiltro
+              etiqueta="Todas"
+              valor={resumen.total}
+              href={enlaceFiltro({ estado: "", sinDevolucion: false })}
+              activo={!vista.estado && !vista.sinDevolucion}
+            />
+          </li>
+          {/* "Borrador" solo se muestra si existe: casi nunca hay ideas asi. */}
+          {ESTADOS_FILTRO.filter(
+            (estado) => estado !== "borrador" || resumen.porEstado.borrador > 0,
+          ).map((estado) => (
+            <li key={estado}>
+              <SolapaFiltro
+                etiqueta={ETIQUETA_SOLAPA[estado]}
+                valor={resumen.porEstado[estado]}
+                href={enlaceFiltro({ estado, sinDevolucion: false })}
+                activo={vista.estado === estado && !vista.sinDevolucion}
+              />
+            </li>
+          ))}
+        </ul>
+      </nav>
 
       {/* --- Filtros ------------------------------------------------------- */}
       <form
@@ -597,8 +626,12 @@ export default function PanelBandeja({
                     }`}
             </p>
             {vista.orden === "prioridad" ? (
+              // La unica explicacion del orden en toda la pantalla. Antes lo
+              // decia tambien un parrafo de cuatro lineas abajo del titulo, a
+              // dos pantallas de distancia de la tabla que ordena.
               <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                Orden de trabajo (pendientes → “no” sin devolución → resto).
+                Primero las que no evaluó nadie, después los “no” sin devolución. Tocá una idea
+                para evaluarla.
               </p>
             ) : (
               <Link
@@ -613,14 +646,13 @@ export default function PanelBandeja({
           </div>
 
           {vista.sinDevolucion && (
-            // El contador de la tarjeta mide solo las no factibles (es el numero
-            // con el que el equipo viene midiendo la deuda); el filtro suma
-            // tambien las integradas sin devolucion, asi que puede traer alguna
-            // fila mas. Se aclara para que nadie lo lea como un error.
+            // El numero de la alerta mide solo las no factibles (es el que el
+            // equipo viene mirando); el filtro suma tambien las integradas sin
+            // devolucion, asi que puede traer alguna fila mas. Se aclara en una
+            // linea para que nadie lo lea como un error de la cuenta.
             <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-              Filtro activo: solo las ideas con un “no” sin devolución escrita. Incluye las
-              integradas con otra idea, así que puede traer alguna fila más que el número de la
-              tarjeta, que cuenta solo las no factibles.
+              Suma las integradas con otra idea, así que puede traer alguna fila más que el número
+              de arriba.
             </p>
           )}
 
@@ -868,74 +900,48 @@ export default function PanelBandeja({
   );
 }
 
-/** Tarjeta grande de una acción: número, qué es y por qué importa. */
-function Tarjeta({
-  valor,
+/**
+ * Una solapa de la fila de filtros: la etiqueta del estado y cuántas ideas hay.
+ * El estilo es el mismo `.solapa` de la barra de secciones del panel
+ * (src/app/globals.css), asi que la fila se lee como un control y no como una
+ * tarjeta de metrica.
+ */
+function SolapaFiltro({
   etiqueta,
-  detalle,
+  valor,
   href,
   activo,
-  color,
 }: {
-  valor: number;
   etiqueta: string;
-  detalle: string;
+  valor: number;
   href: string;
   activo: boolean;
-  color?: string;
 }) {
   return (
-    <Link
-      href={href}
-      aria-current={activo ? "true" : undefined}
-      className="rounded-2xl px-5 py-4"
-      style={{
-        background: activo ? "var(--fondo-suave)" : "var(--fondo-tarjeta)",
-        border: `1px solid ${activo ? "var(--color-marca-500)" : "var(--borde)"}`,
-      }}
-    >
-      <p
-        className="text-3xl font-bold tracking-tight"
-        style={color ? { color } : undefined}
-      >
-        {formatearNumero(valor)}
-      </p>
-      <p className="mt-0.5 text-sm font-semibold">{etiqueta}</p>
-      <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-        {detalle}
-      </p>
+    <Link href={href} aria-current={activo ? "true" : undefined} className="solapa">
+      {etiqueta}
+      <span className="solapa-numero">{formatearNumero(valor)}</span>
     </Link>
   );
 }
 
-/** Tarjeta chica: la cuenta de un estado, enlazada a su filtro. */
-function Contador({
-  valor,
-  etiqueta,
-  href,
-  activo,
-}: {
-  valor: number;
-  etiqueta: string;
-  href: string;
-  activo: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={activo ? "true" : undefined}
-      className="rounded-2xl px-4 py-3"
-      style={{
-        background: activo ? "var(--fondo-suave)" : "var(--fondo-tarjeta)",
-        border: `1px solid ${activo ? "var(--color-marca-500)" : "var(--borde)"}`,
-      }}
-    >
-      <p className="text-2xl font-bold tracking-tight">{formatearNumero(valor)}</p>
-      <p className="mt-0.5 text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
-        {etiqueta}
-      </p>
-    </Link>
-  );
+/**
+ * El texto de la alerta de deuda. Dice siempre el subconjunto ("32 de las 32")
+ * a proposito: antes la caja anunciaba "32 ideas no factibles sin devolución" y
+ * tres centimetros abajo un contador decia "32 No factible", y no habia manera
+ * de saber si era el mismo dato repetido o dos datos distintos que coincidian.
+ *
+ * Cuando la deuda es total —hoy lo es— no se dice "32 de las 32", que suena a
+ * numero mal calculado, sino "ninguna tiene": es la misma cuenta dicha como la
+ * diria una persona.
+ */
+function textoDeuda(deuda: number, noFactibles: number): string {
+  if (deuda >= noFactibles) {
+    return noFactibles === 1
+      ? "La única idea no factible no tiene la devolución escrita"
+      : `Ninguna de las ${formatearNumero(noFactibles)} ideas no factibles tiene la devolución escrita`;
+  }
+  return `${formatearNumero(deuda)} de las ${formatearNumero(noFactibles)} ideas no factibles no tienen la devolución escrita`;
 }
 
 /** Un paso del paginador. Deshabilitado se dibuja como texto, no como enlace. */
