@@ -31,6 +31,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { RolAdmin } from "@/db/queries";
+import { ETIQUETA_ROL } from "@/lib/formato";
 import { salirAdmin } from "./acciones";
 
 /** Linea de lo que agrupa pero no se toca: los separadores entre bloques. */
@@ -75,12 +76,6 @@ const GRUPOS: Grupo[] = [
     ],
   },
 ];
-
-const ETIQUETA_ROL: Record<RolAdmin, string> = {
-  admin: "Administrador",
-  moderador: "Moderador",
-  lector: "Lector",
-};
 
 /**
  * "/admin" es prefijo de todas las rutas del panel, asi que solo se marca
@@ -155,7 +150,7 @@ export default function CabeceraPanel({
       >
         <span className="text-sm font-semibold">{nombre}</span>
         <span style={{ color: "var(--texto-suave)" }}>
-          {email} · {ETIQUETA_ROL[rol]}
+          {email} · {ETIQUETA_ROL[rol] ?? rol}
         </span>
         {/*
           py-1.5 y px-1 no son decorativos: con text-xs (12 px de texto y 16 de

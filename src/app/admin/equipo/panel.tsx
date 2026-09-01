@@ -9,6 +9,7 @@
  */
 import { useActionState } from "react";
 import { activarAdmin, cambiarRolAdmin, crearAdmin } from "../acciones";
+import { ETIQUETA_ROL, formatearNumero } from "@/lib/formato";
 
 type Rol = "admin" | "moderador" | "lector";
 
@@ -53,12 +54,6 @@ const ROLES: { valor: Rol; etiqueta: string; detalle: string }[] = [
   },
 ];
 
-const ETIQUETA_ROL: Record<Rol, string> = {
-  admin: "Administrador",
-  moderador: "Moderador",
-  lector: "Lector",
-};
-
 const ETIQUETA_ACCION: Record<MovimientoEquipo["accion"], string> = {
   alta: "Alta de cuenta",
   cambio_rol: "Cambio de rol",
@@ -84,10 +79,29 @@ export default function PanelEquipo({
   return (
     <div>
       <h1 className="text-2xl font-bold">Equipo del backoffice</h1>
+      {/*
+        Las tres cuentas y la advertencia iban en un solo parrafo: el resumen se
+        leia como el principio de una instruccion. Son dos cosas distintas y van
+        separadas.
+      */}
       <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-        {cuentas.length} {cuentas.length === 1 ? "cuenta" : "cuentas"} · {activas} activas ·{" "}
-        {administradores} con rol administrador. Cada alta, cambio de rol o baja queda registrada en
-        la bitácora de más abajo.
+        Cada alta, cambio de rol o baja queda registrada en la bitácora de más abajo.
+      </p>
+      <p className="mt-2 flex flex-wrap items-baseline gap-x-4 text-sm">
+        <span>
+          <strong>{formatearNumero(cuentas.length)}</strong>{" "}
+          {cuentas.length === 1 ? "cuenta" : "cuentas"}
+        </span>
+        <span style={{ color: "var(--texto-suave)" }}>
+          {activas === cuentas.length
+            ? "todas activas"
+            : `${formatearNumero(activas)} ${activas === 1 ? "activa" : "activas"}`}
+        </span>
+        <span style={{ color: "var(--texto-suave)" }}>
+          {administradores === 1
+            ? "1 con rol administrador"
+            : `${formatearNumero(administradores)} con rol administrador`}
+        </span>
       </p>
 
       <section className="mt-6" aria-labelledby="titulo-roles">
@@ -179,9 +193,11 @@ export default function PanelEquipo({
                     <td className="px-4 py-2.5">{fila.objetivoEmail}</td>
                     <td className="px-4 py-2.5" style={{ color: "var(--texto-suave)" }}>
                       {fila.rolAnterior && fila.rolNuevo
-                        ? `${ETIQUETA_ROL[fila.rolAnterior]} → ${ETIQUETA_ROL[fila.rolNuevo]}`
+                        ? `${ETIQUETA_ROL[fila.rolAnterior] ?? fila.rolAnterior} → ${
+                            ETIQUETA_ROL[fila.rolNuevo] ?? fila.rolNuevo
+                          }`
                         : fila.rolNuevo
-                          ? ETIQUETA_ROL[fila.rolNuevo]
+                          ? (ETIQUETA_ROL[fila.rolNuevo] ?? fila.rolNuevo)
                           : "—"}
                     </td>
                   </tr>
@@ -232,9 +248,12 @@ function FilaCuenta({ cuenta, esMiCuenta }: { cuenta: CuentaEquipo; esMiCuenta: 
             {cuenta.email}
           </p>
         </div>
+        {/*
+          El rol salio de esta linea: estaba escrito dos veces en la misma
+          tarjeta, aca en gris chico y abajo en el selector, que es donde se lee
+          y se cambia. Quedan las dos fechas, que no estan en ningun otro lado.
+        */}
         <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-          {ETIQUETA_ROL[cuenta.rol]}
-          {" · "}
           {cuenta.ultimoIngreso ? `último ingreso ${cuenta.ultimoIngreso}` : "nunca ingresó"}
           {cuenta.alta && ` · alta ${cuenta.alta}`}
         </p>
