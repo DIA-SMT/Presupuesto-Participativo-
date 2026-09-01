@@ -127,7 +127,10 @@ export default function PanelTablero({
   // porque con el padron vacio cada celda muestra "menos de N" y parece que se
   // estan ocultando datos que en realidad no existen.
   const matrizVacia = matriz.every((fila) => fila.valores.every((valor) => valor === 0));
-  const sinPadron = resumen.votantesEmpadronados === 0;
+  // La misma regla que usan el aviso de arriba y las tarjetas de resumen: la
+  // condicion del padron vacio estaba escrita por separado en los tres lugares.
+  const ceros = cerosPorDefinicion(resumen);
+  const sinPadron = ceros.padron;
 
   const maximoIdeas = Math.max(1, ...distritos.map((fila) => fila.ideas));
   const maximoVotos = Math.max(1, ...distritos.map((fila) => fila.votos));
@@ -142,11 +145,15 @@ export default function PanelTablero({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Tablero · Edición {edicion.anio}</h1>
+          {/*
+            Solo la etapa. Antes esta linea decia tambien "edición activa en el
+            sitio", que ya lo dice el "(activa)" del selector de al lado, y
+            "104 ideas cargadas", que es la primera tarjeta de abajo. Tres veces
+            el mismo dato en la misma pantalla.
+          */}
           <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
             Etapa: <strong>{ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}</strong>
-            {edicion.activa ? " · edición activa en el sitio" : " · edición no activa"} ·{" "}
-            {formatearNumero(resumen.ideas)}{" "}
-            {resumen.ideas === 1 ? "idea cargada" : "ideas cargadas"}
+            {!edicion.activa && " · no es la edición activa del sitio"}
           </p>
         </div>
 
@@ -172,7 +179,18 @@ export default function PanelTablero({
 
       <AvisoContexto resumen={resumen} />
 
-      {/* --- Tarjetas de resumen ------------------------------------------ */}
+      {/*
+        --- Tarjetas de resumen -------------------------------------------
+        El orden es fijo y no depende de los datos: primero los cuatro
+        indicadores del proceso, que se llenan trabajando, y al final los dos
+        que dependen de que la gente entre al sitio. Antes esos dos caian en el
+        medio de la grilla, asi que en la edicion 2025 —importada— la fila del
+        medio eran dos ceros entre numeros buenos y parecia un dato faltante.
+
+        El orden no se reacomoda solo segun que este en cero, a proposito: la
+        pantalla tiene que estar siempre en el mismo lugar para quien la abre
+        todos los dias.
+      */}
       <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Tarjeta
           titulo="Ideas presentadas"
@@ -182,16 +200,12 @@ export default function PanelTablero({
           )} sin publicar`}
         />
         <Tarjeta
-          titulo="Votos registrados en el sitio"
-          valor={formatearNumero(resumen.votosRegistrados)}
-          detalle={`Contador de las ideas: ${formatearNumero(
-            resumen.votosEnIdeas,
-          )} (incluye los votos importados de ediciones anteriores)`}
-        />
-        <Tarjeta
-          titulo="Vecinos empadronados"
-          valor={formatearNumero(resumen.votantesEmpadronados)}
-          detalle="Padrón completo: no se divide por edición."
+          titulo="Pendientes de evaluación"
+          valor={formatearNumero(resumen.porEstado.pendiente)}
+          detalle={`${formatearNumero(resumen.porEstado.factible)} factibles · ${formatearNumero(
+            resumen.porEstado.no_factible,
+          )} no factibles`}
+          color="var(--color-acento-600)"
         />
         <Tarjeta
           titulo="Proyectos ganadores"
@@ -205,22 +219,35 @@ export default function PanelTablero({
           detalle={`Asignado a los ganadores: ${formatearPesos(resumen.presupuestoAsignado)}`}
         />
         <Tarjeta
-          titulo="Pendientes de evaluación"
-          valor={formatearNumero(resumen.porEstado.pendiente)}
-          detalle={`${formatearNumero(resumen.porEstado.factible)} factibles · ${formatearNumero(
-            resumen.porEstado.no_factible,
-          )} no factibles`}
-          color="var(--color-acento-600)"
+          titulo="Votos registrados en el sitio"
+          valor={formatearNumero(resumen.votosRegistrados)}
+          detalle={`Contador de las ideas: ${formatearNumero(
+            resumen.votosEnIdeas,
+          )}, con los importados`}
+          enCero={ceros.votos}
+        />
+        <Tarjeta
+          titulo="Vecinos empadronados"
+          valor={formatearNumero(resumen.votantesEmpadronados)}
+          detalle="Padrón completo: no se divide por edición."
+          enCero={ceros.padron}
         />
       </div>
 
-      {/* --- Composicion por estado --------------------------------------- */}
-      <section className="superficie mt-3 rounded-2xl p-5">
-        <h2 className="text-lg font-bold">Composición de las ideas por estado</h2>
+      {/*
+        --- Composicion por estado ----------------------------------------
+        Misma forma que las otras cinco secciones: mt-10, el h2 en text-xl y
+        afuera de la caja, y la `superficie` envolviendo solo el grafico. Era la
+        unica que iba con mt-3 y text-lg y con el titulo metido adentro de la
+        caja, asi que quedaba pegada a las tarjetas y se leia como un pie de
+        ellas en vez de como la primera de las seis secciones del tablero.
+      */}
+      <section className="mt-10">
+        <h2 className="text-xl font-bold">Composición de las ideas por estado</h2>
         <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
           Cada idea tiene un solo estado, así que las porciones suman el total de la edición.
         </p>
-        <div className="mt-4">
+        <div className="superficie mt-4 rounded-2xl p-5">
           <AnilloEstados porEstado={resumen.porEstado} />
         </div>
       </section>
@@ -682,6 +709,25 @@ function unirEnCastellano(partes: string[]): string {
 }
 
 /**
+ * Que indicadores valen cero PORQUE el proceso no paso por el sitio, y no
+ * porque falte cargar algo.
+ *
+ * La regla estaba escrita dentro de AvisoContexto y ahora la comparten el aviso
+ * y las tarjetas de resumen: son las dos cosas que hablan de los mismos ceros y
+ * no pueden contradecirse. Si el criterio cambia, cambia en un solo lugar.
+ *
+ * `votos`: las ideas muestran votos pero ninguno se emitio aca, o sea que se
+ * importaron con la edicion. `padron`: nadie se empadrono por el sitio, asi que
+ * no hay participacion que medir.
+ */
+function cerosPorDefinicion(resumen: ResumenAdmin): { votos: boolean; padron: boolean } {
+  return {
+    votos: resumen.votosRegistrados === 0 && resumen.votosEnIdeas > 0,
+    padron: resumen.votantesEmpadronados === 0,
+  };
+}
+
+/**
  * El aviso que encabeza el tablero.
  *
  * Existe por un problema concreto y medido: la edicion activa (2025) se corrio
@@ -710,10 +756,7 @@ function AvisoContexto({ resumen }: { resumen: ResumenAdmin }) {
     .filter((canal) => resumen.porCanal[canal] > 0)
     .map((canal) => formatearNumero(resumen.porCanal[canal]) + " " + NOMBRE_CANAL[canal]);
 
-  // Los votos existen (las ideas los muestran) pero ninguno se emitio en el
-  // sitio: se importaron con la edicion.
-  const votacionDeAfuera = resumen.votosRegistrados === 0 && resumen.votosEnIdeas > 0;
-  const sinPadron = resumen.votantesEmpadronados === 0;
+  const { votos: votacionDeAfuera, padron: sinPadron } = cerosPorDefinicion(resumen);
 
   const aclaraciones: string[] = [];
   if (ideasDeAfuera > 0) {
@@ -773,23 +816,51 @@ function Aviso({ titulo, children }: { titulo: string; children: React.ReactNode
   );
 }
 
+/**
+ * Una tarjeta del resumen.
+ *
+ * `enCero` marca los indicadores que estan en cero porque el proceso no paso por
+ * el sitio (lo decide `cerosPorDefinicion`, la misma regla que el aviso de
+ * arriba). Esa tarjeta se dibuja apagada y con la razon escrita al lado del
+ * titulo: un cero explicado y un cero por error se veian exactamente igual, y
+ * son la mitad de la pantalla en la edicion 2025. El detalle completo lo da el
+ * aviso, una sola vez, arriba de las tarjetas.
+ */
 function Tarjeta({
   titulo,
   valor,
   detalle,
   color,
+  enCero = false,
 }: {
   titulo: string;
   valor: string;
   detalle: string;
   color?: string;
+  enCero?: boolean;
 }) {
   return (
-    <div className="superficie rounded-2xl p-5">
-      <p className="text-sm font-medium" style={{ color: "var(--texto-suave)" }}>
-        {titulo}
-      </p>
-      <p className="mt-1 text-2xl font-bold" style={color ? { color } : undefined}>
+    <div
+      className="rounded-2xl p-5"
+      style={{
+        background: enCero ? "var(--fondo-suave)" : "var(--fondo-tarjeta)",
+        border: "1px solid var(--borde)",
+      }}
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-sm font-medium" style={{ color: "var(--texto-suave)" }}>
+          {titulo}
+        </p>
+        {enCero && (
+          <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+            No pasó por el sitio
+          </p>
+        )}
+      </div>
+      <p
+        className="mt-1 text-2xl font-bold"
+        style={enCero ? { color: "var(--texto-suave)" } : color ? { color } : undefined}
+      >
         {valor}
       </p>
       <p className="mt-1.5 text-xs" style={{ color: "var(--texto-suave)" }}>
