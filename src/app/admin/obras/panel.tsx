@@ -16,6 +16,7 @@
  */
 import { useState, useActionState } from "react";
 import { borrarAvance, crearAvance, guardarPresupuestoIdea } from "../acciones";
+import { Chevron } from "@/components/ui";
 import { ETIQUETA_PRESUPUESTO, formatearFechaCorta, formatearPesos } from "@/lib/formato";
 
 type Avance = {
@@ -207,36 +208,6 @@ export default function PanelObras({
         ))}
       </ul>
     </div>
-  );
-}
-
-/**
- * La flecha que dice que la fila se abre.
- *
- * La fila siempre fue un boton con aria-expanded, asi que un lector de pantalla
- * ya anunciaba que se plegaba, pero en pantalla no habia NADA que lo dijera: era
- * una fila de texto que resultaba que se podia tocar. Es la unica forma de
- * llegar al monto y a los avances de una obra.
- *
- * aria-hidden porque no agrega informacion: lo que el boton hace ya lo dice
- * aria-expanded, y repetirlo seria escucharlo dos veces.
- */
-function Chevron({ abierto }: { abierto: boolean }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      className="shrink-0"
-      style={{
-        color: "var(--texto-suave)",
-        transform: abierto ? "rotate(90deg)" : "none",
-        transition: "transform 120ms",
-      }}
-    >
-      <path d="M4 2 L8 6 L4 10" fill="none" stroke="currentColor" strokeWidth="1.8" />
-    </svg>
   );
 }
 

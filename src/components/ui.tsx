@@ -233,3 +233,35 @@ export function Pendiente({ children }: { children: ReactNode }) {
     </span>
   );
 }
+
+/**
+ * La flecha que dice que una fila se abre.
+ *
+ * Las filas plegables del panel (las obras y las ediciones) siempre fueron
+ * botones con `aria-expanded`, asi que un lector de pantalla ya anunciaba que se
+ * plegaban, pero en pantalla no habia NADA que lo dijera: eran filas de texto
+ * que resultaba que se podian tocar. Y plegarlas es la unica forma de llegar a
+ * lo que hay adentro.
+ *
+ * Vive aca, y no en una de las dos pantallas, porque las dos la dibujan igual.
+ * `aria-hidden` porque no agrega informacion: que el boton se abre o se cierra
+ * ya lo dice `aria-expanded`, y repetirlo seria escucharlo dos veces.
+ */
+export function Chevron({ abierto }: { abierto: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      className="shrink-0"
+      style={{
+        color: "var(--texto-suave)",
+        transform: abierto ? "rotate(90deg)" : "none",
+        transition: "transform 120ms",
+      }}
+    >
+      <path d="M4 2 L8 6 L4 10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
