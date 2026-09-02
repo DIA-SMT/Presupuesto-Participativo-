@@ -18,8 +18,8 @@ export default async function Archivo() {
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold sm:text-4xl">Archivo de ediciones</h1>
         <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-          Cada edición del programa queda publicada con todas sus ideas, su votación y el avance de
-          las obras. Nada se borra al empezar una edición nueva.
+          Cada edición del programa queda publicada con todas sus ideas y su votación. Nada se
+          borra al empezar una edición nueva.
         </p>
       </header>
 

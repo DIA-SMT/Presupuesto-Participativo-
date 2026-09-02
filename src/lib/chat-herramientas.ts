@@ -125,7 +125,7 @@ export const HERRAMIENTAS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "detalle_proyecto",
       description:
-        "Devuelve el contenido completo de un proyecto: problema, solucion, beneficios, votos, presupuesto, etapa de la obra y su historial de avance. Requiere el slug que devuelve buscar_proyectos.",
+        "Devuelve el contenido completo de un proyecto: problema, solucion, beneficios, votos, presupuesto y, si el municipio informo alguno, los avances de la obra. Requiere el slug que devuelve buscar_proyectos.",
       parameters: {
         type: "object",
         properties: {
@@ -144,7 +144,7 @@ export const HERRAMIENTAS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "resumen_distrito",
       description:
-        "Resumen de un distrito: cuantas ideas se presentaron, cual gano con cuantos votos, en que etapa esta la obra y que barrios abarca.",
+        "Resumen de un distrito: cuantas ideas se presentaron, cual gano con cuantos votos y que barrios abarca.",
       parameters: {
         type: "object",
         properties: {
@@ -179,7 +179,7 @@ export const HERRAMIENTAS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "estadisticas",
       description:
-        "Totales de la edicion vigente: ideas presentadas, ganadores, votos, reparto por categoria y por estado, y en que etapa presupuestaria estan las obras.",
+        "Totales de la edicion vigente: ideas presentadas, ganadores, votos, y el reparto por categoria y por estado de evaluacion.",
       parameters: {
         type: "object",
         properties: {},
@@ -286,7 +286,17 @@ export async function ejecutarHerramienta(
             idea.presupuestoTotal === null
               ? "no publicado todavia"
               : formatearPesos(idea.presupuestoTotal),
-          etapa_obra: ETIQUETA_PRESUPUESTO[idea.estadoPresupuesto] ?? idea.estadoPresupuesto,
+          /*
+             `etapa_obra` sale de los avances informados, no de
+             `estadoPresupuesto`. Ese campo lo escribia el ETL por defecto
+             ("preparacion" en todo ganador) y esta herramienta se lo daba al
+             modelo como un dato del municipio, asi que el chat le decia al
+             vecino que su obra estaba en preparacion sin que nadie lo hubiera
+             informado. Se degrada igual que `presupuesto_total`, dos lineas
+             arriba: si no hay avance, se dice que no hay. */
+          etapa_obra: avances.length
+            ? (ETIQUETA_PRESUPUESTO[idea.estadoPresupuesto] ?? idea.estadoPresupuesto)
+            : "no informada todavia: el municipio no publico ningun avance de esta obra",
           avances: avances.length
             ? avances.map((a) => ({
                 fecha: a.fecha,
@@ -327,9 +337,9 @@ export async function ejecutarHerramienta(
                 titulo: distrito.ganador.titulo,
                 votos: distrito.ganador.votos,
                 categoria: distrito.ganador.categoriaNombre,
-                etapa_obra:
-                  ETIQUETA_PRESUPUESTO[distrito.ganador.estadoPresupuesto] ??
-                  distrito.ganador.estadoPresupuesto,
+                // Sin `etapa_obra`: era el default del ETL, no un dato. Si el
+                // vecino pregunta por el avance, `detalle_proyecto` responde con
+                // los avances informados o dice que no hay.
                 url: `/proyectos/${distrito.ganador.slug}`,
               }
             : "este distrito no tiene proyecto ganador en esta edicion",
@@ -410,7 +420,8 @@ export async function ejecutarHerramienta(
             ideas: c.ideas,
             ganadores: c.ganadores,
           })),
-          obras_por_etapa: stats.porEtapaPresupuesto,
+          // Sin `obras_por_etapa`: era el mismo {preparacion: 19} que se saco de
+          // la pagina de Transparencia, y lo ponia el ETL.
           presupuesto_publicado:
             stats.presupuestoPublicado > 0
               ? formatearPesos(stats.presupuestoPublicado)
@@ -424,7 +435,7 @@ export async function ejecutarHerramienta(
               votos: d.ganador!.votos,
             })),
         }),
-        referencias: [{ titulo: "Transparencia y ejecución", url: "/transparencia" }],
+        referencias: [{ titulo: "Transparencia", url: "/transparencia" }],
       };
     }
 

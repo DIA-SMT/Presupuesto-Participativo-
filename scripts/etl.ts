@@ -263,9 +263,27 @@ filas.forEach((fila, indice) => {
     estado,
     ganador: estado === "ganador",
     votos,
-    // El sitio anterior tenia presupuesto-total = 1 en las 100 ideas: era un
-    // valor de relleno, no un monto. No se migra ningun importe.
-    estadoPresupuesto: estado === "ganador" ? "preparacion" : "sin_asignar",
+    /*
+     * NADA de la obra se migra, porque el origen no trae nada de la obra.
+     *
+     * El monto: el sitio anterior tenia `presupuesto-total = 1` en las 100
+     * ideas, que era relleno y no un importe, asi que no se migra ninguno.
+     *
+     * La etapa: el CSV no tiene ninguna columna sobre la ejecucion. Su columna
+     * `estado` es el estado de EVALUACION (factible, no-factible, ganador,
+     * integrado), no el de la obra. Aca decia
+     *
+     *     estado === "ganador" ? "preparacion" : "sin_asignar"
+     *
+     * y eso le ponia "En preparación" a los 19 ganadores. No lo informo nadie:
+     * era una constante de este script. El sitio despues lo mostraba como el
+     * estado real de 19 obras —en la ficha de cada proyecto lo pintaba como
+     * etapa ya alcanzada en una barra de avance— y un dato inventado que parece
+     * verdadero es peor que un dato ausente. Queda "sin_asignar", que es lo que
+     * el origen permite afirmar; la etapa la va a informar el municipio cuando
+     * las obras empiecen.
+     */
+    estadoPresupuesto: "sin_asignar",
     canal: canalDe(valorODefecto(fila.cargado_por)),
     cargadoPor: valorODefecto(fila.cargado_por),
     fecha: valorODefecto(fila.fecha),
@@ -424,9 +442,17 @@ los datos originales figura aca y en el campo \`notasMigracion\` de cada idea.
    el contenido no correspondia a su etiqueta. Se reordeno en problema / solucion /
    beneficios y, donde el origen no tenia el dato, quedo en nulo con la nota
    correspondiente en lugar de completarlo con texto inventado.
-5. **Presupuesto.** El campo \`presupuesto-total\` valia 1 en las 100 ideas: era
-   relleno, no un monto. No se migro ningun importe. Los proyectos ganadores
-   quedan en estado "preparacion" sin monto, como estaban.
+5. **Presupuesto y obra: no se migro nada, porque el origen no trae nada.** El
+   campo \`presupuesto-total\` valia 1 en las 100 ideas: era relleno, no un monto,
+   asi que no se migro ningun importe. Y el CSV no tiene ninguna columna sobre la
+   ejecucion: su columna \`estado\` es el estado de EVALUACION (factible,
+   no-factible, ganador, integrado), no el de la obra. Las 100 ideas quedan en
+   \`sin_asignar\`.
+
+   Hasta esta corrida, este script le ponia \`preparacion\` a los 19 ganadores.
+   Eso no lo informo nadie: era una constante del script, y el sitio la mostraba
+   como el estado real de 19 obras. Se saco. El municipio informara la etapa
+   cuando las obras empiecen.
 
 ## Registros repetidos unificados
 

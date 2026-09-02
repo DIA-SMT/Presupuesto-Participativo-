@@ -609,9 +609,12 @@ export const hitos = pgTable("hitos", {
 export const chatConsultas = pgTable("chat_consultas", {
   id: serial("id").primaryKey(),
   /**
-   * Que funcion del sitio hizo la consulta. Sin esto, el listado de
-   * /admin/consultas mezcla el chat publico con el asistente de carga y con
-   * los informes del panel, que tienen usos y costos muy distintos.
+   * Que funcion del sitio hizo la consulta: el chat publico, el asistente que
+   * ayuda al vecino a escribir su idea o el informe de impacto del panel. Son
+   * usos y costos muy distintos y sin esta columna quedan indistinguibles.
+   *
+   * El panel ya no tiene pantalla que muestre esta tabla (/admin/consultas se
+   * borro), asi que hoy la unica forma de leerla es consultando la base.
    */
   origen: origenConsulta("origen").notNull().default("chat"),
   pregunta: text("pregunta").notNull(),

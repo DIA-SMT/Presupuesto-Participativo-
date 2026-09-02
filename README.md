@@ -25,11 +25,11 @@ desplegarse en **Vercel**.
 | Distritos | `/distritos` y `/distritos/7` | Página propia por distrito: sus ideas, su ganador, su mapa |
 | Proyectos | `/proyectos` | Listado con filtros por distrito, categoría, estado y texto; vista con mapa |
 | Ficha de proyecto | `/proyectos/<slug>` | Problema, propuesta, beneficios, votos, presupuesto y avance de obra |
-| Transparencia | `/transparencia` | Tabla de los ganadores con votos, montos y etapa; datos abiertos |
+| Transparencia | `/transparencia` | Qué proyecto ganó en cada distrito y con cuántos votos; datos abiertos |
 | Carga de ideas | `/ideas/nueva` | Formulario con selector de punto en el mapa; el distrito se deriva solo |
 | Votación | `/votar` | Empadronamiento (CIDITUC u OIDC), un voto por persona en su distrito |
 | Chatbot | botón flotante | Consultas en lenguaje natural sobre los datos reales del programa |
-| Backoffice | `/admin` | Moderación de ideas, avance de obras, textos del sitio, consultas del chat |
+| Backoffice | `/admin` | Leer las propuestas, evaluarlas, exportarlas en PDF y mover la etapa del proceso |
 | Datos abiertos | `/api/proyectos`, `/geo/distritos.geojson` | JSON/CSV y geometría oficial reutilizables |
 
 ## Cómo levantarlo (desarrollo)
@@ -110,8 +110,10 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
   lo repite en lugar de inventarlo. La clave de API nunca llega al navegador.
   Sin clave configurada, el endpoint responde con un buscador determinístico
   (`src/lib/chat-sin-ia.ts`). Cada consulta queda registrada (pregunta,
-  herramientas usadas, tokens, latencia, IP hasheada) en `chat_consultas` y se
-  puede revisar en `/admin/consultas`.
+  herramientas usadas, tokens, latencia, IP hasheada) en `chat_consultas`. El
+  panel **no** tiene pantalla para leer esa tabla: la tenía (`/admin/consultas`)
+  y se borró porque mostraba sobre todo las llamadas del asistente de carga, con
+  el JSON crudo de cada propuesta. Para consultarla hay que ir a la base.
 - **Votación**: sesión JWT en cookie httpOnly; un voto por persona garantizado
   por restricción UNIQUE en la base (no solo por lógica de aplicación); el DNI
   se guarda hasheado con pepper, nunca en claro. El proveedor `dev` permite
@@ -150,7 +152,8 @@ campo `notasMigracion` de cada idea, visible en la ficha pública):
    inventar el contenido faltante (queda en nulo y la ficha lo dice).
 6. **Presupuesto** → el sitio anterior tenía `presupuesto-total = 1` en las
    100 ideas (relleno). No se migró ningún monto; la estructura para
-   publicarlos existe y se completa desde `/admin/obras`.
+   publicarlos existe en la base, pero el panel ya no tiene pantalla para
+   cargarlos (`/admin/obras` se borró al recortar el backoffice).
 
 ## Scripts
 
@@ -186,8 +189,8 @@ archivo nuevo en `drizzle/`.
   contra el IdP real; falta que el municipio entregue credenciales y el mapeo
   exacto de los claims (DNI y distrito del padrón).
 - **Reglamento**: la página existe con las reglas confirmadas, pero el texto
-  oficial completo hay que conseguirlo y cargarlo en el texto `reglamento-cuerpo`
-  desde `/admin/contenido`.
+  oficial completo hay que conseguirlo y cargarlo en el texto `reglamento-cuerpo`,
+  hoy directamente en la base (la pantalla que lo editaba se borró).
 - **Teselas del mapa**: cambiar OSM por un proveedor con términos adecuados
   antes de salir a producción (ver arriba).
 - **Contenido de ideas no ganadoras**: el relevamiento solo recuperó el texto
