@@ -87,8 +87,11 @@ export default function PanelVotacion({ proveedor, sesion, proyectos, yaVoto }: 
             : "Ya usaste tu voto en esta edición."}{" "}
           Es un voto por persona: no se puede votar de nuevo.
         </p>
+        {/* "y las obras" salio del texto: no hay ni un avance de obra cargado y
+            la pagina ya no los muestra. Prometerselo justo despues de votar es
+            donde mas se nota. */}
         <a href="/transparencia" className="mt-4 inline-block text-sm font-semibold underline">
-          Seguir los resultados y las obras
+          Ver los proyectos ganadores
         </a>
       </div>
     );

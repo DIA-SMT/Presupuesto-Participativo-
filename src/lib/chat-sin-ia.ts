@@ -99,7 +99,7 @@ export async function responderSinIA(
     return {
       texto: lineas.join("\n"),
       referencias: [
-        { titulo: "Transparencia y ejecución", url: "/transparencia" },
+        { titulo: "Transparencia", url: "/transparencia" },
         { titulo: "Todos los proyectos", url: "/proyectos" },
       ],
     };

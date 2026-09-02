@@ -424,7 +424,7 @@ export async function ejecutarHerramienta(
               votos: d.ganador!.votos,
             })),
         }),
-        referencias: [{ titulo: "Transparencia y ejecución", url: "/transparencia" }],
+        referencias: [{ titulo: "Transparencia", url: "/transparencia" }],
       };
     }
 
