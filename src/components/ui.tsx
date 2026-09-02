@@ -1,13 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { IdeaVista } from "@/db/queries";
-import {
-  COLOR_ESTADO,
-  ETIQUETA_ESTADO,
-  ETIQUETA_PRESUPUESTO,
-  formatearNumero,
-  recortar,
-} from "@/lib/formato";
+import { COLOR_ESTADO, ETIQUETA_ESTADO, formatearNumero, recortar } from "@/lib/formato";
 
 export function Chip({
   children,
@@ -174,10 +168,16 @@ export function TarjetaProyecto({ idea }: { idea: IdeaVista }) {
         className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 text-xs"
         style={{ borderTop: "1px solid var(--borde)", color: "var(--texto-suave)" }}
       >
+        {/*
+          Al pie iba tambien "· Obra en preparación", en TODA tarjeta de un
+          proyecto ganador: la portada, /proyectos, cada distrito y las
+          relacionadas. Ese estado no lo informaba nadie, lo ponia el ETL por
+          defecto (ver scripts/etl.ts). Con el dato corregido la frase quedaba
+          "Obra sin presupuesto asignado", que ya no es falsa pero mezcla la obra
+          con la plata y no le sirve a nadie en una tarjeta. La etapa de una obra
+          se ve en su ficha, y solo cuando el municipio informo un avance.
+        */}
         {idea.categoriaNombre && <span>{idea.categoriaNombre}</span>}
-        {idea.ganador && (
-          <span>· Obra {(ETIQUETA_PRESUPUESTO[idea.estadoPresupuesto] ?? "").toLowerCase()}</span>
-        )}
       </div>
     </article>
   );

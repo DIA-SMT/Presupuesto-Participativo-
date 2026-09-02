@@ -15,7 +15,7 @@ import {
 } from "@/db/queries";
 import { consultar } from "@/db";
 import { sql } from "drizzle-orm";
-import { ETIQUETA_ESTADO, ETIQUETA_PRESUPUESTO, formatearNumero } from "./formato";
+import { ETIQUETA_ESTADO, ETIQUETA_ETAPA, formatearNumero } from "./formato";
 import { normalizar } from "./texto";
 
 type Respuesta = {
@@ -69,7 +69,11 @@ export async function responderSinIA(
         "",
         "**Votando.** Tenés un voto y lo usás en un proyecto del distrito donde vivís. Para votar necesitás estar empadronado como ciudadano digital (CIDITUC), de manera virtual desde la página de la Municipalidad o presencial en las asambleas participativas.",
         "",
-        `Hoy la edición ${edicion.anio} está en la etapa **${edicion.etapa}**.`,
+        // Bug: imprimia el valor crudo del enum ("**seguimiento**", "**cerrada**")
+        // en lugar de la etiqueta que usa el resto del sitio.
+        `Hoy la edición ${edicion.anio} está en la etapa **${
+          ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa
+        }**.`,
       ].join("\n"),
       referencias: [
         { titulo: "Presentá tu idea", url: "/ideas/nueva" },
@@ -116,11 +120,11 @@ export async function responderSinIA(
       if (distrito.ganador) {
         lineas.push(
           "",
+          // Terminaba en "Obra en preparación.", con el default del ETL. Sin
+          // avances informados no hay nada que decir de la obra.
           `**Proyecto ganador:** ${distrito.ganador.titulo} — ${formatearNumero(
             distrito.ganador.votos,
-          )} votos. Obra ${(
-            ETIQUETA_PRESUPUESTO[distrito.ganador.estadoPresupuesto] ?? ""
-          ).toLowerCase()}.`,
+          )} votos.`,
         );
       } else {
         lineas.push("", "Este distrito no tiene proyecto ganador en esta edición.");

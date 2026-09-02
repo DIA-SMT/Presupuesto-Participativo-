@@ -52,12 +52,20 @@ const EFECTO: Record<string, { ahora: string; alPasar: string[] }> = {
       "Los votos que entren son los que después definen el proyecto ganador de cada distrito.",
     ],
   },
+  /*
+   * Esta etapa decia "el sitio muestra el avance de las obras ganadoras" y que
+   * el equipo carga los avances. Las dos cosas dejaron de ser ciertas: no hay
+   * ningun avance informado, y la pantalla que los cargaba (/admin/obras) se
+   * borro al recortar el panel. Quien leyera esto iba a buscar un formulario
+   * que no esta.
+   */
   seguimiento: {
-    ahora: "La votación está cerrada y el sitio muestra el avance de las obras ganadoras.",
+    ahora: "La votación está cerrada y el sitio publica los proyectos ganadores de cada distrito.",
     alPasar: [
       "Se cierra la votación: el sitio no acepta ni un voto más.",
-      "Queda al frente el seguimiento de las obras ganadoras, con los avances que carga el equipo.",
+      "Quedan al frente los proyectos ganadores de cada distrito, con sus votos.",
       "El formulario para presentar ideas sigue cerrado.",
+      "El avance de las obras no se publica: hoy el panel no tiene dónde cargarlo.",
     ],
   },
   cerrada: {

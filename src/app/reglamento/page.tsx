@@ -72,7 +72,10 @@ export default async function Reglamento() {
                 {
                   titulo: "El proyecto ganador entra al presupuesto municipal",
                   texto:
-                    "El proyecto más votado de cada distrito se incorpora al presupuesto municipal del año siguiente y su ejecución se publica en este sitio.",
+                    // Decia ademas "y su ejecución se publica en este sitio". Es
+                    // una regla presentada como confirmada, y hoy el sitio no
+                    // publica ninguna ejecucion.
+                    "El proyecto más votado de cada distrito se incorpora al presupuesto municipal del año siguiente.",
                 },
               ].map((regla) => (
                 <li key={regla.titulo} className="superficie rounded-2xl p-5">
