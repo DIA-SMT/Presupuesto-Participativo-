@@ -15,8 +15,10 @@ export const metadata: Metadata = {
  * Informacion previa del art. 6 de la ley 25.326 (Proteccion de los Datos
  * Personales). Sin este texto el consentimiento del correo no seria valido.
  *
- * Los datos del organismo salen de la tabla `textos` (claves contacto-*), que se
- * editan desde /admin/contenido. Lo que todavia nadie confirmo NO se inventa:
+ * Los datos del organismo salen de la tabla `textos` (claves contacto-*). El
+ * panel ya no tiene pantalla para editarlos: /admin/contenido se borro al
+ * recortar el backoffice, asi que hoy se cambian en la base. Lo que todavia
+ * nadie confirmo NO se inventa:
  * se muestra con un marcador PENDIENTE CONFIRMAR bien visible, para que quede a
  * la vista de quien tenga que completarlo antes de publicar la pagina.
  */

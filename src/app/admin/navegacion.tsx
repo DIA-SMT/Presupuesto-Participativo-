@@ -34,47 +34,23 @@ import type { RolAdmin } from "@/db/queries";
 import { ETIQUETA_ROL } from "@/lib/formato";
 import { salirAdmin } from "./acciones";
 
-/** Linea de lo que agrupa pero no se toca: los separadores entre bloques. */
-const BORDE_SUAVE = "color-mix(in srgb, var(--texto) 25%, transparent)";
-
 type Enlace = { href: string; texto: string; soloAdmin?: boolean };
 
-type Grupo = { id: string; titulo: string; enlaces: Enlace[] };
-
 /**
- * Las nueve pantallas ordenadas por lo que se hace en cada una, no por orden de
- * llegada. Ya no hay enlace a /admin/bandeja: /admin ES la bandeja de revision.
- * "Mi contraseña" tampoco esta aca: es de la cuenta, no del proceso, y vive en
- * el bloque de la derecha.
+ * Las dos pantallas del panel.
+ *
+ * Eran nueve, agrupadas en tres bloques con separadores. El panel se recorto a
+ * lo que el equipo hace de verdad —leer las propuestas, evaluarlas y
+ * exportarlas— asi que quedaron dos, y con dos no hay nada que agrupar: se
+ * fueron los grupos, sus titulos y la linea que los separaba.
+ *
+ * "Mi contraseña" no esta aca: es de la cuenta, no del proceso, y vive en el
+ * bloque de la derecha. Tampoco hay enlace a /admin/bandeja: /admin ES la
+ * bandeja de revision.
  */
-const GRUPOS: Grupo[] = [
-  {
-    id: "grupo-proceso",
-    titulo: "El proceso",
-    enlaces: [
-      { href: "/admin", texto: "Ideas" },
-      { href: "/admin/tablero", texto: "Tablero" },
-      { href: "/admin/obras", texto: "Obras" },
-    ],
-  },
-  {
-    id: "grupo-contenido",
-    titulo: "Contenido del sitio",
-    enlaces: [
-      { href: "/admin/contenido", texto: "Contenido" },
-      { href: "/admin/consultas", texto: "Consultas del chat" },
-    ],
-  },
-  {
-    id: "grupo-administracion",
-    titulo: "Administración",
-    enlaces: [
-      { href: "/admin/ediciones", texto: "Ediciones", soloAdmin: true },
-      { href: "/admin/equipo", texto: "Equipo", soloAdmin: true },
-      // Sin soloAdmin: la bitacora la puede leer cualquier rol, incluido lector.
-      { href: "/admin/bitacora", texto: "Bitácora" },
-    ],
-  },
+const ENLACES: Enlace[] = [
+  { href: "/admin", texto: "Propuestas" },
+  { href: "/admin/ediciones", texto: "Etapa del proceso", soloAdmin: true },
 ];
 
 /**
@@ -98,13 +74,10 @@ export default function CabeceraPanel({
 }) {
   const pathname = usePathname();
 
-  // Las pantallas de administracion no se le ofrecen a quien no las puede
-  // usar. Esconder el enlace es cosmetico: la autorizacion real la hace cada
-  // pagina y cada accion releyendo el rol de la base.
-  const grupos = GRUPOS.map((grupo) => ({
-    ...grupo,
-    enlaces: grupo.enlaces.filter((enlace) => !enlace.soloAdmin || rol === "admin"),
-  })).filter((grupo) => grupo.enlaces.length > 0);
+  // La pantalla de la etapa no se le ofrece a quien no la puede usar. Esconder
+  // el enlace es cosmetico: la autorizacion real la hace cada pagina y cada
+  // accion releyendo el rol de la base.
+  const enlaces = ENLACES.filter((enlace) => !enlace.soloAdmin || rol === "admin");
 
   return (
     <div
@@ -114,34 +87,19 @@ export default function CabeceraPanel({
       {/* -mb-px: la linea de la solapa actual se apoya sobre el borde de la
           barra en vez de quedar flotando arriba de el. */}
       <nav className="-mb-px flex flex-wrap items-end" aria-label="Secciones del panel">
-        {grupos.map((grupo, indice) => (
-          <div key={grupo.id} className="flex items-end">
-            {/* Separador entre bloques. Es decorativo: lo que agrupa para un
-                lector de pantalla es el aria-label de cada lista. En pantallas
-                angostas se esconde, porque ahi los bloques se apilan y la linea
-                vertical quedaria colgando al principio de la fila. */}
-            {indice > 0 && (
-              <span
-                aria-hidden="true"
-                className="mx-2 mb-2.5 hidden h-3.5 w-px shrink-0 sm:block"
-                style={{ background: BORDE_SUAVE }}
-              />
-            )}
-            <ul aria-label={grupo.titulo} className="flex flex-wrap items-end">
-              {grupo.enlaces.map((enlace) => (
-                <li key={enlace.href}>
-                  <Link
-                    href={enlace.href}
-                    aria-current={estaActivo(pathname, enlace.href) ? "page" : undefined}
-                    className="solapa"
-                  >
-                    {enlace.texto}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        <ul className="flex flex-wrap items-end">
+          {enlaces.map((enlace) => (
+            <li key={enlace.href}>
+              <Link
+                href={enlace.href}
+                aria-current={estaActivo(pathname, enlace.href) ? "page" : undefined}
+                className="solapa"
+              >
+                {enlace.texto}
+              </Link>
+            </li>
+          ))}
+        </ul>
       </nav>
 
       <section
