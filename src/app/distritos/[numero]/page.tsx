@@ -7,7 +7,6 @@ import { getDistrito, getEdicionActiva } from "@/db/queries";
 import {
   DESCRIPCION_ESTADO,
   ETIQUETA_ESTADO,
-  ETIQUETA_PRESUPUESTO,
   formatearNumero,
 } from "@/lib/formato";
 
@@ -88,12 +87,12 @@ export default async function PaginaDistrito({ params }: Props) {
           valor={ganador ? formatearNumero(ganador.votos) : "—"}
           etiqueta="votos del proyecto ganador"
         />
-        <Dato
-          valor={
-            ganador ? (ETIQUETA_PRESUPUESTO[ganador.estadoPresupuesto] ?? "—") : "Sin ganador"
-          }
-          etiqueta="estado de la obra"
-        />
+        {/*
+          El tercer dato grande del distrito era "estado de la obra", y mostraba
+          el `preparacion` que ponia el ETL por defecto: un dato inventado con el
+          tamano de un titular. Los otros dos —ideas presentadas y votos— si son
+          reales, y quedan.
+        */}
       </dl>
 
       {/* --- Proyecto ganador --------------------------------------------- */}
@@ -135,7 +134,7 @@ export default async function PaginaDistrito({ params }: Props) {
               className="mt-5 inline-flex rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
               style={{ background: "var(--color-marca-700)" }}
             >
-              Ver el proyecto y su avance
+              Ver el proyecto
             </Link>
           </article>
         </section>

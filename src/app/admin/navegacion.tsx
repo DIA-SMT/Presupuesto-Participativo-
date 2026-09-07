@@ -13,76 +13,45 @@
  *
  * No consulta la base ni recibe datos de otras personas: solo el nombre, el
  * correo y el rol de la sesion, que ya vienen resueltos desde layout.tsx.
+ *
+ * FORMA: una barra de solapas de texto, no una caja con nueve pastillas. El
+ * estilo vive en `.solapa` (src/app/globals.css), compartido con la fila de
+ * filtros de la bandeja; ahi esta escrito por que se dejaron las pastillas y
+ * como queda el contraste. Lo que cambio aca:
+ *
+ * - Los titulos de grupo ("EL PROCESO", "CONTENIDO DEL SITIO"…) ya no se
+ *   dibujan: eran tres lineas de texto en mayuscula sostenida arriba de todo,
+ *   compitiendo con el titulo de la pantalla. La agrupacion no se perdio, se
+ *   volvio invisible: sigue en el `aria-label` de cada lista y en los
+ *   separadores, asi que un lector de pantalla la anuncia igual.
+ * - Las acciones de la cuenta ("Mi contraseña", Salir) dejaron de tener el
+ *   tamaño de la navegacion. Son enlaces chicos y subrayados: se ven
+ *   accionables, pero no compiten con las secciones.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { RolAdmin } from "@/db/queries";
+import { ETIQUETA_ROL } from "@/lib/formato";
 import { salirAdmin } from "./acciones";
-
-/**
- * Borde de los controles del panel (los enlaces con forma de boton y el bloque
- * de la cuenta).
- *
- * Medido antes de tocarlo: el chip pintado con --fondo-tarjeta sobre el
- * contenedor --fondo-suave daba 1.04:1 en oscuro y 1.07:1 en claro, y el borde
- * --borde sobre el chip 1.31:1 y 1.23:1; o sea que los enlaces se leian como
- * texto flotando y no como botones. El criterio 1.4.11 de WCAG pide 3:1 para el
- * borde que delimita un control. Con --texto al 55% el borde queda en 3.8:1
- * sobre el chip y 3.5:1 sobre el contenedor en claro, y arriba de 4,5:1 en
- * oscuro. Sale del mismo token del tema, asi que sigue solo al modo claro y al
- * oscuro: no hay un color nuevo que mantener.
- */
-/** Borde de un control: el token vive en src/app/globals.css (WCAG 1.4.11). */
-const BORDE_CONTROL = "var(--borde-control)";
-
-/** Borde/linea de lo que agrupa pero no se toca: separadores y chip del rol. */
-const BORDE_SUAVE = "color-mix(in srgb, var(--texto) 25%, transparent)";
 
 type Enlace = { href: string; texto: string; soloAdmin?: boolean };
 
-type Grupo = { id: string; titulo: string; enlaces: Enlace[] };
-
 /**
- * Las nueve pantallas ordenadas por lo que se hace en cada una, no por orden de
- * llegada. Ya no hay enlace a /admin/bandeja: /admin ES la bandeja de revision.
- * "Mi contraseña" tampoco esta aca: es de la cuenta, no del proceso, y vive en
- * el bloque de la derecha.
+ * Las dos pantallas del panel.
+ *
+ * Eran nueve, agrupadas en tres bloques con separadores. El panel se recorto a
+ * lo que el equipo hace de verdad —leer las propuestas, evaluarlas y
+ * exportarlas— asi que quedaron dos, y con dos no hay nada que agrupar: se
+ * fueron los grupos, sus titulos y la linea que los separaba.
+ *
+ * "Mi contraseña" no esta aca: es de la cuenta, no del proceso, y vive en el
+ * bloque de la derecha. Tampoco hay enlace a /admin/bandeja: /admin ES la
+ * bandeja de revision.
  */
-const GRUPOS: Grupo[] = [
-  {
-    id: "grupo-proceso",
-    titulo: "El proceso",
-    enlaces: [
-      { href: "/admin", texto: "Ideas" },
-      { href: "/admin/tablero", texto: "Tablero" },
-      { href: "/admin/obras", texto: "Obras" },
-    ],
-  },
-  {
-    id: "grupo-contenido",
-    titulo: "Contenido del sitio",
-    enlaces: [
-      { href: "/admin/contenido", texto: "Contenido" },
-      { href: "/admin/consultas", texto: "Consultas del chat" },
-    ],
-  },
-  {
-    id: "grupo-administracion",
-    titulo: "Administración",
-    enlaces: [
-      { href: "/admin/ediciones", texto: "Ediciones", soloAdmin: true },
-      { href: "/admin/equipo", texto: "Equipo", soloAdmin: true },
-      // Sin soloAdmin: la bitacora la puede leer cualquier rol, incluido lector.
-      { href: "/admin/bitacora", texto: "Bitácora" },
-    ],
-  },
+const ENLACES: Enlace[] = [
+  { href: "/admin", texto: "Propuestas" },
+  { href: "/admin/ediciones", texto: "Etapa del proceso", soloAdmin: true },
 ];
-
-const ETIQUETA_ROL: Record<RolAdmin, string> = {
-  admin: "Administrador",
-  moderador: "Moderador",
-  lector: "Lector",
-};
 
 /**
  * "/admin" es prefijo de todas las rutas del panel, asi que solo se marca
@@ -105,146 +74,73 @@ export default function CabeceraPanel({
 }) {
   const pathname = usePathname();
 
-  // Las pantallas de administracion no se le ofrecen a quien no las puede
-  // usar. Esconder el enlace es cosmetico: la autorizacion real la hace cada
-  // pagina y cada accion releyendo el rol de la base.
-  const grupos = GRUPOS.map((grupo) => ({
-    ...grupo,
-    enlaces: grupo.enlaces.filter((enlace) => !enlace.soloAdmin || rol === "admin"),
-  })).filter((grupo) => grupo.enlaces.length > 0);
+  // La pantalla de la etapa no se le ofrece a quien no la puede usar. Esconder
+  // el enlace es cosmetico: la autorizacion real la hace cada pagina y cada
+  // accion releyendo el rol de la base.
+  const enlaces = ENLACES.filter((enlace) => !enlace.soloAdmin || rol === "admin");
 
   return (
     <div
-      className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4 rounded-2xl px-5 py-4"
-      style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+      className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2"
+      style={{ borderBottom: "1px solid var(--borde)" }}
     >
-      <nav
-        className="flex flex-wrap items-stretch gap-x-2 gap-y-3"
-        aria-label="Secciones del panel"
-      >
-        {grupos.map((grupo, indice) => (
-          <div key={grupo.id} className="flex items-stretch gap-4">
-            {/* Separador entre bloques. Es decorativo: lo que agrupa para un
-                lector de pantalla es el titulo de cada lista. En pantallas
-                angostas se esconde, porque ahi los bloques se apilan y la linea
-                vertical quedaria colgando al principio de la fila. */}
-            {indice > 0 && (
-              <span
-                aria-hidden="true"
-                className="hidden w-px shrink-0 sm:block"
-                style={{ background: BORDE_SUAVE }}
-              />
-            )}
-            <div className="flex flex-col gap-1.5">
-              <span
-                id={grupo.id}
-                className="text-xs font-semibold uppercase tracking-wide"
-                style={{ color: "var(--texto-suave)" }}
+      {/* -mb-px: la linea de la solapa actual se apoya sobre el borde de la
+          barra en vez de quedar flotando arriba de el. */}
+      <nav className="-mb-px flex flex-wrap items-end" aria-label="Secciones del panel">
+        <ul className="flex flex-wrap items-end">
+          {enlaces.map((enlace) => (
+            <li key={enlace.href}>
+              <Link
+                href={enlace.href}
+                aria-current={estaActivo(pathname, enlace.href) ? "page" : undefined}
+                className="solapa"
               >
-                {grupo.titulo}
-              </span>
-              <ul aria-labelledby={grupo.id} className="flex flex-wrap items-center gap-1.5">
-                {grupo.enlaces.map((enlace) => (
-                  <li key={enlace.href}>
-                    <EnlaceSeccion
-                      href={enlace.href}
-                      activo={estaActivo(pathname, enlace.href)}
-                      texto={enlace.texto}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ))}
+                {enlace.texto}
+              </Link>
+            </li>
+          ))}
+        </ul>
       </nav>
 
-      <section aria-labelledby="grupo-cuenta" className="flex flex-col gap-1.5">
-        <span
-          id="grupo-cuenta"
-          className="text-xs font-semibold uppercase tracking-wide"
-          style={{ color: "var(--texto-suave)" }}
-        >
-          Tu cuenta
+      <section
+        aria-label="Tu cuenta"
+        className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs"
+      >
+        <span className="text-sm font-semibold">{nombre}</span>
+        <span style={{ color: "var(--texto-suave)" }}>
+          {email} · {ETIQUETA_ROL[rol] ?? rol}
         </span>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-1">
-            <span className="block text-sm font-semibold leading-tight">{nombre}</span>
-            <span className="block text-xs leading-tight" style={{ color: "var(--texto-suave)" }}>
-              {email}
-            </span>
-          </div>
-          <span
-            className="rounded-full px-2.5 py-1 text-xs font-medium"
-            style={{
-              background: "var(--fondo-tarjeta)",
-              border: `1px solid ${BORDE_SUAVE}`,
-              color: "var(--texto-suave)",
-            }}
-          >
-            {ETIQUETA_ROL[rol]}
-          </span>
-          <EnlaceSeccion
+        {/*
+          py-1.5 y px-1 no son decorativos: con text-xs (12 px de texto y 16 de
+          renglon) el area sensible quedaba en 16 px de alto, y el criterio 2.5.8
+          de WCAG 2.2 pide 24x24 para un control que no esta dentro de una
+          oracion. Con ese relleno queda en 28 px de alto y arriba de 30 de
+          ancho. El relleno no mueve la linea de base, asi que siguen alineados
+          con el nombre y el correo.
+        */}
+        <span className="-my-1.5 flex items-baseline gap-x-2">
+          <Link
             href="/admin/password"
-            activo={estaActivo(pathname, "/admin/password")}
-            texto="Mi contraseña"
-          />
+            aria-current={estaActivo(pathname, "/admin/password") ? "page" : undefined}
+            className="px-1 py-1.5 underline"
+            style={{ color: "var(--texto-suave)" }}
+          >
+            Mi contraseña
+          </Link>
+          {/* Salir es un boton (escribe: cierra la sesion en el servidor) con
+              forma de enlace. Va subrayado siempre, no solo al pasar el mouse,
+              para que se lea accionable sin depender del color. */}
           <form action={salirAdmin}>
             <button
               type="submit"
-              className="rounded-lg px-3 py-1.5 text-sm font-medium hover:brightness-95"
-              style={{
-                background: "var(--fondo-tarjeta)",
-                border: `1px solid ${BORDE_CONTROL}`,
-                color: "var(--texto)",
-              }}
+              className="px-1 py-1.5 underline"
+              style={{ color: "var(--texto-suave)" }}
             >
               Salir
             </button>
           </form>
-        </div>
+        </span>
       </section>
     </div>
-  );
-}
-
-/**
- * Enlace a una seccion. La seccion activa no se distingue solo por el color:
- * invierte el relleno (pastilla llena con texto blanco, en vez de contorno con
- * texto oscuro) y sube el peso de la tipografia, asi que se sigue viendo en
- * escala de grises. `aria-current="page"` lo dice tambien en palabras.
- */
-function EnlaceSeccion({
-  href,
-  texto,
-  activo,
-}: {
-  href: string;
-  texto: string;
-  activo: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={activo ? "page" : undefined}
-      className={`block rounded-lg px-3 py-1.5 text-sm ${
-        activo ? "font-semibold" : "font-medium hover:brightness-95"
-      }`}
-      style={
-        activo
-          ? {
-              background: "var(--color-marca-700)",
-              border: "1px solid var(--color-marca-700)",
-              color: "#fff",
-            }
-          : {
-              background: "var(--fondo-tarjeta)",
-              border: `1px solid ${BORDE_CONTROL}`,
-              color: "var(--texto)",
-            }
-      }
-    >
-      {texto}
-    </Link>
   );
 }

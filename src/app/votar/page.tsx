@@ -97,7 +97,7 @@ export default async function Votar() {
                 {formatearRango(edicion.votacionDesde, edicion.votacionHasta)}.
               </>
             )}{" "}
-            Mientras tanto podés ver los proyectos ganadores y el avance de las obras en{" "}
+            Mientras tanto podés ver qué proyecto ganó en cada distrito en{" "}
             <a href="/transparencia" className="font-semibold underline">
               Transparencia
             </a>

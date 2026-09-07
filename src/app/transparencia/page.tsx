@@ -1,18 +1,41 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Aviso, Chip, Dato, Vacio } from "@/components/ui";
-import { getEdicionActiva, getEstadisticas, getTextos, listarIdeas } from "@/db/queries";
-import {
-  ETAPAS_PRESUPUESTO,
-  ETIQUETA_PRESUPUESTO,
-  formatearNumero,
-  formatearPesos,
-} from "@/lib/formato";
+import { Vacio } from "@/components/ui";
+import { getEdicionActiva, getEstadisticas, listarIdeas } from "@/db/queries";
+import { formatearNumero } from "@/lib/formato";
 
+/**
+ * Que gano en cada distrito y con cuantos votos.
+ *
+ * ESTA PAGINA MOSTRABA LA EJECUCION PRESUPUESTARIA y se le saco, porque no habia
+ * ni un dato real que sostenerla:
+ *
+ *  - Ningun monto: el sistema anterior traia `presupuesto-total = 1` en las 100
+ *    ideas como relleno, asi que el ETL no migro ningun importe (ver
+ *    data/reporte-limpieza.md). Los 19 ganadores estaban los 19 "Sin publicar".
+ *  - Ninguna etapa informada: el "19 en preparación" que mostraba no lo cargo
+ *    nadie, es el valor que el ETL le pone por defecto a todo ganador
+ *    (scripts/etl.ts, `estadoPresupuesto`). Se leia como el estado real de 19
+ *    obras y era una constante de la migracion, que es peor que un cero.
+ *  - Y desde que el panel se recorto no queda pantalla para cargarlos, asi que
+ *    el aviso que prometia que "se completa desde el panel de administración"
+ *    tampoco era cierto. Ese aviso, que es el que rinde cuentas de por que no
+ *    hay montos, se mudo a /acerca-de: es informacion, no se tira.
+ *
+ * Queda lo que si esta cargado y verificado: los ganadores, sus votos y los
+ * distritos que no eligieron proyecto. Si algun dia el municipio carga montos,
+ * la estructura sigue entera en la base (`ideas.presupuesto_total`, la tabla
+ * `avances`) y la ficha de cada proyecto ya sabe dibujarlos.
+ *
+ * El titulo y el subtitulo estan ACA y no en la tabla `textos`. Salian de la
+ * base, pero la pantalla que los editaba (/admin/contenido) se borro: en la base
+ * quedaban inmutables en la practica, y encima decian "cuánto se ejecutó de su
+ * presupuesto". En el codigo quedan versionados y se revisan en un diff.
+ */
 export const metadata: Metadata = {
-  title: "Transparencia y ejecución",
+  title: "Transparencia",
   description:
-    "En qué etapa está cada proyecto ganador del Presupuesto Participativo de San Miguel de Tucumán y cuánto se ejecutó de su presupuesto.",
+    "Qué proyecto ganó en cada distrito del Presupuesto Participativo de San Miguel de Tucumán y con cuántos votos.",
 };
 
 export default async function Transparencia() {
@@ -25,81 +48,36 @@ export default async function Transparencia() {
     );
   }
 
-  const [textos, stats, ganadores] = await Promise.all([
-    getTextos(),
+  const [stats, ganadores] = await Promise.all([
     getEstadisticas(edicion),
     listarIdeas({ edicionId: edicion.id, soloGanadores: true }),
   ]);
 
-  const sinMonto = ganadores.filter((g) => g.presupuestoTotal === null).length;
-
   return (
     <div className="contenedor py-10 sm:py-14">
       <header className="max-w-3xl">
-        <h1 className="text-3xl font-bold sm:text-4xl">
-          {textos["transparencia-titulo"] ?? "Transparencia y ejecución"}
-        </h1>
+        <h1 className="text-3xl font-bold sm:text-4xl">Transparencia</h1>
         <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-          {textos["transparencia-subtitulo"]}
+          Qué proyecto ganó en cada distrito y con cuántos votos. Todos los datos de esta página se
+          pueden descargar.
         </p>
       </header>
 
-      <dl className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Dato valor={String(stats.ganadores)} etiqueta="proyectos ganadores" />
-        <Dato valor={formatearNumero(stats.votos)} etiqueta="votos registrados" />
-        <Dato
-          valor={
-            stats.presupuestoPublicado > 0
-              ? formatearPesos(stats.presupuestoPublicado)
-              : "Sin publicar"
-          }
-          etiqueta="presupuesto asignado"
-          detalle={
-            sinMonto > 0 ? `${sinMonto} de ${stats.ganadores} proyectos sin monto cargado` : undefined
-          }
-        />
-        <Dato
-          valor={String(stats.porEtapaPresupuesto["finalizado"] ?? 0)}
-          etiqueta="obras finalizadas"
-        />
-      </dl>
-
-      {sinMonto === stats.ganadores && stats.ganadores > 0 && (
-        <div className="mt-6">
-          <Aviso tono="atencion">
-            <strong>Los montos todavía no están publicados.</strong> El sistema anterior tenía el
-            campo de presupuesto sin usar: las {stats.ideas} ideas figuraban con el valor 1, que era
-            un relleno y no un importe, así que no se migró ningún monto. La estructura para
-            publicarlos —total y monto por etapa, con historial— ya está en el sitio y se completa
-            desde el panel de administración.
-          </Aviso>
-        </div>
-      )}
-
-      {/* --- Etapas --------------------------------------------------------- */}
-      <section className="mt-12">
-        <h2 className="text-xl font-bold">En qué etapa está cada obra</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {ETAPAS_PRESUPUESTO.map((etapa) => (
-            <div key={etapa} className="superficie rounded-2xl p-5">
-              <p className="text-3xl font-bold">{stats.porEtapaPresupuesto[etapa] ?? 0}</p>
-              <p className="mt-1 text-sm font-medium">{ETIQUETA_PRESUPUESTO[etapa]}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* --- Tabla ---------------------------------------------------------- */}
-      <section className="mt-12">
-        <h2 className="text-xl font-bold">Los {ganadores.length} proyectos ganadores</h2>
+      <section className="mt-10">
+        <h2 className="text-xl font-bold">
+          {ganadores.length === 1
+            ? "El proyecto ganador"
+            : `Los ${ganadores.length} proyectos ganadores`}
+        </h2>
         <p className="mt-2 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Ordenados por cantidad de votos.
+          Edición {stats.anio}, ordenados por cantidad de votos.
         </p>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[46rem] border-collapse text-sm">
+          <table className="w-full min-w-[32rem] border-collapse text-sm">
             <caption className="sr-only">
-              Proyectos ganadores con su distrito, votos, presupuesto y etapa de obra
+              Proyectos ganadores de la edición {stats.anio} con su distrito y sus votos
             </caption>
             <thead>
               <tr style={{ borderBottom: "2px solid var(--borde)" }}>
@@ -111,12 +89,6 @@ export default async function Transparencia() {
                 </th>
                 <th scope="col" className="px-3 py-3 text-right font-semibold">
                   Votos
-                </th>
-                <th scope="col" className="px-3 py-3 text-right font-semibold">
-                  Presupuesto
-                </th>
-                <th scope="col" className="px-3 py-3 text-left font-semibold">
-                  Etapa
                 </th>
               </tr>
             </thead>
@@ -141,22 +113,6 @@ export default async function Transparencia() {
                   <td className="px-3 py-3 text-right font-medium tabular-nums">
                     {formatearNumero(idea.votos)}
                   </td>
-                  <td
-                    className="px-3 py-3 text-right tabular-nums"
-                    style={{
-                      color:
-                        idea.presupuestoTotal === null ? "var(--texto-suave)" : "var(--texto)",
-                    }}
-                  >
-                    {idea.presupuestoTotal === null
-                      ? "Sin publicar"
-                      : formatearPesos(idea.presupuestoTotal)}
-                  </td>
-                  <td className="px-3 py-3">
-                    <Chip>
-                      {ETIQUETA_PRESUPUESTO[idea.estadoPresupuesto] ?? idea.estadoPresupuesto}
-                    </Chip>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -168,12 +124,6 @@ export default async function Transparencia() {
                 <td className="px-3 py-3 text-right tabular-nums">
                   {formatearNumero(stats.votos)}
                 </td>
-                <td className="px-3 py-3 text-right tabular-nums">
-                  {stats.presupuestoPublicado > 0
-                    ? formatearPesos(stats.presupuestoPublicado)
-                    : "—"}
-                </td>
-                <td />
               </tr>
             </tfoot>
           </table>

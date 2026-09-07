@@ -88,6 +88,28 @@ export default async function AcercaDe() {
               </ol>
             </>
           )}
+
+          {/*
+            Por que no hay montos publicados.
+
+            Este aviso vivia en /transparencia, que mostraba la ejecucion
+            presupuestaria. Esa parte se saco porque no habia un solo dato real
+            detras (ver el comentario de src/app/transparencia/page.tsx), pero el
+            texto que RINDE CUENTAS de la ausencia no se tira: es lo unico en
+            todo el sitio que le explica al vecino por que cada proyecto dice
+            "Sin publicar" donde deberia ir un importe.
+
+            Va en la pagina que explica el programa, y no en la de resultados,
+            porque es una explicacion del proceso y no un dato de la edicion.
+          */}
+          <h2 className="mt-12 text-xl font-bold">Por qué no hay montos publicados</h2>
+          <p className="mt-3 text-[0.9375rem] leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+            Los proyectos ganadores todavía no tienen publicado cuánto cuestan. No es un dato que
+            falte cargar: el sistema anterior guardaba el presupuesto de cada idea con el valor 1,
+            que era un relleno y no un importe, así que al traer los datos no se migró ningún monto
+            en lugar de inventarlo. La estructura para publicarlos —el total de cada obra y el monto
+            por etapa, con su historial— está hecha y espera que el municipio informe las cifras.
+          </p>
         </section>
 
         <aside className="space-y-4">

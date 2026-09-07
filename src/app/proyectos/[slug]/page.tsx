@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Mapa from "@/components/Mapa";
-import { Aviso, Chip, ChipEstado, TarjetaProyecto, Vacio } from "@/components/ui";
+import { Chip, ChipEstado, TarjetaProyecto, Vacio } from "@/components/ui";
 import { getAvances, getEdicionActiva, getIdea, listarIdeas } from "@/db/queries";
 import {
   DESCRIPCION_ESTADO,
@@ -130,68 +130,86 @@ export default async function PaginaProyecto({ params }: Props) {
             </section>
           )}
 
-          {/* --- Seguimiento de obra ------------------------------------- */}
+          {/*
+            --- Seguimiento de obra --------------------------------------
+            La barra de las cuatro etapas se dibuja SOLO si el municipio informo
+            algun avance. Antes se dibujaba siempre, y como el ETL le ponia
+            `preparacion` a todo ganador —una constante del script, no un dato
+            que alguien informara—, pintaba la primera etapa como ya alcanzada,
+            con aria-current="step", en los 19 proyectos. Era un progreso
+            inventado, y dibujado como verificado.
+
+            Sin avances queda una linea que dice que no hay informacion. No se
+            esconde: que falte el dato es informacion, y este proyecto prefiere
+            mostrar lo que falta antes que rellenarlo (el mismo criterio del
+            componente `Pendiente` de ui.tsx). Lo que se saco es la promesa de
+            quien lo carga y cuando: el aviso decia que el municipio los carga
+            "desde el panel de administración", y esa pantalla ya no existe.
+          -------------------------------------------------------------- */}
           {idea.ganador && (
             <section className="mt-12">
               <h2 className="text-xl font-bold">Avance de la obra</h2>
 
-              <ol className="mt-4 grid gap-2 sm:grid-cols-4">
-                {ETAPAS_PRESUPUESTO.map((etapa, indice) => {
-                  const actual = ETAPAS_PRESUPUESTO.indexOf(
-                    idea.estadoPresupuesto as (typeof ETAPAS_PRESUPUESTO)[number],
-                  );
-                  const alcanzada = actual >= indice && actual !== -1;
-                  return (
-                    <li
-                      key={etapa}
-                      className="rounded-xl px-3 py-2.5 text-xs font-medium"
-                      style={{
-                        background: alcanzada
-                          ? "color-mix(in srgb, var(--color-marca-600) 16%, transparent)"
-                          : "var(--fondo-suave)",
-                        border: `1px solid ${
-                          alcanzada
-                            ? "color-mix(in srgb, var(--color-marca-600) 38%, transparent)"
-                            : "var(--borde)"
-                        }`,
-                        color: alcanzada ? "var(--color-marca-600)" : "var(--texto-suave)",
-                      }}
-                      aria-current={actual === indice ? "step" : undefined}
-                    >
-                      {indice + 1}. {ETIQUETA_PRESUPUESTO[etapa]}
-                    </li>
-                  );
-                })}
-              </ol>
-
               {avances.length ? (
-                <ol className="mt-6 space-y-4">
-                  {avances.map((avance) => (
-                    <li key={avance.id} className="superficie rounded-2xl p-5">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <h3 className="text-base font-semibold">{avance.titulo}</h3>
-                        <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-                          {formatearFecha(avance.fecha)}
+                <>
+                  <ol className="mt-4 grid gap-2 sm:grid-cols-4">
+                    {ETAPAS_PRESUPUESTO.map((etapa, indice) => {
+                      const actual = ETAPAS_PRESUPUESTO.indexOf(
+                        idea.estadoPresupuesto as (typeof ETAPAS_PRESUPUESTO)[number],
+                      );
+                      const alcanzada = actual >= indice && actual !== -1;
+                      return (
+                        <li
+                          key={etapa}
+                          className="rounded-xl px-3 py-2.5 text-xs font-medium"
+                          style={{
+                            background: alcanzada
+                              ? "color-mix(in srgb, var(--color-marca-600) 16%, transparent)"
+                              : "var(--fondo-suave)",
+                            border: `1px solid ${
+                              alcanzada
+                                ? "color-mix(in srgb, var(--color-marca-600) 38%, transparent)"
+                                : "var(--borde)"
+                            }`,
+                            color: alcanzada ? "var(--color-marca-600)" : "var(--texto-suave)",
+                          }}
+                          aria-current={actual === indice ? "step" : undefined}
+                        >
+                          {indice + 1}. {ETIQUETA_PRESUPUESTO[etapa]}
+                        </li>
+                      );
+                    })}
+                  </ol>
+
+                  <ol className="mt-6 space-y-4">
+                    {avances.map((avance) => (
+                      <li key={avance.id} className="superficie rounded-2xl p-5">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <h3 className="text-base font-semibold">{avance.titulo}</h3>
+                          <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
+                            {formatearFecha(avance.fecha)}
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+                          {ETIQUETA_PRESUPUESTO[avance.etapa] ?? avance.etapa}
+                          {avance.monto ? ` · ${formatearPesos(Number(avance.monto))}` : ""}
+                          {avance.porcentaje !== null ? ` · ${avance.porcentaje}% ejecutado` : ""}
                         </p>
-                      </div>
-                      <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-                        {ETIQUETA_PRESUPUESTO[avance.etapa] ?? avance.etapa}
-                        {avance.monto ? ` · ${formatearPesos(Number(avance.monto))}` : ""}
-                        {avance.porcentaje !== null ? ` · ${avance.porcentaje}% ejecutado` : ""}
-                      </p>
-                      {avance.descripcion && (
-                        <p className="mt-2 text-sm leading-relaxed">{avance.descripcion}</p>
-                      )}
-                    </li>
-                  ))}
-                </ol>
+                        {avance.descripcion && (
+                          <p className="mt-2 text-sm leading-relaxed">{avance.descripcion}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </>
               ) : (
-                <div className="mt-5">
-                  <Aviso tono="atencion">
-                    Todavía no hay avances de obra publicados para este proyecto. El municipio los
-                    carga desde el panel de administración y aparecen acá con su fecha y su monto.
-                  </Aviso>
-                </div>
+                <p
+                  className="mt-3 text-[0.9375rem] leading-relaxed"
+                  style={{ color: "var(--texto-suave)" }}
+                >
+                  Todavía no hay información sobre el avance de esta obra. Cuando el municipio la
+                  informe, va a aparecer acá con su fecha y su monto.
+                </p>
               )}
             </section>
           )}
@@ -241,11 +259,15 @@ export default async function PaginaProyecto({ params }: Props) {
                   formatearPesos(idea.presupuestoTotal)
                 )}
               </Fila>
-              {idea.ganador && (
-                <Fila etiqueta="Estado de obra">
-                  {ETIQUETA_PRESUPUESTO[idea.estadoPresupuesto] ?? idea.estadoPresupuesto}
-                </Fila>
-              )}
+              {/*
+                La fila "Estado de obra" salio de esta lista. Mostraba
+                `estadoPresupuesto`, que en los 19 ganadores decia "En
+                preparación" por el default del ETL. Con el dato corregido diria
+                "Sin presupuesto asignado", que es lo mismo que la fila de arriba
+                ya dice mejor ("Presupuesto: Sin publicar"), y con una etiqueta
+                que habla de la obra para un dato que habla de la plata. La etapa
+                real, cuando la haya, la dice la seccion "Avance de la obra".
+              */}
               {idea.fecha && <Fila etiqueta="Presentada">{formatearFecha(idea.fecha)}</Fila>}
             </dl>
           </div>

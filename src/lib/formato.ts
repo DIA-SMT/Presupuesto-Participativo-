@@ -50,6 +50,22 @@ export const ETIQUETA_ETAPA: Record<string, string> = {
   cerrada: "Edición cerrada",
 };
 
+/**
+ * Los roles del panel. Estaba escrito igual en dos pantallas del backoffice (la
+ * cabecera y el equipo), asi que el dia que uno de los tres se renombre hay que
+ * acordarse de los dos lugares. Vive aca, con las demas etiquetas del sitio.
+ *
+ * Va tipado con `string` y no con `RolAdmin`, como las demas tablas de este
+ * archivo: formato.ts no importa nada del esquema. La contra es que si aparece
+ * un rol nuevo TypeScript no obliga a agregarlo aca, asi que los dos usos leen
+ * con `?? rol` y muestran el valor crudo en lugar de un hueco.
+ */
+export const ETIQUETA_ROL: Record<string, string> = {
+  admin: "Administrador",
+  moderador: "Moderador",
+  lector: "Lector",
+};
+
 const pesos = new Intl.NumberFormat("es-AR", {
   style: "currency",
   currency: "ARS",

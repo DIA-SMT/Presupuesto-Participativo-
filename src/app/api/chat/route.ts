@@ -118,7 +118,7 @@ ${faq.map((f) => `P: ${f.pregunta}\nR: ${f.respuesta}`).join("\n\n")}
 
 - /distritos — mapa de los 20 distritos
 - /proyectos — listado con filtros por distrito, categoría y estado
-- /transparencia — etapa y avance de obra de cada proyecto ganador
+- /transparencia — qué proyecto ganó en cada distrito y con cuántos votos
 - /ideas/nueva — formulario para presentar una idea
 - /acerca-de — preguntas frecuentes`;
 }

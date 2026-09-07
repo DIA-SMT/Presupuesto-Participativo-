@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Mapa from "@/components/Mapa";
 import { Chip, Vacio } from "@/components/ui";
 import { getDistritos, getEdicionActiva, getTextos } from "@/db/queries";
-import { ETIQUETA_PRESUPUESTO, formatearNumero } from "@/lib/formato";
+import { formatearNumero } from "@/lib/formato";
 
 export const metadata: Metadata = {
   title: "Distritos",
@@ -86,9 +86,11 @@ export default async function Distritos() {
                     <p className="mt-1 text-sm font-medium leading-snug group-hover:underline">
                       {distrito.ganador.titulo}
                     </p>
+                    {/* Decia ademas "· En preparación", el default del ETL (ver
+                        scripts/etl.ts). Quedan los votos, que son reales. */}
                     <p className="mt-1.5 text-xs" style={{ color: "var(--texto-suave)" }}>
-                      {formatearNumero(distrito.ganador.votos)} votos ·{" "}
-                      {ETIQUETA_PRESUPUESTO[distrito.ganador.estadoPresupuesto] ?? ""}
+                      {formatearNumero(distrito.ganador.votos)}{" "}
+                      {distrito.ganador.votos === 1 ? "voto" : "votos"}
                     </p>
                   </>
                 ) : (

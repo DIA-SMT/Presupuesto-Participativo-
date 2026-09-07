@@ -90,11 +90,21 @@ export default function AvisoLegal({ textos }: { textos: Record<string, string> 
           </p>
         </Bloque>
 
-        {/* --- 3. Montos --------------------------------------------------- */}
+        {/*
+          --- 3. Montos ---------------------------------------------------
+          El primer parrafo decia "Los presupuestos QUE FIGURAN en cada proyecto
+          son estimaciones...", en presente: hoy no figura ninguno, porque el
+          sistema anterior no traia importes y todavia no se cargo ninguno. Pasa
+          a condicional en lugar de sacarse: la salvedad tiene que estar escrita
+          ANTES de que se publique el primer monto, no despues.
+
+          El segundo parrafo no se toca: que ganar la votacion no sea un
+          compromiso de gasto vale con montos publicados y sin ellos.
+        --------------------------------------------------------------- */}
         <Bloque titulo="3. Los montos son estimativos">
           <p>
-            Los presupuestos que figuran en cada proyecto son{" "}
-            <strong>estimaciones a precios del momento en que se cargaron</strong>. El costo final
+            Los presupuestos que se publiquen en cada proyecto van a ser{" "}
+            <strong>estimaciones a precios del momento en que se carguen</strong>. El costo final
             depende de la disponibilidad presupuestaria, del proceso de contratación y de la
             variación de precios.
           </p>
@@ -106,12 +116,19 @@ export default function AvisoLegal({ textos }: { textos: Record<string, string> 
           </p>
         </Bloque>
 
-        {/* --- 4. Avance de obra ------------------------------------------- */}
+        {/*
+          --- 4. Avance de obra -------------------------------------------
+          Decia que el avance de cada obra "lo informan las areas tecnicas del
+          municipio y se actualizan periodicamente", en presente y como un
+          circuito en funcionamiento. Hoy no hay ni un avance informado. Igual
+          que el bloque 3, se pasa a condicional en vez de sacarlo.
+        --------------------------------------------------------------- */}
         <Bloque titulo="4. El avance de las obras es informado, no medido en tiempo real">
           <p>
             El estado y el porcentaje de avance de cada obra los informan las áreas técnicas del
-            municipio y se actualizan periódicamente. Puede haber{" "}
-            <strong>diferencia entre lo que está pasando en la calle y lo publicado acá</strong>.
+            municipio. Todavía no hay ninguna obra con avance informado; cuando lo haya, puede
+            haber <strong>diferencia entre lo que está pasando en la calle y lo publicado acá</strong>
+            .
           </p>
           <p>
             Las fechas de inicio y de finalización son estimadas y pueden cambiar por clima,

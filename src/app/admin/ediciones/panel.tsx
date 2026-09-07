@@ -12,6 +12,7 @@
  */
 import { useState, useActionState } from "react";
 import SelectorEtapa from "../selector-etapa";
+import { Chevron } from "@/components/ui";
 import {
   activarEdicion,
   borrarHito,
@@ -105,12 +106,20 @@ export default function PanelEdiciones({
         <ul className="mt-6 space-y-2">
           {ediciones.map((edicion) => (
             <li key={edicion.id} className="superficie rounded-2xl">
+              {/*
+                Las cuatro cuentas de la derecha van en columnas de ancho fijo y
+                no concatenadas con puntos medios: asi se pueden comparar dos
+                ediciones leyendo para abajo. El presupuesto va apagado cuando
+                falta, la misma distincion que hacen las tarjetas del tablero
+                entre un dato y un dato que todavia no esta.
+              */}
               <button
                 type="button"
                 onClick={() => setAbierta(abierta === edicion.id ? null : edicion.id)}
                 className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-4 text-left"
                 aria-expanded={abierta === edicion.id}
               >
+                <Chevron abierto={abierta === edicion.id} />
                 <span className="text-base font-bold">{edicion.anio}</span>
                 {edicion.activa ? (
                   <span
@@ -130,9 +139,22 @@ export default function PanelEdiciones({
                 <span className="flex-1 text-sm font-medium">
                   {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
                 </span>
-                <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                  {formatearNumero(edicion.ideas)} ideas · {formatearNumero(edicion.votos)} votos ·{" "}
-                  {edicion.hitos.length} hitos ·{" "}
+                <span className="w-20 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
+                  {formatearNumero(edicion.ideas)} ideas
+                </span>
+                <span className="w-24 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
+                  {formatearNumero(edicion.votos)} votos
+                </span>
+                <span className="w-16 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
+                  {edicion.hitos.length} {edicion.hitos.length === 1 ? "hito" : "hitos"}
+                </span>
+                <span
+                  className="w-32 text-right text-xs"
+                  style={{
+                    color:
+                      edicion.presupuestoTotal === null ? "var(--texto-suave)" : "var(--texto)",
+                  }}
+                >
                   {edicion.presupuestoTotal === null
                     ? "sin presupuesto"
                     : formatearPesos(edicion.presupuestoTotal)}
@@ -533,12 +555,19 @@ function FilaHito({
           {rango || "sin fechas"}
           {hito.etapa && ` · ${ETIQUETA_ETAPA[hito.etapa] ?? hito.etapa}`}
         </span>
+        {/*
+          py-1.5 y px-1: con text-xs (12 px de texto y 16 de renglon) el area
+          sensible de estos dos botones quedaba en 16 px de alto, abajo de los
+          24x24 que pide el criterio 2.5.8 de WCAG 2.2 para un control que no
+          esta dentro de una oracion. El -my-1.5 del contenedor se lo come, asi
+          que la fila del hito no crece.
+        */}
         {!soloLectura && (
-          <div className="ml-auto flex items-center gap-3">
+          <div className="-my-1.5 ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={() => setEditando(!editando)}
-              className="text-xs underline"
+              className="px-1 py-1.5 text-xs underline"
               aria-expanded={editando}
             >
               {editando ? "Cerrar" : "Editar"}
@@ -546,7 +575,7 @@ function FilaHito({
             <button
               type="button"
               onClick={() => setBorrando(!borrando)}
-              className="text-xs underline"
+              className="px-1 py-1.5 text-xs underline"
               style={{ color: "var(--color-acento-600)" }}
               aria-expanded={borrando}
             >

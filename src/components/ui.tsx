@@ -1,13 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { IdeaVista } from "@/db/queries";
-import {
-  COLOR_ESTADO,
-  ETIQUETA_ESTADO,
-  ETIQUETA_PRESUPUESTO,
-  formatearNumero,
-  recortar,
-} from "@/lib/formato";
+import { COLOR_ESTADO, ETIQUETA_ESTADO, formatearNumero, recortar } from "@/lib/formato";
 
 export function Chip({
   children,
@@ -174,10 +168,16 @@ export function TarjetaProyecto({ idea }: { idea: IdeaVista }) {
         className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 text-xs"
         style={{ borderTop: "1px solid var(--borde)", color: "var(--texto-suave)" }}
       >
+        {/*
+          Al pie iba tambien "· Obra en preparación", en TODA tarjeta de un
+          proyecto ganador: la portada, /proyectos, cada distrito y las
+          relacionadas. Ese estado no lo informaba nadie, lo ponia el ETL por
+          defecto (ver scripts/etl.ts). Con el dato corregido la frase quedaba
+          "Obra sin presupuesto asignado", que ya no es falsa pero mezcla la obra
+          con la plata y no le sirve a nadie en una tarjeta. La etapa de una obra
+          se ve en su ficha, y solo cuando el municipio informo un avance.
+        */}
         {idea.categoriaNombre && <span>{idea.categoriaNombre}</span>}
-        {idea.ganador && (
-          <span>· Obra {(ETIQUETA_PRESUPUESTO[idea.estadoPresupuesto] ?? "").toLowerCase()}</span>
-        )}
       </div>
     </article>
   );
@@ -231,5 +231,37 @@ export function Pendiente({ children }: { children: ReactNode }) {
     >
       <strong style={{ color: "var(--color-acento-600)" }}>PENDIENTE CONFIRMAR:</strong> {children}
     </span>
+  );
+}
+
+/**
+ * La flecha que dice que una fila se abre.
+ *
+ * Las filas plegables del panel (las obras y las ediciones) siempre fueron
+ * botones con `aria-expanded`, asi que un lector de pantalla ya anunciaba que se
+ * plegaban, pero en pantalla no habia NADA que lo dijera: eran filas de texto
+ * que resultaba que se podian tocar. Y plegarlas es la unica forma de llegar a
+ * lo que hay adentro.
+ *
+ * Vive aca, y no en una de las dos pantallas, porque las dos la dibujan igual.
+ * `aria-hidden` porque no agrega informacion: que el boton se abre o se cierra
+ * ya lo dice `aria-expanded`, y repetirlo seria escucharlo dos veces.
+ */
+export function Chevron({ abierto }: { abierto: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      className="shrink-0"
+      style={{
+        color: "var(--texto-suave)",
+        transform: abierto ? "rotate(90deg)" : "none",
+        transition: "transform 120ms",
+      }}
+    >
+      <path d="M4 2 L8 6 L4 10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
   );
 }

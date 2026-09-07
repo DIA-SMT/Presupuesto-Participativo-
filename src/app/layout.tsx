@@ -24,8 +24,11 @@ export const metadata: Metadata = {
     default: "Presupuesto Participativo · San Miguel de Tucumán",
     template: "%s · Presupuesto Participativo SMT",
   },
+  // Es la descripcion que muestran Google y las previsualizaciones al compartir
+  // el sitio. Decia "proponen, eligen y siguen las obras" y "avance de cada
+  // obra": el sitio no tiene ni un avance de obra informado.
   description:
-    "Vecinos y vecinas de San Miguel de Tucumán proponen, eligen y siguen las obras del Presupuesto Participativo. Mapa de los 20 distritos, proyectos ganadores y avance de cada obra.",
+    "Vecinos y vecinas de San Miguel de Tucumán proponen y eligen obras del Presupuesto Participativo. Mapa de los 20 distritos, las ideas presentadas y los proyectos ganadores de cada distrito.",
   metadataBase: new URL(urlDelSitio()),
   openGraph: {
     type: "website",

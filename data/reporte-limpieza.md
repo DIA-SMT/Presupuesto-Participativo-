@@ -16,8 +16,8 @@ los datos originales figura aca y en el campo `notasMigracion` de cada idea.
 | Factibles | 46 |
 | No factibles | 29 |
 | Integradas | 2 |
-| Con coordenada propia | 36 |
-| Con ubicacion aproximada (centroide del distrito) | 60 |
+| Con coordenada propia | 37 |
+| Con ubicacion aproximada (centroide del distrito) | 59 |
 | Votos totales de las ganadoras | 2069 |
 
 ## Que se corrigio
@@ -39,9 +39,17 @@ los datos originales figura aca y en el campo `notasMigracion` de cada idea.
    el contenido no correspondia a su etiqueta. Se reordeno en problema / solucion /
    beneficios y, donde el origen no tenia el dato, quedo en nulo con la nota
    correspondiente en lugar de completarlo con texto inventado.
-5. **Presupuesto.** El campo `presupuesto-total` valia 1 en las 100 ideas: era
-   relleno, no un monto. No se migro ningun importe. Los proyectos ganadores
-   quedan en estado "preparacion" sin monto, como estaban.
+5. **Presupuesto y obra: no se migro nada, porque el origen no trae nada.** El
+   campo `presupuesto-total` valia 1 en las 100 ideas: era relleno, no un monto,
+   asi que no se migro ningun importe. Y el CSV no tiene ninguna columna sobre la
+   ejecucion: su columna `estado` es el estado de EVALUACION (factible,
+   no-factible, ganador, integrado), no el de la obra. Las 100 ideas quedan en
+   `sin_asignar`.
+
+   Hasta esta corrida, este script le ponia `preparacion` a los 19 ganadores.
+   Eso no lo informo nadie: era una constante del script, y el sitio la mostraba
+   como el estado real de 19 obras. Se saco. El municipio informara la etapa
+   cuando las obras empiecen.
 
 ## Registros repetidos unificados
 
@@ -61,8 +69,6 @@ mismo nombre. Requieren decision del equipo:
 
 - "Puesta en Valor del Centro Vecinal- Barrio America": punto en D5, declarada en D1. Requiere revision manual.
 - "Centro Vecinal "Capitán de los Andes"- Barrio San Martín": punto en D12, declarada en D1. Requiere revision manual.
-- "Revive tu plaza: espacio para todos- Barrio San Nicolas Distrito 1": punto en D19, declarada en D1. Requiere revision manual.
+- "Revive tu plaza: espacio para todos- Barrio San Nicolas Distrito 1": punto en D15, declarada en D1. Requiere revision manual.
 - "Centro de Contención Deportivo y Cultural San Cayetano": punto en D16, declarada en D1. Requiere revision manual.
 - "Tu Primer Empleo - Formación y Futuro": punto en D17, declarada en D12. Requiere revision manual.
-- "Salón de Uso Múltiples Punto Ambiental del Pasaje Pantaleon Fernández": punto en D19, declarada en D15. Requiere revision manual.
-- "Pavimentación Calle la Rioja 2300-2600": punto en D19, declarada en D15. Requiere revision manual.
