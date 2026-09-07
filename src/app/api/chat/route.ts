@@ -20,6 +20,7 @@ import { responderSinIA } from "@/lib/chat-sin-ia";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 import { claveDePregunta } from "@/lib/texto";
+import { clasificarConsulta } from "@/lib/chat-temas";
 import {
   CONSUMO_VACIO,
   crearCliente,
@@ -220,6 +221,18 @@ export async function POST(request: Request) {
   ];
 
   const usadas: string[] = [];
+  /**
+   * Que herramientas contestaron que NO hay datos, para que el clasificador
+   * sepa si la consulta quedo resuelta (ver src/lib/chat-temas.ts).
+   *
+   * Se llevan los DOS conjuntos porque el modelo puede llamar a la misma
+   * herramienta dos veces con filtros distintos: cuenta como sin datos solo si
+   * NUNCA trajo nada. Una herramienta que tira excepcion cuenta como sin datos,
+   * que es lo que le paso al vecino.
+   */
+  const sinDatos = new Set<string>();
+  const conDatos = new Set<string>();
+  const nombresSinDatos = () => [...sinDatos].filter((n) => !conDatos.has(n));
   const referencias: Array<{ titulo: string; url: string }> = [];
   let respuesta = "";
   let consumo: Consumo = CONSUMO_VACIO;
@@ -315,7 +328,12 @@ export async function POST(request: Request) {
               const salida = await ejecutarHerramienta(llamada.nombre, argumentos, edicion);
               referencias.push(...salida.referencias);
               contenido = salida.contenido;
+              if (salida.sinDatos) sinDatos.add(llamada.nombre);
+              else conDatos.add(llamada.nombre);
             } catch (causa) {
+              // Una herramienta que revienta es, para el vecino, una herramienta que
+              // no trajo el dato.
+              sinDatos.add(llamada.nombre);
               // El error vuelve al modelo como resultado, no corta la respuesta:
               // puede explicarle a la persona que esa consulta no se pudo hacer.
               contenido = JSON.stringify({
@@ -354,6 +372,7 @@ export async function POST(request: Request) {
           pregunta,
           respuesta,
           herramientas: usadas,
+          sinDatos: nombresSinDatos(),
           modelo,
           consumo,
           ms: Date.now() - inicio,
@@ -373,6 +392,7 @@ export async function POST(request: Request) {
           pregunta,
           respuesta: respuesta || null,
           herramientas: usadas,
+          sinDatos: nombresSinDatos(),
           modelo,
           consumo,
           ms: Date.now() - inicio,
@@ -402,12 +422,28 @@ async function registrar(datos: {
   pregunta: string;
   respuesta: string | null;
   herramientas: string[];
+  /** Las que contestaron que no hay datos. Solo el camino del modelo la manda. */
+  sinDatos?: string[];
   modelo: string | null;
   consumo: Consumo;
   ms: number;
   ipHash: string;
   ok: boolean;
 }) {
+  /**
+   * El tema y si quedo resuelta se calculan ACA, al registrar, y no despues
+   * sobre la tabla. La senal que decide si quedo resuelta es cual herramienta
+   * trajo datos y cual volvio vacia, y esa senal solo existe mientras la
+   * consulta esta corriendo: reconstruirla despues seria adivinar.
+   */
+  const { tema, resuelta } = clasificarConsulta({
+    pregunta: datos.pregunta,
+    respuesta: datos.respuesta,
+    herramientas: datos.herramientas,
+    sinDatos: datos.sinDatos,
+    huboError: !datos.ok,
+  });
+
   try {
     await db.insert(chatConsultas).values({
       origen: "chat",
@@ -418,6 +454,8 @@ async function registrar(datos: {
       preguntaNormalizada: claveDePregunta(datos.pregunta),
       respuesta: datos.respuesta,
       herramientas: datos.herramientas,
+      tema,
+      resuelta,
       modelo: datos.modelo,
       tokensEntrada: datos.consumo.tokensEntrada,
       tokensSalida: datos.consumo.tokensSalida,

@@ -29,6 +29,12 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
+// La lista de temas del chat vive en el clasificador, que es codigo puro y con
+// pruebas. El enum de la base la importa de ahi para que no haya dos listas que
+// se puedan desfasar. Import relativo a proposito: este archivo lo lee tambien
+// drizzle-kit, fuera del resolutor de alias de Next.
+import { TEMAS } from "../lib/chat-temas";
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -66,6 +72,17 @@ export const canalCarga = pgEnum("canal_carga", [
 ]);
 
 export const rolAdmin = pgEnum("rol_admin", ["admin", "moderador", "lector"]);
+
+/**
+ * Tema de una consulta al chat (tabla `chat_consultas`). Los valores salen de
+ * `TEMAS` en src/lib/chat-temas.ts, que es el clasificador: la base y el codigo
+ * que la escribe no pueden discrepar.
+ *
+ * Es un enum y no texto libre por lo mismo que `entidad_sistema`: el panel
+ * reparte el total entre estos valores y ninguno puede aparecer de la nada.
+ * Sumar un tema pide una migracion, que es la friccion que se busca.
+ */
+export const temaConsulta = pgEnum("tema_consulta", TEMAS);
 
 /**
  * Que funcion del sitio consumio el modelo de lenguaje. Las tres escriben en
@@ -622,48 +639,71 @@ export const hitos = pgTable("hitos", {
  * la gente (insumo real para el municipio) y auditar el costo en tokens.
  * No guarda datos personales ni la IP en claro.
  */
-export const chatConsultas = pgTable("chat_consultas", {
-  id: serial("id").primaryKey(),
-  /**
-   * Que funcion del sitio hizo la consulta: el chat publico, el asistente que
-   * ayuda al vecino a escribir su idea o el informe de impacto del panel. Son
-   * usos y costos muy distintos y sin esta columna quedan indistinguibles.
-   *
-   * El panel ya no tiene pantalla que muestre esta tabla (/admin/consultas se
-   * borro), asi que hoy la unica forma de leerla es consultando la base.
-   */
-  origen: origenConsulta("origen").notNull().default("chat"),
-  pregunta: text("pregunta").notNull(),
-  /**
-   * La pregunta en minusculas, sin tildes y sin signos, para poder AGRUPAR.
-   * "¿Cómo voto?" y "como voto" son la misma pregunta y tienen que contar como
-   * una sola; sin esta columna cada forma de escribirla es una fila distinta y
-   * no se ve que es lo que la gente pregunta de verdad.
-   *
-   * Se guarda calculada al registrar la consulta (`claveDePregunta` en
-   * src/lib/texto.ts) y no se calcula al leer, porque la base no tiene la
-   * extension unaccent y no se va a agregar (ver CLAUDE.md).
-   *
-   * Se llena SOLO cuando `origen = 'chat'`. En las otras dos funciones el campo
-   * `pregunta` no es la pregunta de una persona: el asistente de carga guarda el
-   * texto de la propuesta y el informe de impacto guarda el pedido del panel.
-   * Agruparlos no significa nada y ensuciaria el recuento. NULL aca quiere decir
-   * "esto no es una pregunta, no lo agrupes".
-   */
-  preguntaNormalizada: text("pregunta_normalizada"),
-  respuesta: text("respuesta"),
-  herramientas: jsonb("herramientas").$type<string[]>(),
-  modelo: varchar("modelo", { length: 60 }),
-  tokensEntrada: integer("tokens_entrada"),
-  tokensSalida: integer("tokens_salida"),
-  cacheLectura: integer("cache_lectura"),
-  ms: integer("ms"),
-  ipHash: varchar("ip_hash", { length: 64 }),
-  ok: boolean("ok").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const chatConsultas = pgTable(
+  "chat_consultas",
+  {
+    id: serial("id").primaryKey(),
+    /**
+     * Que funcion del sitio hizo la consulta: el chat publico, el asistente que
+     * ayuda al vecino a escribir su idea o el informe de impacto del panel. Son
+     * usos y costos muy distintos y sin esta columna quedan indistinguibles.
+     *
+     * El panel ya no tiene pantalla que muestre esta tabla (/admin/consultas se
+     * borro), asi que hoy la unica forma de leerla es consultando la base.
+     */
+    origen: origenConsulta("origen").notNull().default("chat"),
+    pregunta: text("pregunta").notNull(),
+    /**
+     * La pregunta en minusculas, sin tildes y sin signos, para poder AGRUPAR.
+     * "¿Cómo voto?" y "como voto" son la misma pregunta y tienen que contar como
+     * una sola; sin esta columna cada forma de escribirla es una fila distinta y
+     * no se ve que es lo que la gente pregunta de verdad.
+     *
+     * Se guarda calculada al registrar la consulta (`claveDePregunta` en
+     * src/lib/texto.ts) y no se calcula al leer, porque la base no tiene la
+     * extension unaccent y no se va a agregar (ver CLAUDE.md).
+     *
+     * Se llena SOLO cuando `origen = 'chat'`. En las otras dos funciones el campo
+     * `pregunta` no es la pregunta de una persona: el asistente de carga guarda el
+     * texto de la propuesta y el informe de impacto guarda el pedido del panel.
+     * Agruparlos no significa nada y ensuciaria el recuento. NULL aca quiere decir
+     * "esto no es una pregunta, no lo agrupes".
+     */
+    preguntaNormalizada: text("pregunta_normalizada"),
+    respuesta: text("respuesta"),
+    herramientas: jsonb("herramientas").$type<string[]>(),
+    /** Tema en el que la clasifico src/lib/chat-temas.ts. */
+    tema: temaConsulta("tema").notNull().default("otro"),
+    /**
+     * Si la persona se fue con lo que vino a buscar. Es el dato mas valioso del
+     * panel: una consulta sin resolver es contenido que le falta al sitio. Lo
+     * decide `consultaResuelta` en src/lib/chat-temas.ts, que mira si alguna
+     * herramienta trajo datos y, cuando no hubo herramientas, si la respuesta
+     * admite que el dato no esta.
+     */
+    resuelta: boolean("resuelta").notNull().default(false),
+    modelo: varchar("modelo", { length: 60 }),
+    tokensEntrada: integer("tokens_entrada"),
+    tokensSalida: integer("tokens_salida"),
+    cacheLectura: integer("cache_lectura"),
+    ms: integer("ms"),
+    ipHash: varchar("ip_hash", { length: 64 }),
+    ok: boolean("ok").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // Las tres lecturas del panel: el listado y la serie por dia salen por
+    // fecha, el reparto por tema agrupa por tema dentro de una ventana, y las
+    // preguntas sin resolver son pocas sobre muchas (indice parcial).
+    index("chat_consultas_fecha_idx").on(t.createdAt),
+    index("chat_consultas_tema_fecha_idx").on(t.tema, t.createdAt),
+    index("chat_consultas_sin_resolver_idx")
+      .on(t.createdAt)
+      .where(sql`NOT ${t.resuelta}`),
+  ],
+);
 
 /** Contador simple para limitar abuso por IP sin depender de Redis. */
 export const rateLimit = pgTable("rate_limit", {

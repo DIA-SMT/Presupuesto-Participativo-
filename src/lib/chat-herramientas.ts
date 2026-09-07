@@ -212,6 +212,18 @@ export type ResultadoHerramienta = {
   contenido: string;
   /** Enlaces que la interfaz muestra como tarjetas debajo de la respuesta. */
   referencias: Array<{ titulo: string; url: string }>;
+  /**
+   * true cuando la herramienta contesto que NO hay datos para eso: la busqueda
+   * volvio vacia, el slug no existe, el barrio no figura. Es lo mismo que dice
+   * el `aviso` del contenido, pero como bandera, para que quien llama no tenga
+   * que leer el texto.
+   *
+   * La usa el clasificador (src/lib/chat-temas.ts) para decidir si la consulta
+   * quedo resuelta: si TODAS las herramientas de una consulta vuelven con esto
+   * en true, al vecino le falto informacion, y eso es contenido que le falta al
+   * sitio. Es la senal que alimenta la pantalla de /admin/migue.
+   */
+  sinDatos?: boolean;
 };
 
 export async function ejecutarHerramienta(
@@ -241,6 +253,7 @@ export async function ejecutarHerramienta(
               ". No inventar resultados: decir que no se encontro nada y ofrecer ampliar la busqueda.",
           }),
           referencias: [],
+            sinDatos: true,
         };
       }
       return {
@@ -265,6 +278,7 @@ export async function ejecutarHerramienta(
             aviso: "No existe un proyecto con ese identificador. Usar buscar_proyectos primero.",
           }),
           referencias: [],
+            sinDatos: true,
         };
       }
       const avances = idea.ganador ? await getAvances(idea.id) : [];
@@ -318,6 +332,7 @@ export async function ejecutarHerramienta(
         return {
           contenido: JSON.stringify({ encontrado: false }),
           referencias: [],
+            sinDatos: true,
         };
       }
       const porEstado: Record<string, number> = {};
@@ -379,6 +394,7 @@ export async function ejecutarHerramienta(
               "Ese barrio no figura en las ideas cargadas. No adivinar el distrito: sugerir que la persona lo busque en el mapa de /distritos, donde puede tocar su ubicacion.",
           }),
           referencias: [{ titulo: "Mapa de distritos", url: "/distritos" }],
+            sinDatos: true,
         };
       }
       return {

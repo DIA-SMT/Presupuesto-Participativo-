@@ -12,6 +12,8 @@ import {
   eq,
   ilike,
   inArray,
+  isNotNull,
+
   isNull,
   like,
   or,
@@ -22,11 +24,14 @@ import { consultar, db } from "./index";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import { hashearDni } from "@/lib/empadronamiento";
 import { normalizar } from "@/lib/texto";
+import type { TemaConsulta } from "@/lib/chat-temas";
 import {
   admins,
   avances,
   bitacoraEquipo,
   bitacoraSistema,
+  chatConsultas,
+
   categorias,
   distritos,
   ediciones,
@@ -1912,5 +1917,308 @@ export async function getSeguimientoIdea(
     numero: fila.numero === null ? null : Number(fila.numero),
     distrito: fila.distrito === null ? null : Number(fila.distrito),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Panel de consultas del chat
+//
+// Lo que el equipo pidio poder mirar: en que temas pregunta la gente, cual es el
+// tema mas demandado, como se usa el chat en el tiempo, que porcentaje de
+// consultas se resuelve y, sobre todo, QUE quedo sin resolver: cada pregunta que
+// Migue no supo contestar es contenido que le falta al sitio.
+//
+// Dos reglas que valen para TODAS las consultas de esta seccion:
+//
+//  1. No sale nada que identifique a quien pregunto. `ip_hash` no se devuelve
+//     nunca, ni hasheada.
+//  2. No sale nada sobre como esta configurado Migue: ni `modelo`, ni los
+//     contadores de tokens, ni los nombres de las herramientas que uso (que
+//     dirian de paso en que modo esta funcionando). Esas columnas siguen en la
+//     tabla para auditar el costo, y ninguna pantalla las dibuja. Lo que el
+//     equipo necesita para trabajar es el tema y si quedo resuelta.
+//
+// La ventana en dias es un parametro y no una constante embutida en el SQL:
+// `make_interval(days => $1)` lo resuelve en la base sin concatenar texto.
+// ---------------------------------------------------------------------------
+
+/**
+ * El filtro que llevan las SEIS consultas de esta seccion, sin excepcion.
+ *
+ * `origen = chat` porque en `chat_consultas` tambien escriben el asistente de
+ * carga y el informe de impacto: son 58 y 2 filas contra 13 del chat, asi que
+ * sin este filtro el panel informaba 73 consultas donde Migue tuvo 13, y metia
+ * el texto crudo de una propuesta en la lista de "lo que pregunta la gente".
+ * Fue exactamente el motivo por el que se borro el viejo /admin/consultas.
+ *
+ * `pregunta_normalizada IS NOT NULL` porque es lo unico que distingue una fila
+ * CLASIFICADA de una anterior al clasificador. Las viejas tienen tema = otro y
+ * resuelta = false por el DEFAULT de la columna, no porque alguien las haya
+ * juzgado: sin este filtro encabezaban la pantalla 72 preguntas que el sitio SI
+ * habia contestado, y como esa lista no filtra por fecha no se iban nunca.
+ * Quedan fuera del panel en lugar de contarse mal; la unica forma de leerlas es
+ * la base.
+ *
+ * Efecto colateral aceptado: una consulta cuya pregunta no tenga ni una letra
+ * ni un numero ("???") tampoco tiene clave y queda afuera. No es una pregunta.
+ */
+function soloDelChat() {
+  return and(
+    eq(chatConsultas.origen, "chat"),
+    isNotNull(chatConsultas.preguntaNormalizada),
+  );
+}
+
+/** Ventana por defecto del panel. Un mes es lo que dura una etapa corta. */
+export const DIAS_PANEL_CHAT = 30;
+
+export type ResumenChat = {
+  dias: number;
+  total: number;
+  resueltas: number;
+  sinResolver: number;
+  /** Entero de 0 a 100. 0 cuando no hubo consultas. */
+  porcentajeResueltas: number;
+  /** Cuantas cortaron por un error. */
+  conError: number;
+  msPromedio: number | null;
+  /** El tema mas preguntado de la ventana. `null` si no hubo consultas. */
+  temaMasDemandado: { tema: TemaConsulta; consultas: number } | null;
+};
+
+/** Los numeros de arriba del panel, en una sola pasada por la tabla. */
+export async function getResumenChat(
+  dias = DIAS_PANEL_CHAT,
+): Promise<ResumenChat> {
+  const [fila] = await consultar<{
+    total: number;
+    resueltas: number;
+    con_error: number;
+    ms_promedio: number | null;
+  }>(sql`
+    SELECT count(*)::int AS total,
+           count(*) FILTER (WHERE resuelta)::int AS resueltas,
+           count(*) FILTER (WHERE NOT ok)::int AS con_error,
+           avg(ms)::int AS ms_promedio
+      FROM chat_consultas
+     WHERE created_at > now() - make_interval(days => ${dias})
+       AND origen = 'chat'
+       AND pregunta_normalizada IS NOT NULL
+  `);
+
+  const [masDemandado] = await consultar<{ tema: TemaConsulta; consultas: number }>(sql`
+    SELECT tema, count(*)::int AS consultas
+      FROM chat_consultas
+     WHERE created_at > now() - make_interval(days => ${dias})
+       AND origen = 'chat'
+       AND pregunta_normalizada IS NOT NULL
+     GROUP BY tema
+     ORDER BY consultas DESC, tema ASC
+     LIMIT 1
+  `);
+
+  const total = Number(fila?.total ?? 0);
+  const resueltas = Number(fila?.resueltas ?? 0);
+  return {
+    dias,
+    total,
+    resueltas,
+    sinResolver: total - resueltas,
+    porcentajeResueltas: total ? Math.round((resueltas * 100) / total) : 0,
+    conError: Number(fila?.con_error ?? 0),
+    msPromedio: fila?.ms_promedio === null || fila?.ms_promedio === undefined
+      ? null
+      : Number(fila.ms_promedio),
+    temaMasDemandado: masDemandado
+      ? { tema: masDemandado.tema, consultas: Number(masDemandado.consultas) }
+      : null,
+  };
+}
+
+export type FilaTemaChat = {
+  tema: TemaConsulta;
+  consultas: number;
+  resueltas: number;
+  sinResolver: number;
+  /** Porcentaje sobre el total de la ventana, entero de 0 a 100. */
+  porcentaje: number;
+};
+
+/**
+ * Reparto por tema, de mas preguntado a menos. Devuelve solo los temas que
+ * aparecieron: un tema con cero consultas no es una fila de la tabla, y la
+ * pantalla decide si lo muestra en cero o no lo muestra.
+ */
+export async function getConsultasPorTema(
+  dias = DIAS_PANEL_CHAT,
+): Promise<FilaTemaChat[]> {
+  const filas = await consultar<{
+    tema: TemaConsulta;
+    consultas: number;
+    resueltas: number;
+  }>(sql`
+    SELECT tema,
+           count(*)::int AS consultas,
+           count(*) FILTER (WHERE resuelta)::int AS resueltas
+      FROM chat_consultas
+     WHERE created_at > now() - make_interval(days => ${dias})
+       AND origen = 'chat'
+       AND pregunta_normalizada IS NOT NULL
+     GROUP BY tema
+     ORDER BY consultas DESC, tema ASC
+  `);
+
+  const total = filas.reduce((suma, f) => suma + Number(f.consultas), 0);
+  return filas.map((f) => {
+    const consultas = Number(f.consultas);
+    const resueltas = Number(f.resueltas);
+    return {
+      tema: f.tema,
+      consultas,
+      resueltas,
+      sinResolver: consultas - resueltas,
+      porcentaje: total ? Math.round((consultas * 100) / total) : 0,
+    };
+  });
+}
+
+export type UsoChatPorDia = {
+  dia: string;
+  consultas: number;
+  sinResolver: number;
+};
+
+/**
+ * Uso por dia. Solo aparecen los dias con consultas: rellenar los huecos es
+ * trabajo de la pantalla que dibuje la serie.
+ *
+ * El dia se corta en la zona de TUCUMAN y no en la de la sesion de la base.
+ * Verificado: la sesion de Supabase esta en UTC (current_setting(TimeZone)), asi
+ * que `created_at::date` cortaba el dia a las 21:00 locales. Una consulta de las
+ * 22:30 del lunes caia en la barra del martes, y despues de las 21:00 la ultima
+ * barra llevaba la fecha de MANANA. Peor: la misma pantalla formatea las horas
+ * de cada ficha con Intl en zona Tucuman, asi que se contradecia sola. En
+ * desarrollo no se veia, porque PGlite hereda el huso de la maquina.
+ */
+export async function getUsoChatPorDia(
+  dias = DIAS_PANEL_CHAT,
+): Promise<UsoChatPorDia[]> {
+  const filas = await consultar<{
+    dia: string;
+    consultas: number;
+    sin_resolver: number;
+  }>(sql`
+    SELECT ((created_at AT TIME ZONE 'America/Argentina/Tucuman')::date)::text AS dia,
+           count(*)::int AS consultas,
+           count(*) FILTER (WHERE NOT resuelta)::int AS sin_resolver
+      FROM chat_consultas
+     WHERE created_at > now() - make_interval(days => ${dias})
+       AND origen = 'chat'
+       AND pregunta_normalizada IS NOT NULL
+     GROUP BY 1
+     ORDER BY 1
+  `);
+  return filas.map((f) => ({
+    dia: f.dia,
+    consultas: Number(f.consultas),
+    sinResolver: Number(f.sin_resolver),
+  }));
+}
+
+export type FilaConsultaChat = {
+  id: number;
+  pregunta: string;
+  respuesta: string | null;
+  tema: TemaConsulta;
+  resuelta: boolean;
+  /** Cuanto tardo en responder. Es latencia del sitio, no configuracion. */
+  ms: number | null;
+  ok: boolean;
+  createdAt: Date;
+};
+
+const camposConsultaChat = {
+  id: chatConsultas.id,
+  pregunta: chatConsultas.pregunta,
+  respuesta: chatConsultas.respuesta,
+  tema: chatConsultas.tema,
+  resuelta: chatConsultas.resuelta,
+  ms: chatConsultas.ms,
+  ok: chatConsultas.ok,
+  createdAt: chatConsultas.createdAt,
+};
+
+/** Las ultimas consultas, para el listado del panel. */
+export async function listarConsultasChat(
+  limite = 80,
+): Promise<FilaConsultaChat[]> {
+  return db
+    .select(camposConsultaChat)
+    .from(chatConsultas)
+    .where(soloDelChat())
+    .orderBy(desc(chatConsultas.createdAt), desc(chatConsultas.id))
+    .limit(limite);
+}
+
+/**
+ * Las consultas sin resolver mas recientes. Es la lista de trabajo del equipo:
+ * cada fila es una pregunta que el sitio no pudo contestar.
+ */
+export async function getConsultasSinResolver(
+  limite = 25,
+): Promise<FilaConsultaChat[]> {
+  return db
+    .select(camposConsultaChat)
+    .from(chatConsultas)
+    .where(and(eq(chatConsultas.resuelta, false), soloDelChat()))
+    .orderBy(desc(chatConsultas.createdAt), desc(chatConsultas.id))
+    .limit(limite);
+}
+
+export type PreguntaRepetidaChat = {
+  /** La ultima forma en que se escribio, para que se lea como la escribio alguien. */
+  pregunta: string;
+  veces: number;
+  sinResolver: number;
+  /** El tema mas frecuente entre las repeticiones. */
+  tema: TemaConsulta;
+};
+
+/**
+ * Que busca la gente: las preguntas que se repiten, agrupadas sin distinguir
+ * mayusculas ni tildes.
+ *
+ * El agrupador es `pregunta_normalizada`, que se calcula al registrar la
+ * consulta con `claveDePregunta` (src/lib/chat-temas.ts). Las filas anteriores a
+ * la migracion 0006 no la tienen, asi que caen a `lower(pregunta)`: agrupan un
+ * poco peor (les quedan las tildes y los signos) pero no desaparecen del panel.
+ */
+export async function getPreguntasRepetidasChat(
+  dias = DIAS_PANEL_CHAT,
+  limite = 20,
+): Promise<PreguntaRepetidaChat[]> {
+  const filas = await consultar<{
+    pregunta: string;
+    veces: number;
+    sin_resolver: number;
+    tema: TemaConsulta;
+  }>(sql`
+    SELECT (array_agg(pregunta ORDER BY created_at DESC))[1] AS pregunta,
+           count(*)::int AS veces,
+           count(*) FILTER (WHERE NOT resuelta)::int AS sin_resolver,
+           mode() WITHIN GROUP (ORDER BY tema) AS tema
+      FROM chat_consultas
+     WHERE created_at > now() - make_interval(days => ${dias})
+       AND origen = 'chat'
+       AND pregunta_normalizada IS NOT NULL
+     GROUP BY coalesce(pregunta_normalizada, lower(pregunta))
+     ORDER BY veces DESC, pregunta ASC
+     LIMIT ${limite}
+  `);
+  return filas.map((f) => ({
+    pregunta: f.pregunta,
+    veces: Number(f.veces),
+    sinResolver: Number(f.sin_resolver),
+    tema: f.tema,
+  }));
 }
 
