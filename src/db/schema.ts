@@ -299,6 +299,22 @@ export const ideas = pgTable(
     // El numero es el identificador que el vecino ve: no puede repetirse
     // dentro de una edicion. Verificado: las 100 ideas de 2025 ya lo cumplen.
     uniqueIndex("ideas_edicion_numero_idx").on(t.edicionId, t.numero),
+    /**
+     * Un distrito, un ganador. Es la regla central del programa: cada distrito
+     * elige un proyecto y ese proyecto entra al presupuesto del ano siguiente.
+     *
+     * Hasta ahora vivia solo en el codigo de `proclamarGanador`. Ahora la
+     * garantiza la base, que es lo unico que no se puede saltear con un bug, un
+     * script o una carga a mano. Se pudo agregar recien cuando el checkbox
+     * "Ganadora" salio del formulario viejo y `proclamarGanador` quedo como
+     * unico escritor de la columna.
+     *
+     * Verificado antes de aplicarlo: los 19 ganadores de 2025 son uno por
+     * distrito, ninguno sin distrito asignado.
+     */
+    uniqueIndex("ideas_un_ganador_por_distrito_idx")
+      .on(t.edicionId, t.distritoId)
+      .where(sql`${t.ganador}`),
   ],
 );
 

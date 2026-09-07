@@ -1,0 +1,34 @@
+-- Un distrito, un ganador: la regla central del programa pasa a estar
+-- garantizada por la base y no solo por el codigo.
+--
+-- Cada distrito elige un proyecto y ese proyecto entra al presupuesto del ano
+-- siguiente. Hasta ahora la regla vivia unicamente en `proclamarGanador`
+-- (src/app/admin/acciones.ts): un bug, un script o una carga a mano la podian
+-- saltear y nadie se enteraba hasta publicar dos ganadores del mismo distrito.
+--
+-- Es un indice PARCIAL: solo mira las filas con `ganador = true`, asi que no
+-- estorba a las 85 ideas que no ganaron ni al resto de las consultas.
+--
+-- Verificado antes de aplicarlo: los 19 ganadores de 2025 son uno por distrito
+-- y ninguno esta sin distrito asignado.
+--
+-- POR QUE LLEVA "IF NOT EXISTS", si desde la 0003 las migraciones no se editan
+-- a mano. Porque este indice YA existe en la base compartida del equipo: se
+-- aplico el 25/08 desde la rama Agustin, numerado 0005, antes de que esa rama y
+-- main divergieran. Despues main sumo su propia 0005 y 0006, que son otras, y
+-- quedo mas adelante en el registro de migraciones. Hay tres bases que atender
+-- a la vez:
+--
+--   * la compartida (Supabase) ya tiene el indice        -> aca es un no-op;
+--   * una base nueva, y las PGlite de las pruebas        -> lo crean;
+--   * una PGlite local que venia siguiendo main          -> lo crea.
+--
+-- Sin IF NOT EXISTS la primera fallaba. La otra salida era darle a esta
+-- migracion una fecha anterior a la ultima aplicada, para que la compartida la
+-- saltee; pero entonces la PGlite de quien venia siguiendo main la saltearia
+-- tambien y se quedaria sin la garantia EN SILENCIO. El runner de drizzle
+-- compara contra la fecha mas reciente aplicada y no contra el hash de cada
+-- migracion (ver node_modules/drizzle-orm/pg-core/dialect.js), asi que una
+-- fecha vieja no se reintenta nunca.
+
+CREATE UNIQUE INDEX IF NOT EXISTS "ideas_un_ganador_por_distrito_idx" ON "ideas" USING btree ("edicion_id","distrito_id") WHERE "ideas"."ganador";
