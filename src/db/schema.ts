@@ -634,6 +634,23 @@ export const chatConsultas = pgTable("chat_consultas", {
    */
   origen: origenConsulta("origen").notNull().default("chat"),
   pregunta: text("pregunta").notNull(),
+  /**
+   * La pregunta en minusculas, sin tildes y sin signos, para poder AGRUPAR.
+   * "¿Cómo voto?" y "como voto" son la misma pregunta y tienen que contar como
+   * una sola; sin esta columna cada forma de escribirla es una fila distinta y
+   * no se ve que es lo que la gente pregunta de verdad.
+   *
+   * Se guarda calculada al registrar la consulta (`claveDePregunta` en
+   * src/lib/texto.ts) y no se calcula al leer, porque la base no tiene la
+   * extension unaccent y no se va a agregar (ver CLAUDE.md).
+   *
+   * Se llena SOLO cuando `origen = 'chat'`. En las otras dos funciones el campo
+   * `pregunta` no es la pregunta de una persona: el asistente de carga guarda el
+   * texto de la propuesta y el informe de impacto guarda el pedido del panel.
+   * Agruparlos no significa nada y ensuciaria el recuento. NULL aca quiere decir
+   * "esto no es una pregunta, no lo agrupes".
+   */
+  preguntaNormalizada: text("pregunta_normalizada"),
   respuesta: text("respuesta"),
   herramientas: jsonb("herramientas").$type<string[]>(),
   modelo: varchar("modelo", { length: 60 }),

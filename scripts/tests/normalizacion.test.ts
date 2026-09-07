@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  claveDePregunta,
   normalizarBarrio,
   normalizarTitulo,
   similitud,
@@ -143,4 +144,21 @@ test("point-in-polygon ubica los puntos conocidos en su distrito", () => {
   assert.equal(distritoDelPunto({ lat: -26.838791, lon: -65.250745 }, distritos), 13);
   // Buenos Aires: fuera del ejido
   assert.equal(distritoDelPunto({ lat: -34.6, lon: -58.4 }, distritos), null);
+});
+
+test("claveDePregunta agrupa la misma pregunta escrita de cualquier forma", () => {
+  // La razon de existir de la columna: estas tres son una sola pregunta.
+  assert.equal(claveDePregunta("¿Cómo voto?"), "como voto");
+  assert.equal(claveDePregunta("como voto"), "como voto");
+  assert.equal(claveDePregunta("  ¿¿CÓMO VOTO??  "), "como voto");
+  // Los numeros se conservan: no son la misma pregunta.
+  assert.equal(claveDePregunta("Distrito 5?"), "distrito 5");
+  assert.notEqual(claveDePregunta("Distrito 5?"), claveDePregunta("Distrito 9?"));
+  // Sin nada con que agrupar devuelve null, y no la cadena vacia: si devolviera
+  // "", todos estos casos caerian en un mismo grupo y el recuento diria que
+  // alguien pregunto lo mismo varias veces.
+  assert.equal(claveDePregunta("¿¿??"), null);
+  assert.equal(claveDePregunta("   "), null);
+  assert.equal(claveDePregunta(""), null);
+  assert.equal(claveDePregunta("!!!"), null);
 });

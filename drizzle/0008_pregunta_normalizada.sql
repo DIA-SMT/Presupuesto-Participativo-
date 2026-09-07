@@ -1,0 +1,38 @@
+-- La pregunta del chat, en una forma con la que se pueda agrupar.
+--
+-- Por que: "¿Cómo voto?" y "como voto" son la misma pregunta, y hoy cuentan
+-- como dos filas distintas. Sin una clave comun no hay forma de ver que es lo
+-- que la gente pregunta de verdad, ni cual pregunta se repite. Se guarda
+-- calculada al registrar la consulta (`claveDePregunta` en src/lib/texto.ts)
+-- porque la base no tiene la extension unaccent y no se va a agregar (ver
+-- CLAUDE.md), asi que no se puede normalizar al leer.
+--
+-- Se llena SOLO para `origen = 'chat'`. En el asistente de carga y en el
+-- informe de impacto la columna `pregunta` no es la pregunta de una persona
+-- (guarda el texto de la propuesta y el pedido del panel), asi que agruparlas
+-- no significa nada. NULL quiere decir "esto no es una pregunta, no lo
+-- agrupes", y es lo que queda tambien en las filas anteriores a esta
+-- migracion: no se pueden completar hacia atras sin recalcular sobre datos que
+-- ya estan, lo cual se puede hacer, pero es una decision aparte y no se pidio.
+--
+-- Nullable a proposito: es lo que permite distinguir "no es una pregunta" de
+-- "es una pregunta vacia".
+--
+-- POR QUE LLEVA "IF NOT EXISTS", si desde la 0003 las migraciones no se editan
+-- a mano: esta columna YA existe en la base compartida del equipo. La creo la
+-- migracion 0006 de la rama Agustin el 25/08, junto con dos columnas mas
+-- (`tema` y `resuelta`) que finalmente NO se usan, porque el panel de temas se
+-- descarto en favor del recorte del backoffice. De esa migracion se rescata
+-- unicamente esta columna. Igual que en la 0007, hay tres bases que atender:
+--
+--   * la compartida (Supabase) ya tiene la columna  -> aca es un no-op;
+--   * una base nueva y las PGlite de las pruebas    -> la crean;
+--   * una PGlite local que venia siguiendo main     -> la crea.
+--
+-- Nota para quien venga: en la base compartida quedaron `tema`, `resuelta`, el
+-- enum `tema_consulta` y tres indices de aquella 0006, sin que ningun codigo los
+-- declare ni los lea. No hacen dano (tienen default y nadie los consulta) pero
+-- son deuda visible. Limpiarlos es una migracion con DROP sobre una tabla
+-- compartida: va aparte y con el equipo enterado.
+
+ALTER TABLE "chat_consultas" ADD COLUMN IF NOT EXISTS "pregunta_normalizada" text;
