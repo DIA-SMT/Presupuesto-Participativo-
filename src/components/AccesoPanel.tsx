@@ -74,7 +74,7 @@ function BotonIngresar() {
       style={{
         background: "var(--fondo-tarjeta)",
         border: "1px solid var(--borde-control)",
-        color: "var(--color-marca-700)",
+        color: "var(--marca-texto)",
       }}
     >
       <IconoPersona />

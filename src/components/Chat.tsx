@@ -535,7 +535,7 @@ function enLinea(texto: string): ReactNode[] {
           key={partes.length}
           href={coincidencia[3]}
           className="font-medium underline"
-          style={{ color: "var(--color-marca-600)" }}
+          style={{ color: "var(--marca-texto)" }}
         >
           {coincidencia[2]}
         </a>,

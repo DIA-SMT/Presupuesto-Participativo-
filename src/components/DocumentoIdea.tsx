@@ -274,7 +274,7 @@ const estilos = `
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: var(--color-marca-700);
+  color: var(--marca-texto);
 }
 .doc-titulo {
   margin: 0.4375rem 0 0;
@@ -282,7 +282,7 @@ const estilos = `
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.25;
-  color: var(--color-marca-950);
+  color: var(--marca-texto);
   text-wrap: balance;
 }
 
@@ -348,7 +348,7 @@ const estilos = `
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--color-marca-700);
+  color: var(--marca-texto);
 }
 .doc-cuerpo {
   margin: 0;
@@ -399,7 +399,7 @@ const estilos = `
   font-family: var(--font-sans);
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--color-marca-900);
+  color: var(--marca-texto);
   font-variant-numeric: tabular-nums;
 }
 .doc-codigo { letter-spacing: 0.1em; }
@@ -421,6 +421,26 @@ const estilos = `
  */
 @media print {
   @page { margin: 16mm; }
+
+  /*
+   * El papel es siempre blanco, asi que el documento se imprime con la paleta
+   * clara aunque quien imprime tenga el sistema en oscuro. Sin esto, desde un
+   * equipo en tema oscuro salia texto claro sobre papel blanco: ilegible y con
+   * el cartucho gastado al reves.
+   */
+  :root {
+    --fondo: #ffffff;
+    --fondo-suave: #f5f8fc;
+    --fondo-tarjeta: #ffffff;
+    --borde: #e2e8f0;
+    --texto: #16202e;
+    --texto-suave: #55627a;
+    --marca-texto: #084fc4;
+    --acento-texto: #92400e;
+    --color-cat-ambiental: #2f9e5f;
+    --color-cat-deportivo: #d2621f;
+    --color-cat-urbana: #7141a8;
+  }
 
   body { background: #fff; }
   body * { visibility: hidden !important; }

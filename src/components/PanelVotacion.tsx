@@ -159,7 +159,7 @@ export default function PanelVotacion({ proveedor, sesion, proyectos, yaVoto }: 
                       .join(" · ")}
                   </p>
                   {seleccionado && (
-                    <p className="mt-2 text-xs font-semibold" style={{ color: "var(--color-marca-600)" }}>
+                    <p className="mt-2 text-xs font-semibold" style={{ color: "var(--marca-texto)" }}>
                       Seleccionado
                     </p>
                   )}
@@ -240,7 +240,7 @@ function LoginDev() {
         className="inline-block rounded-lg px-2.5 py-1 text-xs font-semibold"
         style={{
           background: "color-mix(in srgb, var(--color-acento-600) 12%, transparent)",
-          color: "var(--color-acento-600)",
+          color: "var(--acento-texto)",
         }}
       >
         Modo de prueba — sin verificación de identidad
@@ -294,7 +294,7 @@ function LoginDev() {
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 text-sm" style={{ color: "var(--color-acento-600)" }}>
+        <p role="alert" className="mt-4 text-sm" style={{ color: "var(--acento-texto)" }}>
           {error}
         </p>
       )}

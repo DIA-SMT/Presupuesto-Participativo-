@@ -54,7 +54,7 @@ export default function FormularioIngreso() {
           para todo el sitio a la vez, no con un color propio de esta
           pantalla. */}
       {estado && !estado.ok && (
-        <p role="alert" className="text-sm font-medium" style={{ color: "var(--color-acento-600)" }}>
+        <p role="alert" className="text-sm font-medium" style={{ color: "var(--acento-texto)" }}>
           {estado.error}
         </p>
       )}

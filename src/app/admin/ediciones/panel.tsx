@@ -126,7 +126,7 @@ export default function PanelEdiciones({
                     className="rounded px-1.5 py-0.5 text-xs font-semibold"
                     style={{
                       background: "color-mix(in srgb, var(--color-marca-600) 14%, transparent)",
-                      color: "var(--color-marca-700)",
+                      color: "var(--marca-texto)",
                     }}
                   >
                     activa
@@ -383,7 +383,7 @@ function BloqueActivar({
             style={{
               background: "var(--fondo-tarjeta)",
               border: "1px solid var(--color-marca-600)",
-              color: "var(--color-marca-700)",
+              color: "var(--marca-texto)",
             }}
           >
             Activar esta edición…
@@ -576,7 +576,7 @@ function FilaHito({
               type="button"
               onClick={() => setBorrando(!borrando)}
               className="px-1 py-1.5 text-xs underline"
-              style={{ color: "var(--color-acento-600)" }}
+              style={{ color: "var(--acento-texto)" }}
               aria-expanded={borrando}
             >
               {borrando ? "Cerrar" : "Borrar"}
@@ -772,7 +772,7 @@ function ConfirmacionBorrarHito({
           Cancelar
         </button>
         {estado && !estado.ok && (
-          <span role="alert" className="text-sm" style={{ color: "var(--color-acento-700)" }}>
+          <span role="alert" className="text-sm" style={{ color: "var(--acento-texto)" }}>
             {estado.error}
           </span>
         )}

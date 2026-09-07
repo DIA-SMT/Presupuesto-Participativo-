@@ -225,7 +225,7 @@ const estilos = `
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: var(--color-marca-700);
+  color: var(--marca-texto);
 }
 
 .hero-titulo {
@@ -234,7 +234,7 @@ const estilos = `
   font-weight: 700;
   line-height: 1.06;
   letter-spacing: -0.02em;
-  color: var(--color-marca-900);
+  color: var(--marca-texto);
 }
 
 /* Subrayado amarillo en una sola palabra: es el mismo amarillo de los
@@ -286,10 +286,10 @@ const estilos = `
 
 .hero-boton-secundario {
   background: var(--fondo-tarjeta);
-  color: var(--color-marca-700);
+  color: var(--marca-texto);
   border: 1px solid var(--borde-control);
 }
-.hero-boton-secundario:hover { background: var(--color-marca-50); }
+.hero-boton-secundario:hover { background: color-mix(in srgb, var(--marca-texto) 12%, var(--fondo-tarjeta)); }
 
 .hero-indicadores {
   margin-top: 2rem;

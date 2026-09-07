@@ -636,7 +636,7 @@ export default function FormularioIdea({
         </p>
         <h2
           className="mt-1 text-xl font-bold leading-tight sm:text-2xl"
-          style={{ color: "var(--color-marca-900)", textWrap: "balance" }}
+          style={{ color: "var(--marca-texto)", textWrap: "balance" }}
         >
           {PASOS[paso - 1].titulo}
         </h2>
@@ -666,7 +666,7 @@ export default function FormularioIdea({
           style={{
             background: "var(--fondo-tarjeta)",
             border: "1px solid var(--borde-control)",
-            color: "var(--color-marca-700)",
+            color: "var(--marca-texto)",
           }}
         >
           <IconoMira />
@@ -1013,7 +1013,7 @@ export default function FormularioIdea({
                 style={{
                   background: "var(--fondo-tarjeta)",
                   border: "1px solid var(--borde-control)",
-                  color: "var(--color-marca-700)",
+                  color: "var(--marca-texto)",
                 }}
               >
                 Atrás
@@ -1129,7 +1129,7 @@ export default function FormularioIdea({
               style={{
                 background: "var(--fondo-tarjeta)",
                 border: "1px solid var(--borde-control)",
-                color: "var(--color-marca-700)",
+                color: "var(--marca-texto)",
               }}
             >
               Descargar PDF
@@ -1176,7 +1176,7 @@ export default function FormularioIdea({
           type="button"
           onClick={() => ventanaDoc.current?.showModal()}
           className="flex items-center gap-2 text-sm font-semibold"
-          style={{ color: "var(--color-marca-700)" }}
+          style={{ color: "var(--marca-texto)" }}
         >
           Ver cómo queda
           <span aria-hidden="true">▲</span>
@@ -1204,7 +1204,7 @@ export default function FormularioIdea({
               style={{
                 background: "var(--fondo-tarjeta)",
                 border: "1px solid var(--borde-control)",
-                color: "var(--color-marca-700)",
+                color: "var(--marca-texto)",
               }}
             >
               Descargar PDF
@@ -1573,7 +1573,7 @@ function PanelRevision({
               style={{
                 background: "var(--fondo-tarjeta)",
                 border: "1px solid var(--borde-control)",
-                color: "var(--color-marca-700)",
+                color: "var(--marca-texto)",
               }}
             >
               Agregar {elegidos.length === 1 ? "lo elegido" : `los ${elegidos.length} elegidos`}
@@ -1602,7 +1602,7 @@ function PanelRevision({
                     target="_blank"
                     rel="noreferrer"
                     className="underline"
-                    style={{ color: "var(--color-marca-600)" }}
+                    style={{ color: "var(--marca-texto)" }}
                   >
                     {parecida.titulo}
                   </a>

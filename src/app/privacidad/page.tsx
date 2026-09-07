@@ -307,7 +307,7 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
   {
     dato: "El contenido de tu idea",
     caracter: "Obligatorio",
-    color: "var(--color-marca-600)",
+    color: "var(--marca-texto)",
     finalidad:
       "Título, categoría, barrio, problema, solución, beneficios y el punto que marcás en el mapa. Se usan para evaluar técnicamente la propuesta, asignarla a un distrito y publicarla en el sitio para que se pueda votar. Este contenido es público.",
   },
@@ -321,7 +321,7 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
   {
     dato: "Tu correo electrónico",
     caracter: "Facultativo, con tu consentimiento",
-    color: "var(--color-acento-600)",
+    color: "var(--acento-texto)",
     finalidad:
       "Lo usamos solo para contarte cómo sigue tu idea. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se guarda únicamente si marcás la casilla del formulario.",
   },

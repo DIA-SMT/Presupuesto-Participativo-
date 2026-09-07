@@ -64,11 +64,19 @@ const AZUL = "#0166ff";
 const CELESTE = "#2db0ff";
 
 /**
- * Estilo minimo con teselas raster, siempre en la cara clara institucional
- * (el sitio no tiene modo oscuro). Ver README: cambiar de proveedor de
- * teselas en produccion.
+ * Estilo minimo con teselas raster. Ver README: cambiar de proveedor de teselas
+ * en produccion.
+ *
+ * Las teselas son las mismas en los dos temas y lo que cambia es el `paint`: en
+ * oscuro se bajan la saturacion y el brillo maximo, porque un mapa claro a
+ * pantalla completa dentro de una pagina oscura encandila y, en la portada, el
+ * texto del hero va ENCIMA del mapa y necesita un fondo que no le compita.
+ *
+ * El tema se lee una sola vez, al crear el mapa: cambiarlo en el sistema con la
+ * pagina abierta no repinta las teselas hasta recargar. Es una limitacion
+ * conocida y aceptada, no vale reconstruir el mapa por eso.
  */
-function estilo(): StyleSpecification {
+function estilo(oscuro: boolean): StyleSpecification {
   return {
     version: 8,
     sources: {
@@ -86,8 +94,11 @@ function estilo(): StyleSpecification {
         id: "base",
         type: "raster",
         source: "base",
-        // Teselas apenas desaturadas para que los distritos azules resalten.
-        paint: { "raster-saturation": -0.35, "raster-brightness-min": 0.08 },
+        // Apenas desaturadas en claro, para que los distritos azules resalten;
+        // bastante mas apagadas en oscuro.
+        paint: oscuro
+          ? { "raster-saturation": -0.7, "raster-brightness-max": 0.55, "raster-contrast": 0.1 }
+          : { "raster-saturation": -0.35, "raster-brightness-min": 0.08 },
       },
     ],
   };
@@ -121,9 +132,13 @@ export default function Mapa({
   useEffect(() => {
     if (!contenedor.current || mapa.current) return;
 
+    const oscuro =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+
     const instancia = new maplibregl.Map({
       container: contenedor.current,
-      style: estilo(),
+      style: estilo(oscuro),
       center: [-65.21705, -26.84725],
       zoom: 11.4,
       minZoom: 10,
@@ -524,7 +539,7 @@ const estilosMarcadores = `
   margin-top: 0.35rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--color-marca-600);
+  color: var(--marca-texto);
   text-decoration: underline;
 }
 `;

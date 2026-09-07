@@ -425,7 +425,7 @@ export default function PanelBandeja({
           }}
         >
           <div>
-            <p className="text-sm font-semibold" style={{ color: "var(--color-acento-700)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--acento-texto)" }}>
               {textoDeuda(deuda, resumen.porEstado.no_factible)}
             </p>
             <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
@@ -434,7 +434,7 @@ export default function PanelBandeja({
           </div>
           <span
             className="text-sm font-semibold underline"
-            style={{ color: "var(--color-acento-700)" }}
+            style={{ color: "var(--acento-texto)" }}
           >
             {vista.sinDevolucion
               ? "Estás viendo solo esas"
@@ -638,7 +638,7 @@ export default function PanelBandeja({
                 href={armarEnlace(vista, { orden: "prioridad", dir: null, pagina: 1 })}
                 scroll={false}
                 className="text-xs underline"
-                style={{ color: "var(--color-marca-600)" }}
+                style={{ color: "var(--marca-texto)" }}
               >
                 Volver al orden de trabajo
               </Link>

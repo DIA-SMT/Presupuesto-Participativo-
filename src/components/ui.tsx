@@ -229,7 +229,7 @@ export function Pendiente({ children }: { children: ReactNode }) {
         color: "var(--texto)",
       }}
     >
-      <strong style={{ color: "var(--color-acento-600)" }}>PENDIENTE CONFIRMAR:</strong> {children}
+      <strong style={{ color: "var(--acento-texto)" }}>PENDIENTE CONFIRMAR:</strong> {children}
     </span>
   );
 }

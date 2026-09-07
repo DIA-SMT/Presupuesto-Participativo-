@@ -39,7 +39,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#084fc4",
+  // Un color por tema: en claro la barra del navegador acompana al azul
+  // institucional; en oscuro, al fondo del sitio, para que no quede una franja
+  // celeste arriba de una pantalla oscura.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#084fc4" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c141f" },
+  ],
 };
 
 const NAVEGACION = [
