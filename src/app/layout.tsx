@@ -88,15 +88,31 @@ export default async function RootLayout({
   const cuentaEquipo = sesionEquipo?.email ?? null;
 
   return (
-    <html lang="es-AR">
+    /*
+     * suppressHydrationWarning va en el <html> porque el script de arriba le
+     * escribe data-theme ANTES de que React hidrate: el HTML del servidor no
+     * trae el atributo y el del cliente si, y React lo reporta como desajuste.
+     * Es intencional y es el unico atributo que difiere. La supresion NO se
+     * hereda a los hijos: solo calla este elemento.
+     */
+    <html lang="es-AR" suppressHydrationWarning>
       <head>
         {/*
           Aplica el tema elegido ANTES del primer pintado. Sin esto, alguien que
           eligio claro en un sistema oscuro ve la pagina oscura por un instante y
           despues salta: el CSS resuelve la media query enseguida, pero el
           `data-theme` que la anula recien existe cuando corre el JS de React.
-          Va inline y sincrono a proposito, que es la unica forma de ganarle al
-          pintado.
+          Va como <script> SINCRONICO en el head, y no con next/script y
+          strategy="beforeInteractive", aunque React avise por consola que un
+          script en su arbol no se ejecuta en un render de cliente (cierto, y no
+          hace falta: alcanza con que corra una vez por documento).
+
+          Se probo next/script y NO sirve para esto. Medido en el HTML servido:
+          Next no emite el codigo como script, lo encola en `self.__next_s`, y
+          TODOS los scripts que consumen esa cola salen con `async`. Un script
+          async no bloquea el parseo, asi que puede correr despues del primer
+          pintado y el parpadeo vuelve. Un parpadeo que ve el vecino es peor que
+          un aviso que ve solo quien programa.
 
           Es la excepcion razonable a no usar dangerouslySetInnerHTML: es una
           constante del codigo, no entra un solo dato de nadie, y la regla del

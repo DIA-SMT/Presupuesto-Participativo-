@@ -143,6 +143,30 @@ const estilos = `
 .hero-lienzo { line-height: 0; }
 .hero-imagen { width: 100%; height: auto; }
 
+/*
+  EL HERO ES UNA ISLA CLARA, y por eso vuelve a declarar los tokens de texto en
+  sus valores del tema claro.
+
+  Su fondo es el degradado fijo #f2f5fa -> #dde5f0, elegido para empalmar con el
+  PNG de la ilustracion, que es claro. Ese fondo NO acompana al tema, asi que si
+  el texto de adentro toma los tokens del tema oscuro se aclara sobre un fondo
+  que sigue claro: el titulo quedaba celeste palido (#8ec7fc) sobre #e8ecf3 y la
+  bajada gris claro sobre gris claro. Paso de verdad y se veia ilegible.
+
+  Se declaran aca y no en cada regla para que valga para todo el subarbol: si
+  manana alguien agrega texto adentro del hero, hereda la paleta correcta sola.
+
+  --borde-control va explicito porque su valor se calcula donde se DECLARA (en
+  :root, con el --texto de ahi): redeclarar --texto aca no lo recalcula.
+*/
+.hero {
+  --texto: #16202e;
+  --texto-suave: #55627a;
+  --marca-texto: #084fc4;
+  --fondo-tarjeta: #ffffff;
+  --borde-control: color-mix(in srgb, #16202e 55%, transparent);
+}
+
 @media (min-width: 75rem) {
   .hero {
     display: flex;
