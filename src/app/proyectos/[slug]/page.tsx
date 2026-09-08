@@ -69,7 +69,7 @@ export default async function PaginaProyecto({ params }: Props) {
           )}
           <Chip>Distrito {idea.distrito}</Chip>
           {idea.ganador && idea.votos > 0 && (
-            <Chip color="var(--color-estado-ganador)">
+            <Chip color="var(--ganador-texto)">
               {formatearNumero(idea.votos)} votos
             </Chip>
           )}

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
 import AccesoPanel from "@/components/AccesoPanel";
+import BotonTema from "@/components/BotonTema";
 import AvisoLegal from "@/components/AvisoLegal";
 import Chat from "@/components/Chat";
 import VentanaAvisoLegal from "@/components/VentanaAvisoLegal";
@@ -89,6 +90,26 @@ export default async function RootLayout({
   return (
     <html lang="es-AR">
       <head>
+        {/*
+          Aplica el tema elegido ANTES del primer pintado. Sin esto, alguien que
+          eligio claro en un sistema oscuro ve la pagina oscura por un instante y
+          despues salta: el CSS resuelve la media query enseguida, pero el
+          `data-theme` que la anula recien existe cuando corre el JS de React.
+          Va inline y sincrono a proposito, que es la unica forma de ganarle al
+          pintado.
+
+          Es la excepcion razonable a no usar dangerouslySetInnerHTML: es una
+          constante del codigo, no entra un solo dato de nadie, y la regla del
+          CLAUDE.md apunta a la respuesta del modelo en el chat.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('pp-smt:tema');" +
+              "if(t==='claro')document.documentElement.dataset.theme='light';" +
+              "else if(t==='oscuro')document.documentElement.dataset.theme='dark';}catch(e){}",
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -156,6 +177,7 @@ export default async function RootLayout({
                 )}
               </nav>
 
+              <BotonTema />
               <AccesoPanel cuenta={cuentaEquipo} />
             </div>
           </div>

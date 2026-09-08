@@ -116,6 +116,15 @@
    */
   --acento-texto: #92400e;
   /*
+   * El dorado del ganador cuando es TEXTO. Igual que --acento-texto: la
+   * rampa de estados esta pensada para poner blanco encima, y como letra no
+   * llega. Medido en la portada: #b8860b sobre la pastilla (14% de si mismo
+   * sobre la tarjeta) daba 2.81:1 en claro y 4.25:1 en oscuro, contra el
+   * 4.5:1 que pide WCAG 1.4.3 para los 12px de "* N votos". Estos dos
+   * valores dan 5.24:1 y 6.36:1, elegidos midiendo y no a ojo.
+   */
+  --ganador-texto: #7d5806;
+  /*
    * El azul de marca cuando es TEXTO, por lo mismo que --acento-texto.
    *
    * La rampa --color-marca-* del @theme tambien se usa como FONDO con texto
@@ -130,8 +139,21 @@
   color-scheme: light;
 }
 
+/*
+ * El tema oscuro se aplica en DOS casos y por eso el bloque esta dos veces:
+ *
+ *  1. cuando el sistema lo pide y la persona NO eligio claro a mano;
+ *  2. cuando la persona eligio oscuro con el boton del encabezado.
+ *
+ * CSS no tiene forma de compartir un bloque de declaraciones entre una
+ * media query y un selector, asi que se repite. Si se toca uno hay que tocar
+ * el otro: son los mismos tokens.
+ *
+ * El :not([data-theme="light"]) es lo que deja que el boton gane contra el
+ * sistema en las dos direcciones.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --fondo: #0c141f;
     --fondo-suave: #111c2b;
     --fondo-tarjeta: #141f30;
@@ -142,6 +164,8 @@
     --acento-texto: #fcd34d;
     /* El paso 300 de la rampa: 9.4:1 sobre --fondo-tarjeta. */
     --marca-texto: #8ec7fc;
+    /* Dorado claro: 6.36:1 sobre la pastilla del ganador. */
+    --ganador-texto: #e0b13a;
     /*
      * Categorias aclaradas. Las del @theme estan calculadas para leerse sobre
      * blanco (la urbana daba 2.38:1 sobre el fondo oscuro) y solo se usan como
@@ -152,6 +176,30 @@
     --color-cat-urbana: #c3a5e8;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+    --fondo: #0c141f;
+    --fondo-suave: #111c2b;
+    --fondo-tarjeta: #141f30;
+    --borde: #243449;
+    --texto: #e8eef7;
+    --texto-suave: #9aa9c0;
+    /* Ambar claro: 11.2:1 sobre --fondo-tarjeta. */
+    --acento-texto: #fcd34d;
+    /* El paso 300 de la rampa: 9.4:1 sobre --fondo-tarjeta. */
+    --marca-texto: #8ec7fc;
+    /* Dorado claro: 6.36:1 sobre la pastilla del ganador. */
+    --ganador-texto: #e0b13a;
+    /*
+     * Categorias aclaradas. Las del @theme estan calculadas para leerse sobre
+     * blanco (la urbana daba 2.38:1 sobre el fondo oscuro) y solo se usan como
+     * texto, asi que aca se reemplazan enteras en lugar de duplicarse.
+     */
+    --color-cat-ambiental: #5fd18e;
+    --color-cat-deportivo: #f0955a;
+    --color-cat-urbana: #c3a5e8;
+    color-scheme: dark;
 }
 
 @layer base {
@@ -327,9 +375,14 @@
 /* Los iconos de los controles de MapLibre son PNG negros embebidos: sobre el
    fondo oscuro de los botones quedan invisibles y hay que invertirlos. */
 @media (prefers-color-scheme: dark) {
-  .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  :root:not([data-theme="light"]) .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
     filter: invert(1) hue-rotate(180deg);
   }
+}
+/* Duplicado por lo mismo que el bloque de tokens: el boton del encabezado tiene
+   que poder ganarle al sistema en las dos direcciones. */
+:root[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 /*
@@ -337,3 +390,30 @@
  * con estilos propios (src/components/VentanaAvisoLegal.tsx), asi que aca no
  * queda nada suyo. Sus anclas (#aviso-ia y compania) las resuelve la ventana.
  */
+
+/*
+ * Los dos iconos del boton de tema viajan siempre en el HTML y el CSS muestra
+ * uno. Se hace asi, y no eligiendo en React, porque el servidor no puede saber
+ * que tema tiene puesto la persona: elegir en el render obliga a un desajuste de
+ * hidratacion o a pintar el icono equivocado por un instante.
+ *
+ * Las condiciones son las mismas que las de los tokens del tema, y por el mismo
+ * motivo estan dos veces (ver el comentario del bloque oscuro).
+ */
+.icono-tema-oscuro {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .icono-tema-claro {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .icono-tema-oscuro {
+    display: inline;
+  }
+}
+:root[data-theme="dark"] .icono-tema-claro {
+  display: none;
+}
+:root[data-theme="dark"] .icono-tema-oscuro {
+  display: inline;
+}

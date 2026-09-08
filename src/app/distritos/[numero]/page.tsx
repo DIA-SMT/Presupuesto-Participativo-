@@ -108,7 +108,7 @@ export default async function PaginaDistrito({ params }: Props) {
               {ganador.categoriaNombre && (
                 <Chip color={ganador.categoriaColor ?? undefined}>{ganador.categoriaNombre}</Chip>
               )}
-              <Chip color="var(--color-estado-ganador)">
+              <Chip color="var(--ganador-texto)">
                 {formatearNumero(ganador.votos)} votos
               </Chip>
             </div>

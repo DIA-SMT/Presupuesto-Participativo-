@@ -140,7 +140,7 @@ export function TarjetaProyecto({ idea }: { idea: IdeaVista }) {
         <Chip>Distrito {idea.distrito}</Chip>
         <ChipEstado estado={idea.estado} />
         {idea.ganador && idea.votos > 0 && (
-          <Chip color="var(--color-estado-ganador)">
+          <Chip color="var(--ganador-texto)">
             {formatearNumero(idea.votos)} votos
           </Chip>
         )}

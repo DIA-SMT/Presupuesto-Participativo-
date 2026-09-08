@@ -79,7 +79,7 @@ export default async function Distritos() {
                   <>
                     <p
                       className="text-[0.6875rem] font-semibold uppercase tracking-wider"
-                      style={{ color: "var(--color-estado-ganador)" }}
+                      style={{ color: "var(--ganador-texto)" }}
                     >
                       Proyecto ganador
                     </p>
