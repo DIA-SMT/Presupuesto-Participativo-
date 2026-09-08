@@ -221,6 +221,36 @@ export function normalizarBarrio(bruto: string | null | undefined): string | nul
   return normalizarTitulo(sinPrefijo) || null;
 }
 
+/**
+ * Una respuesta de Migue en texto llano, para mostrarla donde no se puede armar
+ * el markdown reducido con nodos React.
+ *
+ * Migue contesta con un markdown muy chico: negritas, listas con guion y enlaces
+ * internos. En el chat eso se dibuja con nodos React (ver `renderizar` en
+ * src/components/Chat.tsx, que NO usa dangerouslySetInnerHTML y asi tiene que
+ * seguir). En el panel del equipo la respuesta se muestra recortada a unas pocas
+ * lineas, y ahi imprimir el texto crudo dejaba los `**` a la vista: la ficha dice
+ * "lo que leyo la persona", pero la persona leyo negrita, no asteriscos.
+ *
+ * Saca las marcas y deja el contenido: los `**` se van, un enlace queda en su
+ * texto visible, cada item de lista pasa a ir separado por " · " y los saltos se
+ * colapsan en una linea, que es lo que sirve para hojear una lista de fichas.
+ * No interpreta nada mas, asi que no puede inventar formato que Migue no escribio.
+ */
+export function aTextoLlano(bruto: string | null | undefined): string {
+  if (!bruto) return "";
+  return bruto
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\[([^\]]+)\]\((\/[^)\s]*)\)/g, "$1")
+    // Un item de lista al principio de linea pasa a separador, para que las
+    // listas de Migue no queden pegadas al recortar los saltos.
+    .replace(/^\s*[-*•]\s+/gm, " · ")
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^\s*·\s*/, "")
+    .trim();
+}
+
 /** Similitud de Jaccard entre los tokens de dos textos. Para detectar duplicados. */
 export function similitud(a: string, b: string): number {
   const tokens = (texto: string) =>

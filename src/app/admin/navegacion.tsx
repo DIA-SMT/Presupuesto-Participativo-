@@ -51,6 +51,7 @@ type Enlace = { href: string; texto: string; soloAdmin?: boolean };
 const ENLACES: Enlace[] = [
   { href: "/admin", texto: "Propuestas" },
   { href: "/admin/tablero", texto: "Tablero" },
+  { href: "/admin/migue", texto: "Migue" },
   { href: "/admin/ediciones", texto: "Etapa del proceso", soloAdmin: true },
 ];
 
