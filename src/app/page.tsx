@@ -56,7 +56,7 @@ export default async function Home() {
                 <dd className="flex items-baseline gap-2">
                   <span
                     className="text-2xl font-bold tabular-nums"
-                    style={{ color: "var(--color-marca-800)" }}
+                    style={{ color: "var(--marca-texto)" }}
                   >
                     {item.valor}
                   </span>

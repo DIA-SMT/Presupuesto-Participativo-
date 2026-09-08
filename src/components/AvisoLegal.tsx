@@ -172,7 +172,7 @@ export default function AvisoLegal({ textos }: { textos: Record<string, string> 
           <ol className="grid gap-4">
             <FuncionIA
               titulo="El chat de consultas"
-              color="var(--color-marca-600)"
+              color="var(--marca-texto)"
               queHace="Responde preguntas en lenguaje natural consultando los mismos datos publicados que ves en las páginas. No recibe la base entera ni tiene conocimiento propio del programa: si un dato no está cargado, lo dice en lugar de inventarlo."
               limite="Puede equivocarse, resumir mal o quedar desactualizado. Sus respuestas son orientativas: no son una respuesta oficial del municipio, no constituyen notificación, no generan derechos ni obligaciones y no reemplazan un trámite. Antes de tomar una decisión, verificá el dato en la ficha del proyecto o en la página correspondiente."
             />

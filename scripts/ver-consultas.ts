@@ -32,6 +32,44 @@ async function main() {
   console.log("\nPor origen:");
   console.table(porOrigen);
 
+  // Que pregunta la gente, agrupado. Solo `origen = 'chat'`: en las otras dos
+  // funciones `pregunta` no es la pregunta de una persona, y mezclarlas fue
+  // justamente lo que volvio ilegible al listado que tenia el panel.
+  //
+  // Se agrupa por `pregunta_normalizada`, que ya viene en minusculas, sin
+  // tildes y sin signos: "¿Cómo voto?" y "como voto" cuentan como una sola. Las
+  // filas anteriores a la migracion 0008 la tienen en NULL y quedan fuera; el
+  // conteo de abajo dice cuantas son, para que el total no parezca perdido.
+  const repetidas = await sql`
+    SELECT pregunta_normalizada AS pregunta,
+           count(*)::int AS veces,
+           max(created_at)::date AS ultima
+      FROM chat_consultas
+     WHERE origen = 'chat'
+       AND pregunta_normalizada IS NOT NULL
+     GROUP BY pregunta_normalizada
+     ORDER BY veces DESC, ultima DESC
+     LIMIT 15
+  `;
+  const [{ sin_clave: sinClave }] = await sql`
+    SELECT count(*)::int AS sin_clave
+      FROM chat_consultas
+     WHERE origen = 'chat'
+       AND pregunta_normalizada IS NULL
+  `;
+  console.log("\nQué pregunta la gente (chat, agrupado sin tildes ni signos):");
+  if (repetidas.length) console.table(repetidas);
+  else console.log("  todavía no hay ninguna consulta con la clave cargada.");
+  if (sinClave > 0) {
+    console.log(
+      `  (${sinClave} consulta${sinClave === 1 ? "" : "s"} anterior${
+        sinClave === 1 ? "" : "es"
+      } a la migración 0008 no tiene${sinClave === 1 ? "" : "n"} clave y no entra${
+        sinClave === 1 ? "" : "n"
+      } en el agrupado.)`,
+    );
+  }
+
   await sql.end();
 }
 

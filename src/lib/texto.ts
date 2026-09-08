@@ -21,6 +21,28 @@ export function slugificar(texto: string, maximo = 90): string {
   return base.slice(0, maximo).replace(/-[^-]*$/, "");
 }
 
+/**
+ * Clave con la que dos preguntas al chat cuentan como la misma. Es lo que se
+ * guarda en `chat_consultas.pregunta_normalizada`.
+ *
+ * `normalizar` baja a minusculas y saca las tildes, pero deja los signos: sin
+ * limpiarlos, "¿Cómo voto?" y "como voto" quedan en dos grupos distintos, que es
+ * justo lo que se quiere evitar. Asi que ademas se reemplaza todo lo que no sea
+ * letra o numero por un espacio y se colapsan los espacios. Los numeros se
+ * conservan: "distrito 5" y "distrito 9" no son la misma pregunta.
+ *
+ * Devuelve null cuando no queda nada con que agrupar (un "?", un "!!", espacios
+ * en blanco). Si en ese caso devolviera la cadena vacia, todas esas consultas
+ * caerian en un mismo grupo y el recuento diria que alguien pregunto lo mismo
+ * seis veces.
+ */
+export function claveDePregunta(pregunta: string): string | null {
+  const clave = normalizar(pregunta)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  return clave.length ? clave : null;
+}
+
 /** Palabras que se mantienen en minuscula al recomponer un titulo. */
 const MINUSCULAS = new Set([
   "a", "al", "ante", "con", "de", "del", "desde", "e", "el", "en", "entre",

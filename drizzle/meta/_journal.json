@@ -50,6 +50,20 @@
       "when": 1787710682954,
       "tag": "0006_informes_impacto",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788792114447,
+      "tag": "0007_un_ganador_por_distrito",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788792715312,
+      "tag": "0008_pregunta_normalizada",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@ import { HERRAMIENTAS, ejecutarHerramienta } from "@/lib/chat-herramientas";
 import { responderSinIA } from "@/lib/chat-sin-ia";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
+import { claveDePregunta } from "@/lib/texto";
 import {
   CONSUMO_VACIO,
   crearCliente,
@@ -411,6 +412,10 @@ async function registrar(datos: {
     await db.insert(chatConsultas).values({
       origen: "chat",
       pregunta: datos.pregunta,
+      // Se calcula aca y no al leer: la base no tiene unaccent (ver CLAUDE.md),
+      // asi que sin esta columna no hay forma de agrupar dos formas de escribir
+      // la misma pregunta.
+      preguntaNormalizada: claveDePregunta(datos.pregunta),
       respuesta: datos.respuesta,
       herramientas: datos.herramientas,
       modelo: datos.modelo,

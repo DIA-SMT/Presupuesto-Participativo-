@@ -299,6 +299,22 @@ export const ideas = pgTable(
     // El numero es el identificador que el vecino ve: no puede repetirse
     // dentro de una edicion. Verificado: las 100 ideas de 2025 ya lo cumplen.
     uniqueIndex("ideas_edicion_numero_idx").on(t.edicionId, t.numero),
+    /**
+     * Un distrito, un ganador. Es la regla central del programa: cada distrito
+     * elige un proyecto y ese proyecto entra al presupuesto del ano siguiente.
+     *
+     * Hasta ahora vivia solo en el codigo de `proclamarGanador`. Ahora la
+     * garantiza la base, que es lo unico que no se puede saltear con un bug, un
+     * script o una carga a mano. Se pudo agregar recien cuando el checkbox
+     * "Ganadora" salio del formulario viejo y `proclamarGanador` quedo como
+     * unico escritor de la columna.
+     *
+     * Verificado antes de aplicarlo: los 19 ganadores de 2025 son uno por
+     * distrito, ninguno sin distrito asignado.
+     */
+    uniqueIndex("ideas_un_ganador_por_distrito_idx")
+      .on(t.edicionId, t.distritoId)
+      .where(sql`${t.ganador}`),
   ],
 );
 
@@ -618,6 +634,23 @@ export const chatConsultas = pgTable("chat_consultas", {
    */
   origen: origenConsulta("origen").notNull().default("chat"),
   pregunta: text("pregunta").notNull(),
+  /**
+   * La pregunta en minusculas, sin tildes y sin signos, para poder AGRUPAR.
+   * "¿Cómo voto?" y "como voto" son la misma pregunta y tienen que contar como
+   * una sola; sin esta columna cada forma de escribirla es una fila distinta y
+   * no se ve que es lo que la gente pregunta de verdad.
+   *
+   * Se guarda calculada al registrar la consulta (`claveDePregunta` en
+   * src/lib/texto.ts) y no se calcula al leer, porque la base no tiene la
+   * extension unaccent y no se va a agregar (ver CLAUDE.md).
+   *
+   * Se llena SOLO cuando `origen = 'chat'`. En las otras dos funciones el campo
+   * `pregunta` no es la pregunta de una persona: el asistente de carga guarda el
+   * texto de la propuesta y el informe de impacto guarda el pedido del panel.
+   * Agruparlos no significa nada y ensuciaria el recuento. NULL aca quiere decir
+   * "esto no es una pregunta, no lo agrupes".
+   */
+  preguntaNormalizada: text("pregunta_normalizada"),
   respuesta: text("respuesta"),
   herramientas: jsonb("herramientas").$type<string[]>(),
   modelo: varchar("modelo", { length: 60 }),

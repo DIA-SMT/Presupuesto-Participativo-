@@ -150,7 +150,7 @@ export default function SelectorEtapa({
                 style={{
                   background: "var(--fondo-tarjeta)",
                   border: "1px solid var(--color-marca-600)",
-                  color: "var(--color-marca-700)",
+                  color: "var(--marca-texto)",
                 }}
               >
                 {cambia ? "Ver qué implica el cambio…" : "Ya está en esta etapa"}
@@ -250,7 +250,7 @@ function BloqueConfirmacion({
           Cancelar
         </button>
         {error && (
-          <span role="alert" className="text-sm" style={{ color: "var(--color-acento-700)" }}>
+          <span role="alert" className="text-sm" style={{ color: "var(--acento-texto)" }}>
             {error}
           </span>
         )}

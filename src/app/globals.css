@@ -62,9 +62,16 @@
 }
 
 /*
- * El sitio tiene una sola cara: la institucional clara. No se adapta al tema
- * oscuro del sistema a proposito, para que la identidad municipal se vea
- * igual en cualquier dispositivo.
+ * La paleta clara es la institucional y es la que define la identidad. El sitio
+ * ADEMAS acompana al tema oscuro del sistema: quien lo tiene puesto lo tiene
+ * puesto para leer, no por gusto, y servirle una pantalla blanca a pantalla
+ * completa de noche es peor identidad que respetarle la eleccion. Lo que se
+ * mantiene igual en los dos temas es la marca (el azul del isotipo, el logo, la
+ * tipografia); lo que cambia son las superficies y el color del texto.
+ *
+ * Los colores se definen SIEMPRE aca, en :root pelado, y el bloque de abajo solo
+ * redefine los que cambian. Un color cuya unica definicion viva dentro del
+ * @media desaparece en claro.
  */
 :root {
   --fondo: #ffffff;
@@ -94,7 +101,57 @@
    * decoracion y no tienen requisito de contraste.
    */
   --borde-control: color-mix(in srgb, var(--texto) 55%, transparent);
-  color-scheme: only light;
+  /*
+   * El acento cuando es TEXTO, no fondo.
+   *
+   * La rampa --color-acento-* del @theme esta oscurecida a proposito para poner
+   * texto BLANCO encima (asi se usa en los botones y en las barras de los
+   * graficos). Usada al reves, como color de letra sobre el fondo oscuro, no
+   * llega: medido, --color-acento-700 sobre una tarjeta oscura da 2.96:1 y el
+   * 600 da 3.30:1, contra el 4.5:1 que pide WCAG 1.4.3 para texto normal.
+   *
+   * Aclarar la rampa no era la salida: los mismos tokens son fondo con texto
+   * blanco en decenas de lugares y aclararlos rompia ESE contraste. Asi que el
+   * rol de "texto de acento" tiene su propio token, que si cambia con el tema.
+   */
+  --acento-texto: #92400e;
+  /*
+   * El azul de marca cuando es TEXTO, por lo mismo que --acento-texto.
+   *
+   * La rampa --color-marca-* del @theme tambien se usa como FONDO con texto
+   * blanco encima (los botones, las pastillas, el encabezado del panel), asi que
+   * no se puede aclarar en oscuro sin romper ESE contraste. El rol de "texto
+   * azul" va aparte.
+   *
+   * Los --color-cat-* no necesitan token propio porque nunca son fondo: se usan
+   * unicamente como color de letra, asi que se redefinen abajo directamente.
+   */
+  --marca-texto: #084fc4;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0c141f;
+    --fondo-suave: #111c2b;
+    --fondo-tarjeta: #141f30;
+    --borde: #243449;
+    --texto: #e8eef7;
+    --texto-suave: #9aa9c0;
+    /* Ambar claro: 11.2:1 sobre --fondo-tarjeta. */
+    --acento-texto: #fcd34d;
+    /* El paso 300 de la rampa: 9.4:1 sobre --fondo-tarjeta. */
+    --marca-texto: #8ec7fc;
+    /*
+     * Categorias aclaradas. Las del @theme estan calculadas para leerse sobre
+     * blanco (la urbana daba 2.38:1 sobre el fondo oscuro) y solo se usan como
+     * texto, asi que aca se reemplazan enteras en lugar de duplicarse.
+     */
+    --color-cat-ambiental: #5fd18e;
+    --color-cat-deportivo: #f0955a;
+    --color-cat-urbana: #c3a5e8;
+    color-scheme: dark;
+  }
 }
 
 @layer base {
@@ -266,6 +323,13 @@
 }
 .maplibregl-ctrl-group button + button {
   border-top-color: var(--borde) !important;
+}
+/* Los iconos de los controles de MapLibre son PNG negros embebidos: sobre el
+   fondo oscuro de los botones quedan invisibles y hay que invertirlos. */
+@media (prefers-color-scheme: dark) {
+  .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+    filter: invert(1) hue-rotate(180deg);
+  }
 }
 
 /*
