@@ -335,7 +335,7 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
   {
     dato: "Tu voto",
     caracter: "Obligatorio para poder votar",
-    color: "var(--color-estado-ganador)",
+    color: "var(--ganador-texto)",
     finalidad:
       "Al votar se registra el proyecto elegido junto con tu registro del padrón: es lo que permite garantizar un voto por persona y auditar el recuento. Los resultados se publican solo agregados (por proyecto y por distrito), nunca persona por persona.",
   },

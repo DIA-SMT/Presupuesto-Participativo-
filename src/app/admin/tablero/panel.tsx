@@ -211,7 +211,7 @@ export default function PanelTablero({
           titulo="Proyectos ganadores"
           valor={formatearNumero(resumen.ganadores)}
           detalle="Sobre 20 distritos. Se proclaman de uno en uno desde la bandeja."
-          color="var(--color-estado-ganador)"
+          color="var(--ganador-texto)"
         />
         <Tarjeta
           titulo="Presupuesto de la edición"
@@ -355,7 +355,7 @@ export default function PanelTablero({
                     </td>
                     <td className="px-3 py-3">
                       {fila.tituloGanador ? (
-                        <span style={{ color: "var(--color-estado-ganador)" }}>
+                        <span style={{ color: "var(--ganador-texto)" }}>
                           <span aria-hidden="true">★ </span>
                           {fila.tituloGanador}
                         </span>
@@ -482,7 +482,7 @@ export default function PanelTablero({
                 {
                   etiqueta: "Asignado a los proyectos ganadores",
                   valor: resumen.presupuestoAsignado,
-                  color: "var(--color-estado-ganador)",
+                  color: "var(--ganador-texto)",
                 },
                 {
                   etiqueta: "Sin asignar",

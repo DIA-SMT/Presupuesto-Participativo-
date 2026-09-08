@@ -23,7 +23,7 @@ export const COLOR_ESTADO: Record<string, string> = {
   factible: "var(--color-estado-factible)",
   no_factible: "var(--color-estado-nofactible)",
   integrado: "var(--color-estado-integrado)",
-  ganador: "var(--color-estado-ganador)",
+  ganador: "var(--ganador-texto)",
 };
 
 export const ETIQUETA_PRESUPUESTO: Record<string, string> = {
