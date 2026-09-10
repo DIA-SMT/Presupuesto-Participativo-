@@ -54,7 +54,7 @@
 import { useEffect, useRef, useState } from "react";
 import DocumentoIdea, { type BloqueActivo } from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
-import type { RespuestaAsistente } from "@/app/api/ideas/asistente/route";
+import type { PropuestaIA, RespuestaAsistente } from "@/app/api/ideas/asistente/route";
 
 type Categoria = { slug: string; nombre: string; descripcion: string };
 
@@ -120,6 +120,15 @@ const PREGUNTA_DEL_CAMPO: Record<string, string> = {
   titulo: "Título de la idea",
   categoria: "Categoría",
 };
+
+/** Los campos que la IA puede reescribir, en el orden en que se muestran. */
+type CampoPropuesta = "titulo" | "solucion" | "problema" | "beneficios";
+const CAMPOS_PROPUESTA: Array<{ campo: CampoPropuesta; etiqueta: string }> = [
+  { campo: "titulo", etiqueta: PREGUNTA_DEL_CAMPO.titulo },
+  { campo: "solucion", etiqueta: PREGUNTA_DEL_CAMPO.solucion },
+  { campo: "problema", etiqueta: PREGUNTA_DEL_CAMPO.problema },
+  { campo: "beneficios", etiqueta: PREGUNTA_DEL_CAMPO.beneficios },
+];
 
 export default function FormularioIdea({
   categorias,
@@ -455,12 +464,11 @@ export default function FormularioIdea({
   }
 
   /**
-   * Aplica el texto propuesto a los campos. Solo se llama si la persona acepta,
-   * y escribe unicamente lo que la IA devolvio: lo que vino null no se toca.
+   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
+   * retoques que les haya hecho (ver CampoPropuesto). Lo que viene null no se
+   * toca: puede ser un campo que la IA no reescribio o uno que ella quito.
    */
-  function aplicarPropuesta() {
-    const p = revision?.propuesta;
-    if (!p) return;
+  function aplicarPropuesta(p: PropuestaIA) {
     const escribir = (
       ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
       campo: keyof typeof valores,
@@ -1397,7 +1405,8 @@ function PanelRevision({
   elegidos: string[];
   onTildar: (nombre: string) => void;
   onAgregar: () => void;
-  onAplicar: () => void;
+  /** Recibe SOLO los campos que la persona dejo, ya con sus retoques. */
+  onAplicar: (elegido: PropuestaIA) => void;
   onDescartar: () => void;
   ocupado: boolean;
 }) {
@@ -1407,6 +1416,41 @@ function PanelRevision({
     (propuesta.titulo || propuesta.solucion || propuesta.problema || propuesta.beneficios);
   const todoBien =
     !faltantes.length && !parecidas.length && !senalamientos.length && !hayPropuesta && !aviso;
+
+  /**
+   * Lo que la persona retoco y lo que decidio no usar, por campo.
+   *
+   * Vive aca y no en el formulario porque muere con la revision: cuando llega
+   * una propuesta nueva se arranca de cero. La `key` del efecto es el texto
+   * mismo de la propuesta y no su identidad de objeto, porque el objeto se
+   * recrea en cada render del padre.
+   */
+  const [borradores, setBorradores] = useState<Partial<Record<CampoPropuesta, string>>>({});
+  const [descartados, setDescartados] = useState<Partial<Record<CampoPropuesta, boolean>>>({});
+  const huella = JSON.stringify(propuesta);
+  useEffect(() => {
+    setBorradores({});
+    setDescartados({});
+  }, [huella]);
+
+  /** Lo que se va a escribir en el formulario: lo no descartado, ya editado. */
+  const aAplicar: PropuestaIA = {
+    titulo: null,
+    solucion: null,
+    problema: null,
+    beneficios: null,
+  };
+  if (propuesta) {
+    for (const { campo } of CAMPOS_PROPUESTA) {
+      const original = propuesta[campo];
+      if (!original || descartados[campo]) continue;
+      const texto = (borradores[campo] ?? original).trim();
+      // Un campo que quedo vacio de tanto borrar no se aplica: escribirlo
+      // vaciaria lo que la persona ya tenia.
+      if (texto) aAplicar[campo] = texto;
+    }
+  }
+  const cuantosVanAAplicarse = CAMPOS_PROPUESTA.filter(({ campo }) => aAplicar[campo]).length;
 
   return (
     <section
@@ -1436,44 +1480,53 @@ function PanelRevision({
             A partir de lo que escribiste, sin agregar datos nuevos. Si no te representa, dejá el
             tuyo.
           </p>
-          <div
-            className="mt-2.5 space-y-2.5 rounded-xl p-4 text-sm leading-relaxed"
-            style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
-          >
-            {propuesta.titulo && (
-              <p>
-                <span className="font-semibold">Título: </span>
-                {propuesta.titulo}
-              </p>
-            )}
-            {propuesta.solucion && (
-              <p>
-                <span className="font-semibold">{PREGUNTA_DEL_CAMPO.solucion} </span>
-                {propuesta.solucion}
-              </p>
-            )}
-            {propuesta.problema && (
-              <p>
-                <span className="font-semibold">{PREGUNTA_DEL_CAMPO.problema} </span>
-                {propuesta.problema}
-              </p>
-            )}
-            {propuesta.beneficios && (
-              <p>
-                <span className="font-semibold">{PREGUNTA_DEL_CAMPO.beneficios} </span>
-                {propuesta.beneficios}
-              </p>
-            )}
+          {/* Un campo por vez, no todo junto. Antes eran los cuatro en un solo
+              bloque con "usar" o "descartar": si el titulo estaba bien pero la
+              reescritura del problema no gustaba, no habia salida. */}
+          <div className="mt-2.5 grid gap-2">
+            {CAMPOS_PROPUESTA.map(({ campo, etiqueta }) => {
+              const original = propuesta[campo];
+              if (!original) return null;
+              return (
+                <CampoPropuesto
+                  key={campo}
+                  etiqueta={etiqueta}
+                  original={original}
+                  texto={borradores[campo] ?? original}
+                  descartado={Boolean(descartados[campo])}
+                  minimo={MINIMOS[campo as keyof typeof MINIMOS]}
+                  maximo={LARGOS[campo]}
+                  enUnaLinea={campo === "titulo"}
+                  ocupado={ocupado}
+                  onEscribir={(valor) => setBorradores((p) => ({ ...p, [campo]: valor }))}
+                  onRestaurar={() =>
+                    setBorradores((p) => {
+                      const { [campo]: _fuera, ...resto } = p;
+                      return resto;
+                    })
+                  }
+                  onQuitar={() => setDescartados((p) => ({ ...p, [campo]: true }))}
+                  onVolverAIncluir={() =>
+                    setDescartados((p) => {
+                      const { [campo]: _fuera, ...resto } = p;
+                      return resto;
+                    })
+                  }
+                />
+              );
+            })}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={onAplicar}
-              disabled={ocupado}
+              onClick={() => onAplicar(aAplicar)}
+              disabled={ocupado || cuantosVanAAplicarse === 0}
               className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
               style={{ background: "var(--color-marca-700)" }}
             >
-              Usar este texto
+              {cuantosVanAAplicarse === 1
+                ? "Aplicar el campo elegido"
+                : `Aplicar los ${cuantosVanAAplicarse} campos`}
             </button>
             <button
               type="button"
@@ -1489,6 +1542,11 @@ function PanelRevision({
               Dejar el mío
             </button>
           </div>
+          {cuantosVanAAplicarse === 0 && (
+            <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+              Quitaste todos los campos, así que no hay nada para aplicar.
+            </p>
+          )}
         </div>
       )}
 
@@ -1786,5 +1844,170 @@ function RielDePasos({
         );
       })}
     </nav>
+  );
+}
+
+/**
+ * Un campo de la propuesta de la IA, con sus tres estados: como vino, en
+ * edicion, o quitado.
+ *
+ * El contador del modo edicion muestra el minimo del campo a proposito: es
+ * exactamente lo que reclaman los "faltantes" de mas arriba, y asi la persona lo
+ * ve mientras escribe en lugar de enterarse cuando envia.
+ */
+function CampoPropuesto({
+  etiqueta,
+  original,
+  texto,
+  descartado,
+  minimo,
+  maximo,
+  enUnaLinea,
+  ocupado,
+  onEscribir,
+  onRestaurar,
+  onQuitar,
+  onVolverAIncluir,
+}: {
+  etiqueta: string;
+  /** Lo que devolvio la IA, para poder volver a el. */
+  original: string;
+  texto: string;
+  descartado: boolean;
+  /** `undefined` en los campos que no tienen minimo, como beneficios. */
+  minimo: number | undefined;
+  maximo: number;
+  enUnaLinea: boolean;
+  ocupado: boolean;
+  onEscribir: (valor: string) => void;
+  onRestaurar: () => void;
+  onQuitar: () => void;
+  onVolverAIncluir: () => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const retocado = texto !== original;
+  const largo = texto.trim().length;
+  const cortoDeMas = minimo !== undefined && largo < minimo;
+
+  if (descartado) {
+    return (
+      <div
+        className="rounded-xl px-3.5 py-3"
+        style={{ background: "var(--fondo)", border: "1px dashed var(--borde)" }}
+      >
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--texto-suave)" }}>
+          {etiqueta}
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm" style={{ color: "var(--texto-suave)" }}>
+          Este campo queda como lo escribiste vos.
+          <button
+            type="button"
+            onClick={onVolverAIncluir}
+            disabled={ocupado}
+            className="font-semibold underline underline-offset-2 disabled:opacity-50"
+            style={{ color: "var(--marca-texto)" }}
+          >
+            Volver a incluirlo
+          </button>
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-xl px-3.5 py-3"
+      style={{
+        background: "var(--fondo)",
+        border: `1px solid ${editando ? "var(--marca-texto)" : "var(--borde)"}`,
+      }}
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--texto-suave)" }}>
+          {etiqueta}
+          {retocado && (
+            <span className="ml-2 normal-case" style={{ color: "var(--marca-texto)" }}>
+              retocado por vos
+            </span>
+          )}
+        </p>
+        <div className="flex items-center gap-3 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setEditando((v) => !v)}
+            disabled={ocupado}
+            className="underline underline-offset-2 disabled:opacity-50"
+            style={{ color: "var(--marca-texto)" }}
+          >
+            {editando ? "Listo" : "Editar"}
+          </button>
+          <button
+            type="button"
+            onClick={onQuitar}
+            disabled={ocupado}
+            className="underline underline-offset-2 disabled:opacity-50"
+            style={{ color: "var(--texto-suave)" }}
+          >
+            Quitar
+          </button>
+        </div>
+      </div>
+
+      {editando ? (
+        <>
+          {enUnaLinea ? (
+            <input
+              type="text"
+              value={texto}
+              onChange={(e) => onEscribir(e.target.value)}
+              maxLength={maximo}
+              disabled={ocupado}
+              className="mt-2 w-full rounded-lg px-3 py-2 text-sm"
+              style={{
+                background: "var(--fondo-tarjeta)",
+                border: "1px solid var(--borde-control)",
+                color: "var(--texto)",
+              }}
+            />
+          ) : (
+            <textarea
+              value={texto}
+              onChange={(e) => onEscribir(e.target.value)}
+              maxLength={maximo}
+              rows={5}
+              disabled={ocupado}
+              className="mt-2 w-full rounded-lg px-3 py-2 text-sm leading-relaxed"
+              style={{
+                background: "var(--fondo-tarjeta)",
+                border: "1px solid var(--borde-control)",
+                color: "var(--texto)",
+              }}
+            />
+          )}
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+            <span style={{ color: cortoDeMas ? "var(--acento-texto)" : "var(--texto-suave)" }}>
+              {largo} de {maximo} caracteres
+              {minimo !== undefined &&
+                (cortoDeMas
+                  ? ` · le faltan ${minimo - largo} para el mínimo de ${minimo}`
+                  : ` · pasa el mínimo de ${minimo}`)}
+            </span>
+            {retocado && (
+              <button
+                type="button"
+                onClick={onRestaurar}
+                disabled={ocupado}
+                className="font-semibold underline underline-offset-2 disabled:opacity-50"
+                style={{ color: "var(--texto-suave)" }}
+              >
+                Volver al texto de la IA
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="mt-1.5 text-sm leading-relaxed">{texto}</p>
+      )}
+    </div>
   );
 }
