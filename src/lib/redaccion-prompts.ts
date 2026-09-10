@@ -70,7 +70,29 @@ Lo que escribió la persona:
 Formalizado:
 "La plaza del barrio no cuenta con iluminación. Durante la tarde los chicos la usan para jugar, pero cuando oscurece tienen que irse porque no se puede circular por el lugar. La falta de luz deja la plaza sin uso a partir del atardecer."
 
-Mirá lo que pasó ahí: se ordenó (primero de qué lugar se habla, después qué pasa), se corrigió la ortografía, se pasó de "los pibes" y "no se puede pasar" a un registro presentable, y se nombró el problema de fondo que la persona había dejado implícito. Y no apareció ni un dato que ella no hubiera escrito: ni cuántos chicos, ni a qué hora, ni el nombre de la plaza.`;
+Mirá lo que pasó ahí: se ordenó (primero de qué lugar se habla, después qué pasa), se corrigió la ortografía, se pasó de "los pibes" y "no se puede pasar" a un registro presentable, y se nombró el problema de fondo que la persona había dejado implícito. Y no apareció ni un dato que ella no hubiera escrito: ni cuántos chicos, ni a qué hora, ni el nombre de la plaza.
+
+# Hasta dónde desarrollar
+
+El ejemplo de arriba es corto porque el texto de entrada era corto. Cuando la
+persona aporta más, la respuesta tiene que aprovechar TODO lo que aportó: no la
+recortes a tres oraciones porque el ejemplo tenga tres.
+
+Lo que escribió la persona:
+"la vereda de la escuela esta rota hace rato, hay baldosas flojas y pozos, las madres van con los chicos y tienen que bajar a la calle para poder pasar, y por ahi pasan autos"
+
+Formalizado:
+"La vereda que da a la escuela está deteriorada: hay baldosas flojas y pozos en el recorrido. Quienes acompañan a los chicos hasta la escuela no pueden circular por ella y bajan a la calzada para poder pasar. Como se trata de una calle por la que circulan autos, el mal estado de la vereda termina obligando a caminar por donde pasan los vehículos. El deterioro no solo dificulta el paso: desplaza a la vereda a quienes la usan todos los días para llegar a la escuela."
+
+Cuatro oraciones y ninguna rellena: la primera dice qué pasa y dónde, la segunda
+quiénes lo sufren y qué hacen, la tercera por qué eso importa, la cuarta nombra
+el problema de fondo. Todo sale de lo que ella escribió — la escuela, las
+baldosas, los pozos, las madres, los chicos, los autos. No aparecieron ni cuántas
+baldosas, ni hace cuánto, ni el nombre de la escuela, ni la palabra "peligro".
+
+Esa es la regla: **desarrollá hasta donde alcance lo que la persona aportó, y ni
+una oración más.** Si aportó poco, queda corto y está bien. Si aportó bastante,
+quedarte en dos oraciones es desaprovecharlo.`;
 
 /** Sistema para formalizar el problema o la solucion que escribio la persona. */
 export function sistemaFormalizar(campo: "problema" | "solucion"): string {
@@ -109,16 +131,27 @@ export function sistemaFormalizar(campo: "problema" | "solucion"): string {
 
 # Además del texto: los aspectos para ofrecer
 
-Devolvés también \`detalles\`: entre 0 y 6 aspectos de obra que el municipio suele pedir para algo como lo que la persona propone, y que **ella no mencionó**. Cada uno tiene dos partes:
+Devolvés también \`detalles\`: entre 0 y 6 aspectos de obra que el municipio suele pedir para algo como lo que la persona propone, y que **ella no mencionó**. Cada uno tiene TRES partes:
 
 - \`nombre\`: el aspecto en sí. Frase corta, en minúscula, sin verbo: "piso de hormigón alisado", "iluminación para uso nocturno", "cerco perimetral", "rampa de acceso", "delimitación de canchas".
-- \`porQue\`: **para qué sirve, en una frase.** Concreto y técnico, en lenguaje llano: qué problema evita o qué habilita. La persona no es del rubro y tiene que poder decidir si lo quiere o no; una lista de nombres sueltos no le dice nada y termina tildando a ciegas o sin tildar nada.
+- \`porQue\`: **para qué sirve, en una frase.** Concreto y técnico, en lenguaje llano: qué problema evita o qué habilita. La persona no es del rubro y tiene que poder decidir si lo quiere o no.
+- \`mejora\`: **qué gana ESTA propuesta si lo incluye, en una o dos frases.** No repitas \`porQue\` con otras palabras: \`porQue\` habla del aspecto en general, \`mejora\` habla de la propuesta que tenés delante. Enganchá con lo que la persona escribió: con el problema que contó, con quiénes dijo que usan el lugar, con lo que dijo que quiere que pase ahí. Y cuando corresponda, decí qué le pasa a la propuesta en la evaluación: si sin ese aspecto el equipo técnico no puede presupuestarla, o si es algo que el municipio va a observar igual.
 
-Ejemplos del nivel de explicación que se espera. Son de una obra de calle, para que se vea el nivel y no el tema: adaptalo al tipo de obra que tengas delante.
+Ejemplos del nivel que se espera. Son de una obra de calle, para que se vea el nivel y no el tema: adaptalo al tipo de obra que tengas delante y a lo que la persona haya contado.
 
-- "cordón cuneta" → "Encauza el agua de lluvia hacia el desagüe y evita que se junte sobre la calzada."
-- "rampas en las esquinas" → "Permiten cruzar con silla de ruedas o con cochecito, y son un requisito de accesibilidad en obra pública."
-- "señalización" → "Indica el sentido de circulación y dónde cruzar, para que el cambio no confunda a quien maneja."
+- "cordón cuneta"
+  porQue: "Encauza el agua de lluvia hacia el desagüe y evita que se junte sobre la calzada."
+  mejora: "Es lo que evita que vuelva el agua estancada que contaste. Sin desagüe definido, arreglar la calzada resuelve la mitad del problema y al año siguiente está igual."
+- "rampas en las esquinas"
+  porQue: "Permiten cruzar con silla de ruedas o con cochecito, y son un requisito de accesibilidad en obra pública."
+  mejora: "Saca de la propuesta una observación que el municipio va a hacer igual, y amplía a quiénes alcanza la obra que pediste."
+- "señalización"
+  porQue: "Indica el sentido de circulación y dónde cruzar, para que el cambio no confunda a quien maneja."
+  mejora: "Dijiste que por ahí pasan chicos yendo a la escuela: la señalización es lo que hace que el cruce siga siendo seguro después de la obra."
+
+Fijate en los tres: el \`porQue\` sirve para cualquier calle, la \`mejora\` solo tiene sentido para la propuesta que tenés delante. Si una \`mejora\` te sirve igual para cualquier propuesta, está mal escrita.
+
+Y en la \`mejora\` vale la regla absoluta igual que en todo lo demás: nada de medidas, cantidades, montos ni plazos que la persona no haya escrito.
 
 Reglas:
 
@@ -128,7 +161,30 @@ Reglas:
 - Que sean del tipo de obra que ella propone. Si propone una plaza, no ofrezcas "asfaltado".
 - Si de su texto no se entiende qué obra es, devolvés la lista vacía.
 
-Si en el pedido vienen \`<aspecto_elegido>\`, esos SÍ van dentro del texto: la persona los eligió. Incorporalos como parte natural de lo que propone, sin agregarles medidas ni cantidades, y sin sumar ningún aspecto que no esté en esa lista.`;
+Si en el pedido vienen \`<aspecto_elegido>\`, esos SÍ van dentro del texto: la persona los eligió. Sin agregarles medidas ni cantidades, y sin sumar ningún aspecto que no esté en esa lista.
+
+Y no los enumeres y listo. "Propongo una cancha con cerco perimetral, iluminación,
+arcos y piso" es una lista, no una propuesta: el equipo técnico lee cuatro palabras
+sueltas y no sabe qué papel juega cada una. Integralos diciendo **para qué entra
+cada uno en ESTA propuesta**, usando lo que la persona ya contó — el problema que
+describió, quiénes dijo que usan el lugar, para qué dijo que lo quiere. Si eligió
+muchos, agrupá los que van juntos en una misma oración en lugar de hacer una
+oración por aspecto.
+
+Ejemplo, para una persona que contó que los chicos usan la cancha de tarde y que
+el terreno está lleno de piedras, y que eligió "piso de hormigón" e "iluminación":
+
+Enumerado (mal):
+"Propongo una cancha con piso de hormigón e iluminación."
+
+Integrado (bien):
+"Propongo poner la cancha en condiciones para que los chicos que ya la usan puedan
+jugar sobre una superficie pareja: un piso de hormigón que reemplace el terreno con
+piedras que hay hoy. Sumar iluminación permitiría además que el uso no termine
+cuando cae la tarde."
+
+Ninguna medida, ninguna cantidad, ningún dato nuevo: solo el papel de cada aspecto
+dentro de lo que ella misma planteó.`;
 
   return `${COMUN}
 

@@ -1534,35 +1534,62 @@ function PanelRevision({
         >
           <p className="text-xs font-semibold">¿Querés agregar alguno de estos? Los elegís vos</p>
           <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-            Son cosas que el municipio suele pedir para una obra así y que no escribiste. Abajo de
-            cada una dice para qué sirve. Tildá solo las que quieras.
+            Son cosas que el municipio suele pedir para una obra así y que no escribiste. De cada
+            una dice para qué sirve y qué gana tu propuesta si la incluís. Tildá solo las que
+            quieras.
           </p>
           {/* Cada opcion con su explicacion: sin eso la IA las enumera y la
               persona tilda a ciegas. La explicacion es para decidir y NO entra
               en el texto de la propuesta. */}
-          <ul className="mt-2.5 grid gap-2.5">
-            {detalles.map((detalle) => (
-              <li key={detalle.nombre}>
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 shrink-0"
-                    checked={elegidos.includes(detalle.nombre)}
-                    onChange={() => onTildar(detalle.nombre)}
-                    disabled={ocupado}
-                  />
-                  <span>
-                    <span className="block text-xs font-semibold">{detalle.nombre}</span>
-                    <span
-                      className="mt-0.5 block text-xs leading-relaxed"
-                      style={{ color: "var(--texto-suave)" }}
-                    >
-                      {detalle.porQue}
+          {/* Cada opcion es una tarjeta con las DOS explicaciones separadas.
+              Antes era una linea de 12px con una sola frase generica, que es el
+              texto mas chico de la pantalla justo donde hay que decidir. Y la
+              frase generica servia para cualquier obra: no decia que gana ESTA
+              propuesta, asi que la gente tildaba a ciegas o no tildaba nada. */}
+          <ul className="mt-3 grid gap-2.5">
+            {detalles.map((detalle) => {
+              const tildado = elegidos.includes(detalle.nombre);
+              return (
+                <li key={detalle.nombre}>
+                  <label
+                    className="flex cursor-pointer items-start gap-2.5 rounded-xl p-3.5 transition"
+                    style={{
+                      background: "var(--fondo)",
+                      border: `1px solid ${tildado ? "var(--marca-texto)" : "var(--borde)"}`,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 shrink-0"
+                      checked={tildado}
+                      onChange={() => onTildar(detalle.nombre)}
+                      disabled={ocupado}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">{detalle.nombre}</span>
+                      <span
+                        className="mt-1.5 block text-[13px] leading-relaxed"
+                        style={{ color: "var(--texto-suave)" }}
+                      >
+                        <span className="font-semibold" style={{ color: "var(--texto)" }}>
+                          Para qué sirve.{" "}
+                        </span>
+                        {detalle.porQue}
+                      </span>
+                      <span
+                        className="mt-1 block text-[13px] leading-relaxed"
+                        style={{ color: "var(--texto-suave)" }}
+                      >
+                        <span className="font-semibold" style={{ color: "var(--marca-texto)" }}>
+                          Qué gana tu propuesta.{" "}
+                        </span>
+                        {detalle.mejora}
+                      </span>
                     </span>
-                  </span>
-                </label>
-              </li>
-            ))}
+                  </label>
+                </li>
+              );
+            })}
           </ul>
           {elegidos.length > 0 && (
             <button
