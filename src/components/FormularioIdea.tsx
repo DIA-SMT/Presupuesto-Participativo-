@@ -156,6 +156,14 @@ export default function FormularioIdea({
 
   /** Ultima respuesta del asistente, o null si todavia no se pidio ninguna. */
   const [revision, setRevision] = useState<RespuestaAsistente | null>(null);
+  /**
+   * Que campos aplico la persona de la ultima propuesta.
+   *
+   * Existe para que aplicar deje rastro. Antes el bloque de la propuesta
+   * simplemente desaparecia: la persona apretaba y no quedaba nada que
+   * dijera que se habia escrito ni donde mirarlo.
+   */
+  const [aplicados, setAplicados] = useState<string[] | null>(null);
   /** Aspectos de obra que la persona tildo de la lista que se le ofrecio. */
   const [elegidos, setElegidos] = useState<string[]>([]);
 
@@ -418,6 +426,7 @@ export default function FormularioIdea({
    * Nunca bloquea el envio: si falla, avisa y el formulario sigue andando.
    */
   async function pedirAyuda(agregar?: string[]) {
+    setAplicados(null);
     setEstado({ tipo: "revisando" });
     try {
       const respuesta = await fetch("/api/ideas/asistente", {
@@ -482,6 +491,9 @@ export default function FormularioIdea({
     escribir(refSolucion, "solucion", p.solucion);
     escribir(refProblema, "problema", p.problema);
     escribir(refBeneficios, "beneficios", p.beneficios);
+    setAplicados(
+      CAMPOS_PROPUESTA.filter(({ campo }) => p[campo]).map(({ etiqueta }) => etiqueta),
+    );
     setRevision({ ...revision!, propuesta: null });
   }
 
@@ -994,6 +1006,7 @@ export default function FormularioIdea({
         {revision && (
           <PanelRevision
             revision={revision}
+            aplicados={aplicados}
             elegidos={elegidos}
             onTildar={(nombre) =>
               setElegidos((previo) =>
@@ -1394,6 +1407,7 @@ function IconoChispa() {
  */
 function PanelRevision({
   revision,
+  aplicados,
   elegidos,
   onTildar,
   onAgregar,
@@ -1402,6 +1416,8 @@ function PanelRevision({
   ocupado,
 }: {
   revision: RespuestaAsistente;
+  /** Etiquetas de los campos que ya se aplicaron, o null si todavia no. */
+  aplicados: string[] | null;
   elegidos: string[];
   onTildar: (nombre: string) => void;
   onAgregar: () => void;
@@ -1550,6 +1566,29 @@ function PanelRevision({
         </div>
       )}
 
+      {/* Aplicar deja rastro: el bloque no desaparece, queda plegado diciendo
+          que campos se escribieron. Sin esto la persona apretaba y no le
+          quedaba nada que confirmara que habia pasado algo. */}
+      {aplicados && aplicados.length > 0 && (
+        <Seccion
+          titulo="Aplicamos el texto a tu propuesta"
+          resumen={aplicados.length === 1 ? "1 campo" : `${aplicados.length} campos`}
+          estado="hecho"
+          abierta={false}
+        >
+          <ul className="space-y-1 pl-4 text-sm">
+            {aplicados.map((etiqueta) => (
+              <li key={etiqueta} className="list-disc">
+                {etiqueta}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2.5 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+            Quedaron escritos en los campos del formulario y los podés seguir editando a mano.
+          </p>
+        </Seccion>
+      )}
+
       {/* --- 2. Que le falta ---------------------------------------------- */}
       {faltantes.length > 0 && (
         <ul className="mt-4 space-y-1.5 pl-4 text-sm">
@@ -1561,12 +1600,21 @@ function PanelRevision({
         </ul>
       )}
 
+      {/* Plegado por defecto: son sugerencias para que se entienda mejor, no
+          cosas que bloqueen el envio. Los "faltantes" de arriba SI quedan
+          siempre a la vista, porque sin ellos la propuesta no se puede enviar. */}
       {senalamientos.length > 0 && (
-        <>
-          <p className="mt-4 text-sm font-semibold">Para que se entienda mejor:</p>
+        <Seccion
+          titulo="Para que se entienda mejor"
+          resumen={
+            senalamientos.length === 1 ? "1 sugerencia" : `${senalamientos.length} sugerencias`
+          }
+          estado="info"
+          abierta={false}
+        >
           {/* La pregunta la pone el formulario, no el modelo: asi el nombre que
               lee la persona es siempre el que tiene arriba en la pantalla. */}
-          <ul className="mt-1.5 space-y-1.5 pl-4 text-sm">
+          <ul className="space-y-1.5 pl-4 text-sm">
             {senalamientos.map((senalamiento, indice) => (
               <li key={indice} className="list-disc">
                 {PREGUNTA_DEL_CAMPO[senalamiento.campo] && (
@@ -1581,7 +1629,7 @@ function PanelRevision({
           <p className="mt-3 text-sm leading-relaxed">
             Completá esos datos en los campos y volvé a pedir la ayuda.
           </p>
-        </>
+        </Seccion>
       )}
 
       {/* --- 3. Los aspectos de obra -------------------------------------- */}
@@ -1668,13 +1716,20 @@ function PanelRevision({
       )}
 
       {/* --- 4. Propuestas parecidas -------------------------------------- */}
+      {/* Plegado: es un dato bueno de saber y no cambia nada de lo que la
+          persona tiene que hacer. Puede enviar la suya igual. */}
       {parecidas.length > 0 && (
-        <div className="mt-4">
-          <p className="text-sm font-semibold">
-            Ya hay {parecidas.length === 1 ? "una propuesta parecida" : "propuestas parecidas"} en
-            tu distrito
-          </p>
-          <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
+        <Seccion
+          titulo={
+            parecidas.length === 1
+              ? "Ya hay una propuesta parecida en tu distrito"
+              : "Ya hay propuestas parecidas en tu distrito"
+          }
+          resumen={parecidas.length === 1 ? "1 propuesta" : `${parecidas.length} propuestas`}
+          estado="info"
+          abierta={false}
+        >
+          <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
             Podés presentar la tuya igual. Si son lo mismo, el equipo las integra en un solo
             proyecto.
           </p>
@@ -1699,7 +1754,7 @@ function PanelRevision({
               </li>
             ))}
           </ul>
-        </div>
+        </Seccion>
       )}
 
       {/* El miedo razonable de quien lee esto es que la maquina este puntuando
@@ -2009,5 +2064,97 @@ function CampoPropuesto({
         <p className="mt-1.5 text-sm leading-relaxed">{texto}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * Un bloque plegable del panel.
+ *
+ * Es <details>/<summary> y no estado de React a proposito: se pliega y se abre
+ * con el teclado sin que escribamos nada, no puede desincronizarse, y no hay
+ * riesgo de desajuste de hidratacion por abrir segun algo que el servidor no
+ * sabe. `abierta` es solo el valor INICIAL: despues manda la persona.
+ *
+ * El resumen del encabezado es lo que hace que plegar no sea esconder. Un bloque
+ * cerrado tiene que decir cuanto hay adentro ("3 observaciones"), porque si no
+ * la persona no sabe que se esta perdiendo y no lo abre nunca.
+ */
+function Seccion({
+  titulo,
+  resumen,
+  estado,
+  abierta,
+  children,
+}: {
+  titulo: string;
+  resumen: string;
+  estado: "hecho" | "atencion" | "info";
+  abierta: boolean;
+  children: React.ReactNode;
+}) {
+  const color =
+    estado === "hecho"
+      ? "var(--color-cat-ambiental)"
+      : estado === "atencion"
+        ? "var(--acento-texto)"
+        : "var(--marca-texto)";
+  return (
+    <details
+      open={abierta}
+      className="group mt-2.5 rounded-xl"
+      style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-2.5 px-3.5 py-3 [&::-webkit-details-marker]:hidden">
+        {estado === "hecho" ? (
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="shrink-0"
+            aria-hidden="true"
+          >
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+        ) : (
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="shrink-0"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d={estado === "atencion" ? "M12 8v4M12 16h.01" : "M12 16v-4M12 8h.01"} />
+          </svg>
+        )}
+        <span className="min-w-0 flex-grow text-sm">
+          <span className="font-semibold">{titulo}</span>
+          <span style={{ color: "var(--texto-suave)" }}> · {resumen}</span>
+        </span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--texto-suave)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          className="shrink-0 transition group-open:rotate-180"
+          aria-hidden="true"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </summary>
+      <div className="px-3.5 pb-3.5">{children}</div>
+    </details>
   );
 }
