@@ -20,7 +20,7 @@
  * "Guardar como PDF" produce un PDF de verdad tanto en computadora como en
  * telefono.
  */
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 export type DatosDocumento = {
   titulo: string;
@@ -48,12 +48,36 @@ export type Comprobante = {
 /** Cual de los tres bloques se esta editando, para marcarlo. */
 export type BloqueActivo = "solucion" | "problema" | "beneficios" | null;
 
+/** Los campos del documento que se escriben. El distrito y el punto salen del mapa. */
+export type CampoEditable = "titulo" | "barrio" | "solucion" | "problema" | "beneficios";
+
+/**
+ * Lo que hace falta para que el documento se pueda escribir encima.
+ *
+ * Sin esta prop el componente dibuja EXACTAMENTE lo de hoy: texto y nada mas. Asi
+ * sigue sirviendo de comprobante puro en la pantalla de "idea recibida", que no
+ * tiene nada que editar.
+ *
+ * `topes` viaja como prop en lugar de duplicar los maximos aca: los define
+ * FormularioIdea, que es el que valida.
+ */
+export type EdicionDocumento = {
+  onEscribir: (campo: CampoEditable, valor: string) => void;
+  onElegirCategoria: (slug: string) => void;
+  onFocoBloque: (bloque: BloqueActivo) => void;
+  categorias: ReadonlyArray<{ slug: string; nombre: string }>;
+  categoriaSlug: string;
+  topes: Record<CampoEditable, number>;
+  deshabilitado: boolean;
+};
+
 export default function DocumentoIdea({
   datos,
   anio,
   poligono,
   activo = null,
   comprobante = null,
+  edicion = null,
 }: {
   datos: DatosDocumento;
   anio: number;
@@ -65,23 +89,68 @@ export default function DocumentoIdea({
   poligono?: number[][] | null;
   activo?: BloqueActivo;
   comprobante?: Comprobante | null;
+  edicion?: EdicionDocumento | null;
 }) {
+  // Un id por instancia: el documento se dibuja DOS veces en el formulario (el
+  // panel de al lado y la ventana del telefono), asi que los `aria-labelledby`
+  // de los rotulos no pueden ser constantes o quedarian duplicados.
+  const id = useId();
   return (
     <article className="documento-idea">
       <header className="doc-cabecera">
         <p className="doc-programa">
           Presupuesto Participativo · Edición {anio} · San Miguel de Tucumán
         </p>
-        <h2 className={datos.titulo.trim() ? "doc-titulo" : "doc-titulo doc-vacio"}>
-          {datos.titulo.trim() || "Sin título todavía"}
-        </h2>
+        {edicion ? (
+          <h2 className="doc-titulo">
+            <CampoDoc
+              campo="titulo"
+              valor={datos.titulo}
+              vacio="Sin título todavía"
+              clase="doc-titulo-texto"
+              unaLinea
+              ariaLabel="Título de la idea"
+              edicion={edicion}
+            />
+          </h2>
+        ) : (
+          <h2 className={datos.titulo.trim() ? "doc-titulo" : "doc-titulo doc-vacio"}>
+            {datos.titulo.trim() || "Sin título todavía"}
+          </h2>
+        )}
 
         <dl className="doc-meta">
+          {/* El distrito no se edita: sale de donde se toca el mapa. */}
           <Dato etiqueta="Distrito">
             {datos.distrito ? String(datos.distrito) : "sin marcar"}
           </Dato>
-          <Dato etiqueta="Barrio">{datos.barrio.trim() || "sin indicar"}</Dato>
-          <Dato etiqueta="Categoría">{datos.categoria.trim() || "sin elegir"}</Dato>
+          {/*
+            El editable va ADENTRO del <dd>, no en lugar del <dd>: el par dt/dd
+            es lo que relaciona el rotulo con el dato (1.3.1), y reemplazarlo
+            dejaba el "Barrio" sin nada que etiquetar.
+          */}
+          <Dato etiqueta="Barrio">
+            {edicion ? (
+              <CampoDoc
+                campo="barrio"
+                valor={datos.barrio}
+                vacio="sin indicar"
+                clase="doc-meta-texto"
+                unaLinea
+                ariaLabel="Barrio"
+                edicion={edicion}
+              />
+            ) : (
+              datos.barrio.trim() || "sin indicar"
+            )}
+          </Dato>
+          <Dato etiqueta="Categoría">
+            {edicion ? (
+              <CategoriaDoc edicion={edicion} nombre={datos.categoria} />
+            ) : (
+              datos.categoria.trim() || "sin elegir"
+            )}
+          </Dato>
         </dl>
 
         {datos.punto && (
@@ -100,16 +169,34 @@ export default function DocumentoIdea({
 
       {/* El orden es el de las preguntas del formulario, no el de las columnas
           de la base: primero que se propone, despues por que hace falta. */}
-      <Bloque titulo="Qué se propone" activo={activo === "solucion"}>
+      <Bloque
+        titulo="Qué se propone"
+        activo={activo === "solucion"}
+        campo="solucion"
+        valor={datos.solucion}
+        idRotulo={`${id}-solucion`}
+        edicion={edicion}
+      >
         {datos.solucion.trim() || null}
       </Bloque>
-      <Bloque titulo="Por qué hace falta" activo={activo === "problema"}>
+      <Bloque
+        titulo="Por qué hace falta"
+        activo={activo === "problema"}
+        campo="problema"
+        valor={datos.problema}
+        idRotulo={`${id}-problema`}
+        edicion={edicion}
+      >
         {datos.problema.trim() || null}
       </Bloque>
       <Bloque
         titulo="Quiénes se benefician"
         activo={activo === "beneficios"}
         vacio="Opcional. Todavía sin completar."
+        campo="beneficios"
+        valor={datos.beneficios}
+        idRotulo={`${id}-beneficios`}
+        edicion={edicion}
       >
         {datos.beneficios.trim() || null}
       </Bloque>
@@ -157,17 +244,171 @@ function Bloque({
   activo,
   vacio = "Todavía no lo contaste.",
   children,
+  campo,
+  valor,
+  idRotulo,
+  edicion,
 }: {
   titulo: string;
   activo: boolean;
   vacio?: string;
   children: ReactNode;
+  /** Con `campo` y `edicion`, el cuerpo del bloque se escribe en lugar de leerse. */
+  campo?: CampoEditable;
+  valor?: string;
+  idRotulo?: string;
+  edicion?: EdicionDocumento | null;
 }) {
   return (
     <section className={activo ? "doc-bloque doc-bloque-activo" : "doc-bloque"}>
-      <h3 className="doc-rotulo">{titulo}</h3>
-      <p className={children ? "doc-cuerpo" : "doc-cuerpo doc-vacio"}>{children ?? vacio}</p>
+      <h3 className="doc-rotulo" id={idRotulo}>
+        {titulo}
+      </h3>
+      {edicion && campo ? (
+        <CampoDoc
+          campo={campo}
+          valor={valor ?? ""}
+          vacio={vacio}
+          clase="doc-cuerpo"
+          idRotulo={idRotulo}
+          edicion={edicion}
+        />
+      ) : (
+        <p className={children ? "doc-cuerpo" : "doc-cuerpo doc-vacio"}>{children ?? vacio}</p>
+      )}
     </section>
+  );
+}
+
+/**
+ * Un pedazo del documento que se escribe encima.
+ *
+ * COMO FUNCIONA, porque no se adivina leyendo el JSX: son DOS nodos apilados en
+ * la misma celda de una grilla de 1x1. Abajo, un <span> con el mismo texto que
+ * le da el ALTO a la celda; arriba, un <textarea> transparente que ocupa esa
+ * celda entera. La persona ve el span; escribe en el textarea.
+ *
+ * Por que asi y no un contentEditable, que seria lo obvio: el caret. Un textarea
+ * controlado por React no mueve nunca el cursor, porque React solo escribe el
+ * DOM cuando el valor del render difiere del que el nodo ya tiene, y cuando la
+ * tecla la recibio ese mismo campo ya coinciden. Un contentEditable hay que
+ * reescribirlo a mano cada vez que el texto llega de afuera —y acá llega de
+ * afuera dos veces: cuando el asistente aplica su propuesta y cuando el mapa
+ * completa el barrio—, y cada reescritura manda el cursor al final. Ademas el
+ * textarea trae gratis el pegado en texto plano, el deshacer del navegador, el
+ * teclado del telefono y los acentos del teclado español.
+ *
+ * El alto tampoco se mide: lo pone el span en la misma pasada de layout que la
+ * tecla. Sin `scrollHeight`, sin `style.height`, sin un frame con el alto viejo.
+ *
+ * DOS INVARIANTES DE CSS, y las dos rompen el PDF si alguien las cambia:
+ *   1. El espejo se esconde SOLO con `visibility: hidden`. La hoja de impresion
+ *      destapa con `visibility: visible !important`, asi que con `opacity` o
+ *      `clip-path` el papel saldria vacio.
+ *   2. El textarea se esconde al imprimir SOLO con `display: none`. Con
+ *      `visibility` lo destaparia ese mismo `!important` y el texto saldria dos
+ *      veces, uno encima del otro.
+ */
+function CampoDoc({
+  campo,
+  valor,
+  vacio,
+  clase,
+  unaLinea = false,
+  idRotulo,
+  ariaLabel,
+  edicion,
+}: {
+  campo: CampoEditable;
+  valor: string;
+  vacio: string;
+  clase: string;
+  unaLinea?: boolean;
+  idRotulo?: string;
+  ariaLabel?: string;
+  edicion: EdicionDocumento;
+}) {
+  const bloque: BloqueActivo =
+    campo === "solucion" || campo === "problema" || campo === "beneficios" ? campo : null;
+
+  return (
+    <div className={unaLinea ? "doc-campo doc-campo-corto" : "doc-campo"}>
+      {/*
+        El espejo lleva el texto REAL (sin trim) y el de ejemplo cuando esta
+        vacio, para que la celda tenga alto desde el primer momento. El ​ del
+        final es un espacio de ancho cero: sin el, un texto que termina en salto
+        de linea deja el ultimo renglon sin medir y el campo se corta.
+      */}
+      <span className={`doc-espejo ${clase}${valor ? "" : " doc-vacio"}`} aria-hidden="true">
+        {valor || vacio}
+        {"​"}
+      </span>
+      <textarea
+        className={`doc-campo-entrada ${clase}`}
+        value={valor}
+        rows={1}
+        placeholder={vacio}
+        maxLength={edicion.topes[campo]}
+        disabled={edicion.deshabilitado}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : idRotulo}
+        onChange={(evento) => edicion.onEscribir(campo, evento.target.value)}
+        onFocus={() => edicion.onFocoBloque(bloque)}
+        onBlur={() => edicion.onFocoBloque(null)}
+        /*
+          Sin `name`: este documento se dibuja dos veces DENTRO del mismo <form>
+          que los campos de la izquierda, asi que un name repetido haria que
+          FormData.get() devuelva el primero que encuentre en el DOM y descarte
+          en silencio lo que la persona escribio en el otro.
+        */
+      />
+    </div>
+  );
+}
+
+/**
+ * La categoria dentro del documento.
+ *
+ * Es lo unico que no se escribe: son tres opciones fijas. Va un <select> NATIVO
+ * pintado como el texto de al lado, y no un menu propio, porque el nativo trae
+ * hecho todo lo que habria que reimplementar: el menu del sistema en la
+ * computadora, la rueda en Android, el rotor de VoiceOver, las flechas, Home y
+ * End, y escribir la inicial para saltar a una opcion.
+ *
+ * Trabaja con SLUGS aunque muestre nombres: el formulario guarda el slug, y si
+ * de aca saliera el nombre la validacion no encontraria la categoria y el envio
+ * fallaria con "Elegí una categoría" sin que se entienda por que.
+ *
+ * Para el papel no se imprime el <select> —cada navegador dibuja distinto uno
+ * con `appearance: none`— sino el <span> de al lado, que vive escondido en
+ * pantalla y aparece solo en la hoja.
+ */
+function CategoriaDoc({
+  edicion,
+  nombre,
+}: {
+  edicion: EdicionDocumento;
+  nombre: string;
+}) {
+  return (
+    <span className="doc-cat">
+      <select
+        className={`doc-cat-select${edicion.categoriaSlug ? "" : " doc-vacio"}`}
+        value={edicion.categoriaSlug}
+        disabled={edicion.deshabilitado}
+        aria-label="Categoría"
+        onChange={(evento) => edicion.onElegirCategoria(evento.target.value)}
+        /* Sin `name`, por lo mismo que el textarea de CampoDoc. */
+      >
+        <option value="">sin elegir</option>
+        {edicion.categorias.map((categoria) => (
+          <option key={categoria.slug} value={categoria.slug}>
+            {categoria.nombre}
+          </option>
+        ))}
+      </select>
+      <span className="doc-cat-papel">{nombre.trim() || "sin elegir"}</span>
+    </span>
   );
 }
 
@@ -363,6 +604,107 @@ const estilos = `
   font-weight: 400;
 }
 
+/* ---------------------------------------------------------------------------
+ * El documento escrito encima. Ver el comentario de CampoDoc para el mecanismo.
+ *
+ * Los dos hijos comparten UNA sola regla a proposito: si el espejo y el campo
+ * pudieran divergir en tipografia, interlineado o corte de linea, el alto de la
+ * celda dejaria de coincidir con el texto y el ultimo renglon quedaria tapado.
+ * --------------------------------------------------------------------------- */
+.doc-campo {
+  display: grid;
+  border-bottom: 1px dotted var(--borde-control);
+}
+.doc-campo > * {
+  grid-area: 1 / 1 / 2 / 2;
+  /* Un textarea NO hereda la fuente: sin esto sale en la sans del sistema y
+     todo el efecto se cae de un vistazo. */
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  /* globals.css pone text-wrap: pretty en el body y balance en los titulos. El
+     span los hereda y el textarea no, asi que cortarian distinto. Se neutralizan
+     en pantalla y se devuelven solo al imprimir, sobre el espejo. */
+  text-wrap: wrap;
+}
+.doc-espejo {
+  visibility: hidden;
+}
+.doc-campo-entrada {
+  background: none;
+  resize: none;
+  overflow: hidden;
+  width: 100%;
+  min-height: 1.7em;
+}
+.doc-campo-entrada::placeholder {
+  color: color-mix(in srgb, var(--texto-suave) 62%, #fff);
+  font-style: italic;
+  opacity: 1;
+}
+/* iOS agrisa el texto de un campo deshabilitado. El documento tiene que seguir
+   leyendose igual con la edicion cerrada. */
+.doc-campo-entrada:disabled {
+  color: var(--texto);
+  -webkit-text-fill-color: var(--texto);
+  opacity: 1;
+}
+.doc-titulo .doc-campo,
+.doc-meta .doc-campo {
+  border-bottom-color: color-mix(in srgb, var(--marca-texto) 45%, transparent);
+}
+.doc-titulo-texto {
+  color: var(--marca-texto);
+}
+.doc-meta-texto {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--marca-texto);
+}
+
+.doc-cat {
+  display: inline-block;
+}
+.doc-cat-select {
+  appearance: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--marca-texto);
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted var(--borde-control);
+  padding: 0;
+  min-height: 1.5rem;
+  max-width: 100%;
+}
+.doc-cat-select:disabled {
+  color: var(--marca-texto);
+  -webkit-text-fill-color: var(--marca-texto);
+  opacity: 1;
+}
+/* Solo para el papel: en pantalla manda el <select>. Se esconde con display y
+   no con visibility, o el !important de la hoja de impresion lo destaparia. */
+.doc-cat-papel {
+  display: none;
+}
+
+/* El zoom automatico de iOS se dispara abajo de 16px. Va en los DOS hijos, o el
+   espejo mediria un alto que el campo no tiene. Nada de maximum-scale=1 en el
+   viewport: eso rompe el criterio 1.4.4. */
+@media (pointer: coarse) {
+  .doc-campo > *,
+  .doc-cat-select {
+    font-size: 1rem;
+  }
+}
+
 /* El bloque que se esta editando, marcado con el amarillo del logo. Es la
    pista de que lo que se escribe a la izquierda es esto de aca. */
 .doc-bloque-activo::before {
@@ -463,6 +805,21 @@ const estilos = `
 
   /* La marca del bloque en edicion es una ayuda de la pantalla, no del papel. */
   .doc-bloque-activo::before { display: none !important; }
+
+  /*
+   * El papel lleva el espejo, que es el span con el texto; lo que se esconde es
+   * lo que sirve para escribir. Con display:none y no con visibility: el
+   * "visibility: visible !important" de arriba destaparia el campo y el texto
+   * saldria dos veces, uno encima del otro.
+   */
+  .doc-campo-entrada, .doc-cat-select { display: none !important; }
+  .doc-campo { border-bottom: 0 !important; }
+  .doc-cat-papel { display: inline !important; }
+
+  /* El corte de linea que se neutralizo en pantalla vuelve para el papel, asi
+     la hoja sale igual que antes de que el documento fuera editable. */
+  .doc-espejo.doc-titulo-texto { text-wrap: balance; }
+  .doc-espejo.doc-cuerpo { text-wrap: pretty; }
 
   /* Un bloque no se parte entre dos hojas. */
   .doc-bloque, .doc-comprobante { break-inside: avoid; }
