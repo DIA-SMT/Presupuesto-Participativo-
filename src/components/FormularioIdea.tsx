@@ -54,7 +54,7 @@
 import { useEffect, useRef, useState } from "react";
 import DocumentoIdea, { type BloqueActivo } from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
-import type { RespuestaAsistente } from "@/app/api/ideas/asistente/route";
+import type { PropuestaIA, RespuestaAsistente } from "@/app/api/ideas/asistente/route";
 
 type Categoria = { slug: string; nombre: string; descripcion: string };
 
@@ -121,6 +121,15 @@ const PREGUNTA_DEL_CAMPO: Record<string, string> = {
   categoria: "Categoría",
 };
 
+/** Los campos que la IA puede reescribir, en el orden en que se muestran. */
+type CampoPropuesta = "titulo" | "solucion" | "problema" | "beneficios";
+const CAMPOS_PROPUESTA: Array<{ campo: CampoPropuesta; etiqueta: string }> = [
+  { campo: "titulo", etiqueta: PREGUNTA_DEL_CAMPO.titulo },
+  { campo: "solucion", etiqueta: PREGUNTA_DEL_CAMPO.solucion },
+  { campo: "problema", etiqueta: PREGUNTA_DEL_CAMPO.problema },
+  { campo: "beneficios", etiqueta: PREGUNTA_DEL_CAMPO.beneficios },
+];
+
 export default function FormularioIdea({
   categorias,
   abierta,
@@ -147,6 +156,14 @@ export default function FormularioIdea({
 
   /** Ultima respuesta del asistente, o null si todavia no se pidio ninguna. */
   const [revision, setRevision] = useState<RespuestaAsistente | null>(null);
+  /**
+   * Que campos aplico la persona de la ultima propuesta.
+   *
+   * Existe para que aplicar deje rastro. Antes el bloque de la propuesta
+   * simplemente desaparecia: la persona apretaba y no quedaba nada que
+   * dijera que se habia escrito ni donde mirarlo.
+   */
+  const [aplicados, setAplicados] = useState<string[] | null>(null);
   /** Aspectos de obra que la persona tildo de la lista que se le ofrecio. */
   const [elegidos, setElegidos] = useState<string[]>([]);
 
@@ -409,6 +426,7 @@ export default function FormularioIdea({
    * Nunca bloquea el envio: si falla, avisa y el formulario sigue andando.
    */
   async function pedirAyuda(agregar?: string[]) {
+    setAplicados(null);
     setEstado({ tipo: "revisando" });
     try {
       const respuesta = await fetch("/api/ideas/asistente", {
@@ -455,12 +473,11 @@ export default function FormularioIdea({
   }
 
   /**
-   * Aplica el texto propuesto a los campos. Solo se llama si la persona acepta,
-   * y escribe unicamente lo que la IA devolvio: lo que vino null no se toca.
+   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
+   * retoques que les haya hecho (ver CampoPropuesto). Lo que viene null no se
+   * toca: puede ser un campo que la IA no reescribio o uno que ella quito.
    */
-  function aplicarPropuesta() {
-    const p = revision?.propuesta;
-    if (!p) return;
+  function aplicarPropuesta(p: PropuestaIA) {
     const escribir = (
       ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
       campo: keyof typeof valores,
@@ -474,6 +491,9 @@ export default function FormularioIdea({
     escribir(refSolucion, "solucion", p.solucion);
     escribir(refProblema, "problema", p.problema);
     escribir(refBeneficios, "beneficios", p.beneficios);
+    setAplicados(
+      CAMPOS_PROPUESTA.filter(({ campo }) => p[campo]).map(({ etiqueta }) => etiqueta),
+    );
     setRevision({ ...revision!, propuesta: null });
   }
 
@@ -986,6 +1006,7 @@ export default function FormularioIdea({
         {revision && (
           <PanelRevision
             revision={revision}
+            aplicados={aplicados}
             elegidos={elegidos}
             onTildar={(nombre) =>
               setElegidos((previo) =>
@@ -1386,6 +1407,7 @@ function IconoChispa() {
  */
 function PanelRevision({
   revision,
+  aplicados,
   elegidos,
   onTildar,
   onAgregar,
@@ -1394,10 +1416,13 @@ function PanelRevision({
   ocupado,
 }: {
   revision: RespuestaAsistente;
+  /** Etiquetas de los campos que ya se aplicaron, o null si todavia no. */
+  aplicados: string[] | null;
   elegidos: string[];
   onTildar: (nombre: string) => void;
   onAgregar: () => void;
-  onAplicar: () => void;
+  /** Recibe SOLO los campos que la persona dejo, ya con sus retoques. */
+  onAplicar: (elegido: PropuestaIA) => void;
   onDescartar: () => void;
   ocupado: boolean;
 }) {
@@ -1407,6 +1432,41 @@ function PanelRevision({
     (propuesta.titulo || propuesta.solucion || propuesta.problema || propuesta.beneficios);
   const todoBien =
     !faltantes.length && !parecidas.length && !senalamientos.length && !hayPropuesta && !aviso;
+
+  /**
+   * Lo que la persona retoco y lo que decidio no usar, por campo.
+   *
+   * Vive aca y no en el formulario porque muere con la revision: cuando llega
+   * una propuesta nueva se arranca de cero. La `key` del efecto es el texto
+   * mismo de la propuesta y no su identidad de objeto, porque el objeto se
+   * recrea en cada render del padre.
+   */
+  const [borradores, setBorradores] = useState<Partial<Record<CampoPropuesta, string>>>({});
+  const [descartados, setDescartados] = useState<Partial<Record<CampoPropuesta, boolean>>>({});
+  const huella = JSON.stringify(propuesta);
+  useEffect(() => {
+    setBorradores({});
+    setDescartados({});
+  }, [huella]);
+
+  /** Lo que se va a escribir en el formulario: lo no descartado, ya editado. */
+  const aAplicar: PropuestaIA = {
+    titulo: null,
+    solucion: null,
+    problema: null,
+    beneficios: null,
+  };
+  if (propuesta) {
+    for (const { campo } of CAMPOS_PROPUESTA) {
+      const original = propuesta[campo];
+      if (!original || descartados[campo]) continue;
+      const texto = (borradores[campo] ?? original).trim();
+      // Un campo que quedo vacio de tanto borrar no se aplica: escribirlo
+      // vaciaria lo que la persona ya tenia.
+      if (texto) aAplicar[campo] = texto;
+    }
+  }
+  const cuantosVanAAplicarse = CAMPOS_PROPUESTA.filter(({ campo }) => aAplicar[campo]).length;
 
   return (
     <section
@@ -1436,44 +1496,53 @@ function PanelRevision({
             A partir de lo que escribiste, sin agregar datos nuevos. Si no te representa, dejá el
             tuyo.
           </p>
-          <div
-            className="mt-2.5 space-y-2.5 rounded-xl p-4 text-sm leading-relaxed"
-            style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
-          >
-            {propuesta.titulo && (
-              <p>
-                <span className="font-semibold">Título: </span>
-                {propuesta.titulo}
-              </p>
-            )}
-            {propuesta.solucion && (
-              <p>
-                <span className="font-semibold">{PREGUNTA_DEL_CAMPO.solucion} </span>
-                {propuesta.solucion}
-              </p>
-            )}
-            {propuesta.problema && (
-              <p>
-                <span className="font-semibold">{PREGUNTA_DEL_CAMPO.problema} </span>
-                {propuesta.problema}
-              </p>
-            )}
-            {propuesta.beneficios && (
-              <p>
-                <span className="font-semibold">{PREGUNTA_DEL_CAMPO.beneficios} </span>
-                {propuesta.beneficios}
-              </p>
-            )}
+          {/* Un campo por vez, no todo junto. Antes eran los cuatro en un solo
+              bloque con "usar" o "descartar": si el titulo estaba bien pero la
+              reescritura del problema no gustaba, no habia salida. */}
+          <div className="mt-2.5 grid gap-2">
+            {CAMPOS_PROPUESTA.map(({ campo, etiqueta }) => {
+              const original = propuesta[campo];
+              if (!original) return null;
+              return (
+                <CampoPropuesto
+                  key={campo}
+                  etiqueta={etiqueta}
+                  original={original}
+                  texto={borradores[campo] ?? original}
+                  descartado={Boolean(descartados[campo])}
+                  minimo={MINIMOS[campo as keyof typeof MINIMOS]}
+                  maximo={LARGOS[campo]}
+                  enUnaLinea={campo === "titulo"}
+                  ocupado={ocupado}
+                  onEscribir={(valor) => setBorradores((p) => ({ ...p, [campo]: valor }))}
+                  onRestaurar={() =>
+                    setBorradores((p) => {
+                      const { [campo]: _fuera, ...resto } = p;
+                      return resto;
+                    })
+                  }
+                  onQuitar={() => setDescartados((p) => ({ ...p, [campo]: true }))}
+                  onVolverAIncluir={() =>
+                    setDescartados((p) => {
+                      const { [campo]: _fuera, ...resto } = p;
+                      return resto;
+                    })
+                  }
+                />
+              );
+            })}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={onAplicar}
-              disabled={ocupado}
+              onClick={() => onAplicar(aAplicar)}
+              disabled={ocupado || cuantosVanAAplicarse === 0}
               className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
               style={{ background: "var(--color-marca-700)" }}
             >
-              Usar este texto
+              {cuantosVanAAplicarse === 1
+                ? "Aplicar el campo elegido"
+                : `Aplicar los ${cuantosVanAAplicarse} campos`}
             </button>
             <button
               type="button"
@@ -1489,7 +1558,35 @@ function PanelRevision({
               Dejar el mío
             </button>
           </div>
+          {cuantosVanAAplicarse === 0 && (
+            <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+              Quitaste todos los campos, así que no hay nada para aplicar.
+            </p>
+          )}
         </div>
+      )}
+
+      {/* Aplicar deja rastro: el bloque no desaparece, queda plegado diciendo
+          que campos se escribieron. Sin esto la persona apretaba y no le
+          quedaba nada que confirmara que habia pasado algo. */}
+      {aplicados && aplicados.length > 0 && (
+        <Seccion
+          titulo="Aplicamos el texto a tu propuesta"
+          resumen={aplicados.length === 1 ? "1 campo" : `${aplicados.length} campos`}
+          estado="hecho"
+          abierta={false}
+        >
+          <ul className="space-y-1 pl-4 text-sm">
+            {aplicados.map((etiqueta) => (
+              <li key={etiqueta} className="list-disc">
+                {etiqueta}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2.5 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+            Quedaron escritos en los campos del formulario y los podés seguir editando a mano.
+          </p>
+        </Seccion>
       )}
 
       {/* --- 2. Que le falta ---------------------------------------------- */}
@@ -1503,12 +1600,21 @@ function PanelRevision({
         </ul>
       )}
 
+      {/* Plegado por defecto: son sugerencias para que se entienda mejor, no
+          cosas que bloqueen el envio. Los "faltantes" de arriba SI quedan
+          siempre a la vista, porque sin ellos la propuesta no se puede enviar. */}
       {senalamientos.length > 0 && (
-        <>
-          <p className="mt-4 text-sm font-semibold">Para que se entienda mejor:</p>
+        <Seccion
+          titulo="Para que se entienda mejor"
+          resumen={
+            senalamientos.length === 1 ? "1 sugerencia" : `${senalamientos.length} sugerencias`
+          }
+          estado="info"
+          abierta={false}
+        >
           {/* La pregunta la pone el formulario, no el modelo: asi el nombre que
               lee la persona es siempre el que tiene arriba en la pantalla. */}
-          <ul className="mt-1.5 space-y-1.5 pl-4 text-sm">
+          <ul className="space-y-1.5 pl-4 text-sm">
             {senalamientos.map((senalamiento, indice) => (
               <li key={indice} className="list-disc">
                 {PREGUNTA_DEL_CAMPO[senalamiento.campo] && (
@@ -1523,7 +1629,7 @@ function PanelRevision({
           <p className="mt-3 text-sm leading-relaxed">
             Completá esos datos en los campos y volvé a pedir la ayuda.
           </p>
-        </>
+        </Seccion>
       )}
 
       {/* --- 3. Los aspectos de obra -------------------------------------- */}
@@ -1534,35 +1640,62 @@ function PanelRevision({
         >
           <p className="text-xs font-semibold">¿Querés agregar alguno de estos? Los elegís vos</p>
           <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-            Son cosas que el municipio suele pedir para una obra así y que no escribiste. Abajo de
-            cada una dice para qué sirve. Tildá solo las que quieras.
+            Son cosas que el municipio suele pedir para una obra así y que no escribiste. De cada
+            una dice para qué sirve y qué gana tu propuesta si la incluís. Tildá solo las que
+            quieras.
           </p>
           {/* Cada opcion con su explicacion: sin eso la IA las enumera y la
               persona tilda a ciegas. La explicacion es para decidir y NO entra
               en el texto de la propuesta. */}
-          <ul className="mt-2.5 grid gap-2.5">
-            {detalles.map((detalle) => (
-              <li key={detalle.nombre}>
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 shrink-0"
-                    checked={elegidos.includes(detalle.nombre)}
-                    onChange={() => onTildar(detalle.nombre)}
-                    disabled={ocupado}
-                  />
-                  <span>
-                    <span className="block text-xs font-semibold">{detalle.nombre}</span>
-                    <span
-                      className="mt-0.5 block text-xs leading-relaxed"
-                      style={{ color: "var(--texto-suave)" }}
-                    >
-                      {detalle.porQue}
+          {/* Cada opcion es una tarjeta con las DOS explicaciones separadas.
+              Antes era una linea de 12px con una sola frase generica, que es el
+              texto mas chico de la pantalla justo donde hay que decidir. Y la
+              frase generica servia para cualquier obra: no decia que gana ESTA
+              propuesta, asi que la gente tildaba a ciegas o no tildaba nada. */}
+          <ul className="mt-3 grid gap-2.5">
+            {detalles.map((detalle) => {
+              const tildado = elegidos.includes(detalle.nombre);
+              return (
+                <li key={detalle.nombre}>
+                  <label
+                    className="flex cursor-pointer items-start gap-2.5 rounded-xl p-3.5 transition"
+                    style={{
+                      background: "var(--fondo)",
+                      border: `1px solid ${tildado ? "var(--marca-texto)" : "var(--borde)"}`,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 shrink-0"
+                      checked={tildado}
+                      onChange={() => onTildar(detalle.nombre)}
+                      disabled={ocupado}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">{detalle.nombre}</span>
+                      <span
+                        className="mt-1.5 block text-[13px] leading-relaxed"
+                        style={{ color: "var(--texto-suave)" }}
+                      >
+                        <span className="font-semibold" style={{ color: "var(--texto)" }}>
+                          Para qué sirve.{" "}
+                        </span>
+                        {detalle.porQue}
+                      </span>
+                      <span
+                        className="mt-1 block text-[13px] leading-relaxed"
+                        style={{ color: "var(--texto-suave)" }}
+                      >
+                        <span className="font-semibold" style={{ color: "var(--marca-texto)" }}>
+                          Qué gana tu propuesta.{" "}
+                        </span>
+                        {detalle.mejora}
+                      </span>
                     </span>
-                  </span>
-                </label>
-              </li>
-            ))}
+                  </label>
+                </li>
+              );
+            })}
           </ul>
           {elegidos.length > 0 && (
             <button
@@ -1583,13 +1716,20 @@ function PanelRevision({
       )}
 
       {/* --- 4. Propuestas parecidas -------------------------------------- */}
+      {/* Plegado: es un dato bueno de saber y no cambia nada de lo que la
+          persona tiene que hacer. Puede enviar la suya igual. */}
       {parecidas.length > 0 && (
-        <div className="mt-4">
-          <p className="text-sm font-semibold">
-            Ya hay {parecidas.length === 1 ? "una propuesta parecida" : "propuestas parecidas"} en
-            tu distrito
-          </p>
-          <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
+        <Seccion
+          titulo={
+            parecidas.length === 1
+              ? "Ya hay una propuesta parecida en tu distrito"
+              : "Ya hay propuestas parecidas en tu distrito"
+          }
+          resumen={parecidas.length === 1 ? "1 propuesta" : `${parecidas.length} propuestas`}
+          estado="info"
+          abierta={false}
+        >
+          <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
             Podés presentar la tuya igual. Si son lo mismo, el equipo las integra en un solo
             proyecto.
           </p>
@@ -1614,7 +1754,7 @@ function PanelRevision({
               </li>
             ))}
           </ul>
-        </div>
+        </Seccion>
       )}
 
       {/* El miedo razonable de quien lee esto es que la maquina este puntuando
@@ -1759,5 +1899,262 @@ function RielDePasos({
         );
       })}
     </nav>
+  );
+}
+
+/**
+ * Un campo de la propuesta de la IA, con sus tres estados: como vino, en
+ * edicion, o quitado.
+ *
+ * El contador del modo edicion muestra el minimo del campo a proposito: es
+ * exactamente lo que reclaman los "faltantes" de mas arriba, y asi la persona lo
+ * ve mientras escribe en lugar de enterarse cuando envia.
+ */
+function CampoPropuesto({
+  etiqueta,
+  original,
+  texto,
+  descartado,
+  minimo,
+  maximo,
+  enUnaLinea,
+  ocupado,
+  onEscribir,
+  onRestaurar,
+  onQuitar,
+  onVolverAIncluir,
+}: {
+  etiqueta: string;
+  /** Lo que devolvio la IA, para poder volver a el. */
+  original: string;
+  texto: string;
+  descartado: boolean;
+  /** `undefined` en los campos que no tienen minimo, como beneficios. */
+  minimo: number | undefined;
+  maximo: number;
+  enUnaLinea: boolean;
+  ocupado: boolean;
+  onEscribir: (valor: string) => void;
+  onRestaurar: () => void;
+  onQuitar: () => void;
+  onVolverAIncluir: () => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const retocado = texto !== original;
+  const largo = texto.trim().length;
+  const cortoDeMas = minimo !== undefined && largo < minimo;
+
+  if (descartado) {
+    return (
+      <div
+        className="rounded-xl px-3.5 py-3"
+        style={{ background: "var(--fondo)", border: "1px dashed var(--borde)" }}
+      >
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--texto-suave)" }}>
+          {etiqueta}
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm" style={{ color: "var(--texto-suave)" }}>
+          Este campo queda como lo escribiste vos.
+          <button
+            type="button"
+            onClick={onVolverAIncluir}
+            disabled={ocupado}
+            className="font-semibold underline underline-offset-2 disabled:opacity-50"
+            style={{ color: "var(--marca-texto)" }}
+          >
+            Volver a incluirlo
+          </button>
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-xl px-3.5 py-3"
+      style={{
+        background: "var(--fondo)",
+        border: `1px solid ${editando ? "var(--marca-texto)" : "var(--borde)"}`,
+      }}
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--texto-suave)" }}>
+          {etiqueta}
+          {retocado && (
+            <span className="ml-2 normal-case" style={{ color: "var(--marca-texto)" }}>
+              retocado por vos
+            </span>
+          )}
+        </p>
+        <div className="flex items-center gap-3 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setEditando((v) => !v)}
+            disabled={ocupado}
+            className="underline underline-offset-2 disabled:opacity-50"
+            style={{ color: "var(--marca-texto)" }}
+          >
+            {editando ? "Listo" : "Editar"}
+          </button>
+          <button
+            type="button"
+            onClick={onQuitar}
+            disabled={ocupado}
+            className="underline underline-offset-2 disabled:opacity-50"
+            style={{ color: "var(--texto-suave)" }}
+          >
+            Quitar
+          </button>
+        </div>
+      </div>
+
+      {editando ? (
+        <>
+          {enUnaLinea ? (
+            <input
+              type="text"
+              value={texto}
+              onChange={(e) => onEscribir(e.target.value)}
+              maxLength={maximo}
+              disabled={ocupado}
+              className="mt-2 w-full rounded-lg px-3 py-2 text-sm"
+              style={{
+                background: "var(--fondo-tarjeta)",
+                border: "1px solid var(--borde-control)",
+                color: "var(--texto)",
+              }}
+            />
+          ) : (
+            <textarea
+              value={texto}
+              onChange={(e) => onEscribir(e.target.value)}
+              maxLength={maximo}
+              rows={5}
+              disabled={ocupado}
+              className="mt-2 w-full rounded-lg px-3 py-2 text-sm leading-relaxed"
+              style={{
+                background: "var(--fondo-tarjeta)",
+                border: "1px solid var(--borde-control)",
+                color: "var(--texto)",
+              }}
+            />
+          )}
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+            <span style={{ color: cortoDeMas ? "var(--acento-texto)" : "var(--texto-suave)" }}>
+              {largo} de {maximo} caracteres
+              {minimo !== undefined &&
+                (cortoDeMas
+                  ? ` · le faltan ${minimo - largo} para el mínimo de ${minimo}`
+                  : ` · pasa el mínimo de ${minimo}`)}
+            </span>
+            {retocado && (
+              <button
+                type="button"
+                onClick={onRestaurar}
+                disabled={ocupado}
+                className="font-semibold underline underline-offset-2 disabled:opacity-50"
+                style={{ color: "var(--texto-suave)" }}
+              >
+                Volver al texto de la IA
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="mt-1.5 text-sm leading-relaxed">{texto}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Un bloque plegable del panel.
+ *
+ * Es <details>/<summary> y no estado de React a proposito: se pliega y se abre
+ * con el teclado sin que escribamos nada, no puede desincronizarse, y no hay
+ * riesgo de desajuste de hidratacion por abrir segun algo que el servidor no
+ * sabe. `abierta` es solo el valor INICIAL: despues manda la persona.
+ *
+ * El resumen del encabezado es lo que hace que plegar no sea esconder. Un bloque
+ * cerrado tiene que decir cuanto hay adentro ("3 observaciones"), porque si no
+ * la persona no sabe que se esta perdiendo y no lo abre nunca.
+ */
+function Seccion({
+  titulo,
+  resumen,
+  estado,
+  abierta,
+  children,
+}: {
+  titulo: string;
+  resumen: string;
+  estado: "hecho" | "atencion" | "info";
+  abierta: boolean;
+  children: React.ReactNode;
+}) {
+  const color =
+    estado === "hecho"
+      ? "var(--color-cat-ambiental)"
+      : estado === "atencion"
+        ? "var(--acento-texto)"
+        : "var(--marca-texto)";
+  return (
+    <details
+      open={abierta}
+      className="group mt-2.5 rounded-xl"
+      style={{ background: "var(--fondo-tarjeta)", border: "1px solid var(--borde)" }}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-2.5 px-3.5 py-3 [&::-webkit-details-marker]:hidden">
+        {estado === "hecho" ? (
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="shrink-0"
+            aria-hidden="true"
+          >
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+        ) : (
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="shrink-0"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d={estado === "atencion" ? "M12 8v4M12 16h.01" : "M12 16v-4M12 8h.01"} />
+          </svg>
+        )}
+        <span className="min-w-0 flex-grow text-sm">
+          <span className="font-semibold">{titulo}</span>
+          <span style={{ color: "var(--texto-suave)" }}> · {resumen}</span>
+        </span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--texto-suave)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          className="shrink-0 transition group-open:rotate-180"
+          aria-hidden="true"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </summary>
+      <div className="px-3.5 pb-3.5">{children}</div>
+    </details>
   );
 }

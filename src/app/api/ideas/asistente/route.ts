@@ -51,7 +51,20 @@ export const dynamic = "force-dynamic";
 
 /** Pedidos por hora y por IP. Uno solo alcanza para toda la propuesta. */
 const TOPE_POR_HORA = 15;
-const MAX_TOKENS = 900;
+/**
+ * Tope de salida de CADA llamada. Es un tope, no un gasto: se paga lo que el
+ * modelo genera, asi que subirlo no encarece las llamadas cortas.
+ *
+ * Estaba en 900 y la llamada mas pesada -- la de `solucion`, que devuelve el
+ * texto Y hasta 6 aspectos de obra -- no entra. Medido contra el modelo real:
+ * necesita ~1350 tokens de salida. Con el tope viejo el JSON se cortaba a la
+ * mitad, el zod fallaba por `texto` ausente y el catch de `pedir` devolvia null:
+ * la persona se quedaba sin la reescritura de su solucion Y sin un solo aspecto
+ * para elegir, sin ningun aviso. Es el sintoma que se veia en produccion, ya
+ * antes de que cada aspecto sumara su `mejora`: con dos campos por aspecto la
+ * salida quedaba justo en el limite y fallaba de a ratos.
+ */
+const MAX_TOKENS = 2000;
 /** Arriba de esto dos propuestas hablan de lo mismo (calibrado en el ETL). */
 const UMBRAL_PARECIDA = 0.55;
 
@@ -86,7 +99,15 @@ export type Senalamiento = {
 
 export type Parecida = { titulo: string | null; url: string | null };
 
-export type Detalle = { nombre: string; porQue: string };
+/**
+ * Un aspecto de obra que se le ofrece a la persona para que lo tilde.
+ *
+ * Son DOS explicaciones y no una porque contestan cosas distintas: `porQue`
+ * dice para que sirve el aspecto en general y vale para cualquier obra;
+ * `mejora` dice que gana ESTA propuesta si lo incluye, enganchando con lo que
+ * la persona escribio. Con una sola frase generica la gente tildaba a ciegas.
+ */
+export type Detalle = { nombre: string; porQue: string; mejora: string };
 
 /**
  * El texto que la IA propone para cada campo. `null` significa "no lo toco", y
@@ -132,8 +153,9 @@ const ESQ_TEXTO_Y_DETALLES = {
         properties: {
           nombre: { type: "string" },
           porQue: { type: "string" },
+          mejora: { type: "string" },
         },
-        required: ["nombre", "porQue"],
+        required: ["nombre", "porQue", "mejora"],
         additionalProperties: false,
       },
     },
@@ -179,6 +201,8 @@ const salidaTextoYDetalles = salidaTexto.extend({
       z.object({
         nombre: z.string().trim().min(1).max(120),
         porQue: z.string().trim().min(1).max(300),
+          // Mas largo que porQue: son una o dos frases atadas a la propuesta.
+          mejora: z.string().trim().min(1).max(500),
       }),
     )
     .max(8)
