@@ -205,7 +205,7 @@ export default function PanelTablero({
           detalle={`${formatearNumero(resumen.porEstado.factible)} factibles · ${formatearNumero(
             resumen.porEstado.no_factible,
           )} no factibles`}
-          color="var(--color-acento-600)"
+          color="var(--acento-texto)"
         />
         <Tarjeta
           titulo="Proyectos ganadores"
@@ -292,7 +292,7 @@ export default function PanelTablero({
                           href={enlaceOrden(columna.clave)}
                           scroll={false}
                           className="inline-flex items-center gap-1 hover:underline"
-                          style={{ color: activa ? "var(--color-marca-600)" : "var(--texto)" }}
+                          style={{ color: activa ? "var(--marca-texto)" : "var(--texto)" }}
                         >
                           {columna.etiqueta}
                           <span aria-hidden="true" style={{ opacity: activa ? 1 : 0.35 }}>
@@ -339,7 +339,7 @@ export default function PanelTablero({
                     </td>
                     <td
                       className="px-3 py-3 text-right tabular-nums"
-                      style={{ color: fila.pendientes > 0 ? "var(--color-acento-600)" : "var(--texto-suave)" }}
+                      style={{ color: fila.pendientes > 0 ? "var(--acento-texto)" : "var(--texto-suave)" }}
                     >
                       {formatearNumero(fila.pendientes)}
                     </td>
@@ -442,11 +442,16 @@ export default function PanelTablero({
           registraron. En las ediciones migradas la fecha puede ser la del dataset original.
         </p>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {/*
+            El `color` de SerieDiaria no es solo la linea: tambien escribe el total
+            en letras, y la rampa --color-marca-* esta oscurecida para llevar blanco
+            encima, asi que como letra no se lee en el tema oscuro. Va el token de texto.
+          */}
           <SerieDiaria
             titulo="Ideas presentadas"
             descripcion="Una línea por día con al menos una idea."
             puntos={serieIdeas}
-            color="var(--color-marca-600)"
+            color="var(--marca-texto)"
             sustantivo="ideas"
           />
           <SerieDiaria

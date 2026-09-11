@@ -338,7 +338,7 @@ function FormularioEdicion({
           <span
             role="status"
             className="text-sm"
-            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--color-acento-600)" }}
+            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
           >
             {estado.ok ? "Guardado." : estado.error}
           </span>
@@ -424,7 +424,7 @@ function BloqueActivar({
                 role="status"
                 className="text-sm"
                 style={{
-                  color: estado.ok ? "var(--color-cat-ambiental)" : "var(--color-acento-600)",
+                  color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)",
                 }}
               >
                 {estado.ok ? (estado.mensaje ?? "Activada.") : estado.error}
@@ -712,7 +712,7 @@ function FormularioHito({
           <span
             role="status"
             className="text-sm"
-            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--color-acento-600)" }}
+            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
           >
             {estado.ok ? "Guardado." : estado.error}
           </span>
@@ -824,7 +824,7 @@ function FormularioNuevaEdicion() {
               role="status"
               className="text-sm"
               style={{
-                color: estado.ok ? "var(--color-cat-ambiental)" : "var(--color-acento-600)",
+                color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)",
               }}
             >
               {estado.ok ? (estado.mensaje ?? "Creada.") : estado.error}

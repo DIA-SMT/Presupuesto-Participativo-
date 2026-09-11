@@ -60,12 +60,16 @@ const BORDE_CONTROL = "var(--borde-control)";
 const COLOR_RESUELTA = "var(--color-marca-600)";
 const COLOR_SIN_RESOLVER = "var(--color-acento-600)";
 /**
- * El mismo naranja cuando es TEXTO. La rampa --color-acento-* esta oscurecida
- * para poner blanco encima, asi que como letra sobre el fondo oscuro del tema no
- * llegaba al 4.5:1 de WCAG (medido: 2.96:1 en el chip y 3.30:1 en la tabla).
- * --acento-texto cambia con el tema; ver el comentario en globals.css.
+ * Los mismos dos colores cuando son TEXTO. Las rampas --color-acento-* y
+ * --color-marca-* estan oscurecidas para poner blanco encima, asi que como letra
+ * sobre el fondo oscuro del tema no llegaban al 4.5:1 de WCAG (medido: el
+ * naranja 2.96:1 en el chip y 3.30:1 en la tabla; el azul 3.43:1 sobre la
+ * tarjeta). --acento-texto y --marca-texto cambian con el tema; ver el
+ * comentario en globals.css. Los dos de arriba se quedan como estan: ahi son
+ * relleno de barra y de pastilla, que es el rol para el que la rampa esta hecha.
  */
 const COLOR_SIN_RESOLVER_TEXTO = "var(--acento-texto)";
+const COLOR_RESUELTA_TEXTO = "var(--marca-texto)";
 
 /** Tinte del color sobre el fondo, proporcional a la intensidad. */
 function tinte(color: string, intensidad: number): string {
@@ -369,7 +373,7 @@ export function TarjetaConsulta({
       <p className="mt-2 flex flex-wrap items-center gap-2">
         <Chip>{ETIQUETA_TEMA[fila.tema] ?? fila.tema}</Chip>
         {fila.resuelta ? (
-          <Chip color="var(--color-estado-factible)">
+          <Chip color={COLOR_RESUELTA_TEXTO}>
             <span aria-hidden="true">✓</span> Se pudo contestar
           </Chip>
         ) : (
@@ -558,7 +562,7 @@ function Numeros({ resumen, dias }: { resumen: ResumenChat; dias: number }) {
               ? "Sin consultas en esta ventana no hay porcentaje que calcular."
               : "Sobre el total de la ventana."
           }
-          color={COLOR_RESUELTA}
+          color={COLOR_RESUELTA_TEXTO}
         />
         <Tarjeta
           titulo="Tema más demandado"

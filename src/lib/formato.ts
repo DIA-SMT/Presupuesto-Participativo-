@@ -17,10 +17,15 @@ export const DESCRIPCION_ESTADO: Record<string, string> = {
   ganador: "Fue el proyecto más votado de su distrito y se incorpora al presupuesto municipal.",
 };
 
+/*
+ * Estos valores terminan siendo el color de LETRA de la pastilla de estado
+ * (`Chip` en components/ui.tsx), asi que los que eran un azul de fondo de la
+ * rampa usan el token de texto, que se aclara en el tema oscuro.
+ */
 export const COLOR_ESTADO: Record<string, string> = {
   borrador: "var(--color-estado-nofactible)",
   pendiente: "var(--color-estado-nofactible)",
-  factible: "var(--color-estado-factible)",
+  factible: "var(--marca-texto)",
   no_factible: "var(--color-estado-nofactible)",
   integrado: "var(--color-estado-integrado)",
   ganador: "var(--ganador-texto)",

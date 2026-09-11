@@ -704,7 +704,7 @@ export default function PanelBandeja({
                               href={enlaceOrden(columna.clave)}
                               scroll={false}
                               className="inline-flex items-center gap-1 hover:underline"
-                              style={{ color: activa ? "var(--color-marca-600)" : "var(--texto)" }}
+                              style={{ color: activa ? "var(--marca-texto)" : "var(--texto)" }}
                             >
                               {columna.etiqueta}
                               <span aria-hidden="true" style={{ opacity: activa ? 1 : 0.35 }}>
@@ -727,7 +727,11 @@ export default function PanelBandeja({
                         style={{
                           borderBottom: "1px solid var(--borde)",
                           // Marca al costado: azul la fila abierta, ámbar la que
-                          // le debe una devolución a un vecino.
+                          // le debe una devolución a un vecino. Acá van las rampas
+                          // y no los tokens de texto (--marca-texto, --acento-texto)
+                          // que usan las pastillas de estas mismas filas: como
+                          // borde alcanza con el 3:1 que pide WCAG, y la rampa lo
+                          // cumple en los dos temas.
                           borderLeft: `3px solid ${
                             abierta
                               ? "var(--color-marca-500)"
@@ -749,7 +753,7 @@ export default function PanelBandeja({
                             href={`${armarEnlace(vista, { idea: String(fila.id) })}#ficha`}
                             aria-current={abierta ? "true" : undefined}
                             className="font-medium hover:underline"
-                            style={{ color: abierta ? "var(--color-marca-600)" : "var(--texto)" }}
+                            style={{ color: abierta ? "var(--marca-texto)" : "var(--texto)" }}
                           >
                             {fila.titulo}
                           </Link>
@@ -766,13 +770,13 @@ export default function PanelBandeja({
                           <span className="flex flex-col items-start gap-1">
                             <ChipEstado estado={fila.estado} />
                             {!fila.publicada && (
-                              <Chip color="var(--color-acento-600)">sin publicar</Chip>
+                              <Chip color="var(--acento-texto)">sin publicar</Chip>
                             )}
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
                           {falta ? (
-                            <Chip color="var(--color-acento-600)">falta</Chip>
+                            <Chip color="var(--acento-texto)">falta</Chip>
                           ) : fila.tieneDevolucion ? (
                             <Chip color="var(--color-cat-ambiental)">escrita</Chip>
                           ) : (
@@ -785,7 +789,7 @@ export default function PanelBandeja({
                           {/* Solo el booleano: el mail del autor no sale de la base. */}
                           {fila.tieneContacto ? (
                             <span title="El autor dejó un mail para recibir avisos. El panel nunca muestra el dato.">
-                              <Chip color="var(--color-marca-600)">
+                              <Chip color="var(--marca-texto)">
                                 <span aria-hidden="true">✉</span> sí
                               </Chip>
                             </span>
@@ -1013,7 +1017,7 @@ function Ficha({
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <ChipEstado estado={ficha.estado} />
-          <Chip color={ficha.publicada ? "var(--color-cat-ambiental)" : "var(--color-acento-600)"}>
+          <Chip color={ficha.publicada ? "var(--color-cat-ambiental)" : "var(--acento-texto)"}>
             {ficha.publicada ? "publicada" : "sin publicar"}
           </Chip>
         </div>
@@ -1201,7 +1205,7 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
         />
         <span
           className="text-xs"
-          style={{ color: falta ? "var(--color-acento-700)" : "var(--texto-suave)" }}
+          style={{ color: falta ? "var(--acento-texto)" : "var(--texto-suave)" }}
         >
           {exige
             ? `“${ETIQUETA_ESTADO[estado]}” exige devolución: mínimo ${MINIMO_DEVOLUCION} caracteres (escribiste ${escritos}).`
@@ -1371,7 +1375,7 @@ function MensajeAccion({
     <span
       role="status"
       className="text-sm"
-      style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--color-acento-700)" }}
+      style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
     >
       {resultado.ok ? (resultado.mensaje ?? exito) : resultado.error}
     </span>

@@ -171,7 +171,10 @@ export default async function PaginaProyecto({ params }: Props) {
                                 ? "color-mix(in srgb, var(--color-marca-600) 38%, transparent)"
                                 : "var(--borde)"
                             }`,
-                            color: alcanzada ? "var(--color-marca-600)" : "var(--texto-suave)",
+                            // La rampa --color-marca-* pinta el fondo y el borde de la pastilla,
+                            // pero como letra no llega al 4.5:1 sobre el tema oscuro: el texto va
+                            // con el token de rol, que cambia con el tema.
+                            color: alcanzada ? "var(--marca-texto)" : "var(--texto-suave)",
                           }}
                           aria-current={actual === indice ? "step" : undefined}
                         >
