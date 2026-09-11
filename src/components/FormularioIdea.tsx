@@ -435,8 +435,10 @@ export default function FormularioIdea({
    *
    * Devuelve de una vez el texto formalizado de cada campo que tenga contenido,
    * un titulo sugerido, que le falta a la propuesta, si ya hay una parecida en
-   * el distrito y los aspectos de obra para tildar. Nada se aplica solo: queda
-   * a la vista y la persona acepta o descarta.
+   * el distrito y los aspectos de obra para tildar. El texto reescrito queda a
+   * la vista y la persona acepta o descarta campo por campo; los detalles que
+   * ella misma tildo entran derecho (ver el comentario de mas abajo, donde se
+   * decide cual de los dos caminos es).
    *
    * Nunca bloquea el envio: si falla, avisa y el formulario sigue andando.
    */
@@ -467,7 +469,33 @@ export default function FormularioIdea({
         throw new Error(cuerpo?.error ?? "No se pudo generar la ayuda.");
       }
 
-      setRevision((await respuesta.json()) as RespuestaAsistente);
+      const datos = (await respuesta.json()) as RespuestaAsistente;
+
+      /*
+       * Los detalles elegidos entran DERECHO al texto, sin una segunda
+       * confirmacion.
+       *
+       * "Nada se aplica sin que lo aceptes" sigue valiendo: lo que cambia es
+       * DONDE se acepta. Cuando alguien tilda "pavimento definitivo" y aprieta
+       * "Agregar los 3 elegidos", ya eligio dos veces; volver a mostrarle los
+       * mismos textos para que los apruebe campo por campo es preguntarle lo
+       * mismo una tercera vez, y el boton ya prometia agregarlos.
+       *
+       * El otro camino —"Mejorar con IA" a secas— SI conserva la revision campo
+       * por campo, y ahi corresponde: la IA reescribio lo que la persona habia
+       * escrito, sin que nadie se lo pidiera renglon por renglon.
+       *
+       * Lo aplicado no queda invisible: `setAplicados` deja el resumen de que
+       * campos se tocaron, y el texto se sigue pudiendo editar en el formulario
+       * o en el documento mismo.
+       */
+      if (agregar?.length && datos.propuesta) {
+        escribirPropuesta(datos.propuesta);
+        setRevision({ ...datos, propuesta: null });
+      } else {
+        setRevision(datos);
+      }
+
       setElegidos([]);
       setEstado({ tipo: "editando" });
     } catch (causa) {
@@ -488,11 +516,13 @@ export default function FormularioIdea({
   }
 
   /**
-   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
-   * retoques que les haya hecho (ver CampoPropuesto). Lo que viene null no se
-   * toca: puede ser un campo que la IA no reescribio o uno que ella quito.
+   * Escribe en el formulario los campos de una propuesta. Lo que viene null no
+   * se toca: puede ser un campo que la IA no reescribio o uno que ella quito.
+   *
+   * Esta separado de `aplicarPropuesta` porque hay dos caminos que terminan
+   * escribiendo, y solo uno pide confirmacion. Ver el comentario de `pedirAyuda`.
    */
-  function aplicarPropuesta(p: PropuestaIA) {
+  function escribirPropuesta(p: PropuestaIA) {
     const escribir = (
       ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
       campo: keyof typeof valores,
@@ -509,6 +539,14 @@ export default function FormularioIdea({
     setAplicados(
       CAMPOS_PROPUESTA.filter(({ campo }) => p[campo]).map(({ etiqueta }) => etiqueta),
     );
+  }
+
+  /**
+   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
+   * retoques que les haya hecho (ver CampoPropuesto).
+   */
+  function aplicarPropuesta(p: PropuestaIA) {
+    escribirPropuesta(p);
     setRevision({ ...revision!, propuesta: null });
   }
 
@@ -1232,7 +1270,8 @@ export default function FormularioIdea({
         {conIA && !revision && !revisando && (
           <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
             Escribí con tus palabras y después pedí «Mejorar con IA»: ordena tu texto, te dice qué
-            le falta y te ofrece detalles de obra para elegir. Nada se aplica sin que lo aceptes.
+            le falta y te ofrece detalles de obra para elegir. El texto que reescribe lo aceptás
+            vos campo por campo; los detalles que tildes entran derecho.
           </p>
         )}
 
