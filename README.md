@@ -27,7 +27,7 @@ desplegarse en **Vercel**.
 | Ficha de proyecto | `/proyectos/<slug>` | Problema, propuesta, beneficios, votos, presupuesto y avance de obra |
 | Transparencia | `/transparencia` | Qué proyecto ganó en cada distrito y con cuántos votos; datos abiertos |
 | Carga de ideas | `/ideas/nueva` | Formulario con selector de punto en el mapa; el distrito se deriva solo |
-| Votación | `/votar` | Empadronamiento (CIDITUC u OIDC), un voto por persona en su distrito |
+| Votación | `/votar` | Empadronamiento con CIDITUC, un voto por persona en su distrito |
 | Chatbot | botón flotante | Consultas en lenguaje natural sobre los datos reales del programa |
 | Backoffice | `/admin` | Leer las propuestas, evaluarlas, exportarlas en PDF y mover la etapa del proceso |
 | Datos abiertos | `/api/proyectos`, `/geo/distritos.geojson` | JSON/CSV y geometría oficial reutilizables |
@@ -57,8 +57,10 @@ npm run dev                    # http://localhost:3000
 | `OPENROUTER_API_KEY` | Clave del modelo, compartida por el chat, el asistente de carga y el informe de impacto. **Sin ella nada rompe**: el chat cae al buscador determinístico y las funciones de IA quedan desactivadas |
 | `OPENROUTER_MODELO` | Modelo con la forma `proveedor/modelo` (por defecto `anthropic/claude-sonnet-5`). Se puede afinar por función con `OPENROUTER_MODELO_CHAT`, `_ASISTENTE` e `_INFORME` |
 | `CHAT_RATE_LIMIT` | Consultas por IP por hora (por defecto 30) |
-| `AUTH_PROVIDER` | `dev` (login de prueba, solo desarrollo) o `cidituc` (OIDC real) |
-| `CIDITUC_*` | Credenciales OIDC que debe entregar el municipio |
+| `AUTH_PROVIDER` | `dev` (login de prueba, solo desarrollo) o `cidituc` (la ciudadanía digital real) |
+| `CIDITUC_APP` | Clave con la que la app está registrada en el Derivador (por defecto `presupuesto-participativo`) |
+| `CIDITUC_INGRESO_HABILITADO` | `true` enciende el botón de ingreso. Se enciende **después** de que el Derivador despliegue la entrada de esta app |
+| `CIDITUC_CA_PEM` | Cadena de Sectigo (intermedio + raíz) para hablar con `estadisticas.smt.gob.ar:5000`. Ver más abajo |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario inicial del backoffice, creado por el seed |
 | `SITE_URL` | URL pública del sitio en producción |
 
@@ -77,11 +79,78 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
 3. **Vercel**: importar el repo y configurar las variables de entorno del
    proyecto: `DATABASE_URL` (la misma de Supabase), `SESSION_SECRET`,
    `OPENROUTER_API_KEY`, `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
-   hasta tener CIDITUC), `SITE_URL` y las `CIDITUC_*` cuando estén.
+   hasta tener CIDITUC), `SITE_URL`, `CIDITUC_CA_PEM` y, cuando el Derivador
+   tenga desplegada la entrada de esta app, `CIDITUC_INGRESO_HABILITADO=true`.
 4. El mismo código detecta la URL: con Supabase usa node-postgres (`Pool` de
    `pg`, una consulta por conexión, que es lo que tolera el pooler en modo
    transacción); sin URL usa PGlite. No hay ramas de código distintas entre
    desarrollo y producción.
+
+### Ingreso con CIDITUC
+
+El login de la ciudadanía digital **no es OpenID Connect**: no hay `client_id`
+ni `client_secret` que pedirle a nadie. La persona sale a la pantalla de CIDITUC
+(el *Derivador*), vuelve a `/auth/cidituc/callback` con `?auth=<token>`, y el
+sitio valida ese token consultando el perfil en
+`estadisticas.smt.gob.ar:5000/usuarios/authStatus` — esa consulta **es** la
+validación, porque el backend verifica la firma antes de responder. Todo eso
+vive en `src/lib/cidituc.ts`.
+
+Lo que falta hacer una sola vez es de DITEC, no de este repo: registrar la app
+en el repo **`derivador`** (ojo, los nombres están cruzados: `cidituc.smt.gob.ar`
+lo sirve el repo `derivador`, y el repo `cidituc` sirve otro dominio). En
+`src/components/Login/Login.jsx`, una entrada en **cada** uno de los dos mapas:
+
+```js
+const APPS_EXTERNAS = new Map([
+  ["presupuesto-participativo", {
+    nombre: "Presupuesto Participativo",
+    callbackUrl: import.meta.env.VITE_APP_PRESUPUESTO_CALLBACK_URL,
+  }],
+]);
+
+const RESPALDO_CALLBACK = new Map([
+  ["presupuesto-participativo", "https://<el sitio>/auth/cidituc/callback"],
+]);
+```
+
+El respaldo hardcodeado **no es opcional**: Vite hornea las `VITE_*` al compilar
+y el build de producción no las tiene, así que sin él el bundle sale con
+`callbackUrl: undefined` y la persona se autentica para chocar con "Falta
+configurar el regreso".
+
+Mergear a `dev` no alcanza: hay que **desplegar** y verificarlo en el bundle
+servido, no en el repo.
+
+```bash
+curl -s https://cidituc.smt.gob.ar/ | grep -oE '/assets/index-[^"]+.js'
+curl -s https://cidituc.smt.gob.ar/assets/index-XXXX.js | grep -c "presupuesto-participativo"
+```
+
+Recién cuando eso devuelve algo distinto de cero se pone
+`CIDITUC_INGRESO_HABILITADO=true`. Antes de ese despliegue, la persona se
+autentica bien y queda varada en la pantalla de CIDITUC sin ningún mensaje: por
+eso el botón no se muestra solo.
+
+**El certificado.** `estadisticas.smt.gob.ar:5000` manda la cadena completa o
+solo el certificado final según por dónde se llegue; desde Vercel llega sin el
+intermedio y Node corta con `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. Por eso
+`CIDITUC_CA_PEM` lleva el intermedio y el raíz de Sectigo, que son públicos:
+
+```bash
+openssl s_client -connect estadisticas.smt.gob.ar:5000 -showcerts </dev/null
+# el 2do y 3er bloque BEGIN/END CERTIFICATE, concatenados
+```
+
+Esos certificados se **suman** a las raíces que ya trae Node, no las
+reemplazan: la opción `ca` pisa el almacén entero, y pasando solo la cadena de
+Sectigo el raíz R46 queda sin ancla (viene firmado por USERTrust, no por sí
+mismo) y la conexión muere con `UNABLE_TO_GET_ISSUER_CERT`. Medido contra el
+backend real. La verificación TLS **nunca** se desactiva: no hay ninguna
+`rejectUnauthorized: false` en el código, ni siquiera para desarrollo.
+
+La guía completa, con todas las trampas, es `docs/integrar-cidituc.md` del
+proyecto Landing Elecop (Dirección de IA).
 
 ## Arquitectura
 
@@ -185,9 +254,13 @@ archivo nuevo en `drizzle/`.
 
 ## Pendientes conocidos
 
-- **CIDITUC**: el flujo OIDC está implementado (`/api/auth/*`) pero sin probar
-  contra el IdP real; falta que el municipio entregue credenciales y el mapeo
-  exacto de los claims (DNI y distrito del padrón).
+- **CIDITUC**: el flujo está implementado y probado contra el backend real
+  (token falso → 401 → error propio), pero falta lo que no depende de este repo:
+  que DITEC registre la app en el Derivador y lo **despliegue**. Hasta entonces
+  `CIDITUC_INGRESO_HABILITADO` queda en `false`. Falta además decidir **de dónde
+  sale el distrito** de cada votante: CIDITUC devuelve documento, nombre y
+  contacto, no domicilio, así que hoy quien ingresa cae en la pantalla "Falta tu
+  distrito" salvo que el padrón ya lo tenga cargado.
 - **Reglamento**: la página existe con las reglas confirmadas, pero el texto
   oficial completo hay que conseguirlo y cargarlo en el texto `reglamento-cuerpo`,
   hoy directamente en la base (la pantalla que lo editaba se borró).

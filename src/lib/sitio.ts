@@ -9,9 +9,10 @@
  * la plataforma, asi que el sitio funciona incluso si alguien despliega sin
  * configurar la variable.
  *
- * Los redirects de autenticacion NO usan este helper a proposito: el
- * `redirect_uri` de CIDITUC esta registrado en el proveedor y tiene que ser
- * exactamente el configurado, no uno adivinado del entorno.
+ * La vuelta del ingreso de CIDITUC NO usa este helper a proposito: se arma
+ * sobre la URL con la que llego el pedido (ver la ruta del callback), asi la
+ * persona termina en el mismo sitio del que salio aunque SITE_URL este sin
+ * configurar o apunte a otro lado.
  */
 export function urlDelSitio(): string {
   const configurada = process.env.SITE_URL?.trim();

@@ -1,9 +1,9 @@
 /**
  * Empadronamiento de votantes.
  *
- * Proveedor "cidituc": OpenID Connect contra la ciudadania digital municipal.
- * Las URLs y credenciales van por entorno; hasta tener las credenciales reales
- * del municipio el flujo queda implementado pero sin probar contra el IdP.
+ * Proveedor "cidituc": la ciudadania digital municipal. El flujo entero
+ * (Derivador, token, consulta del perfil) vive en src/lib/cidituc.ts; aca queda
+ * solo lo que hace el sitio con la persona ya identificada.
  *
  * Proveedor "dev": login de prueba local con DNI y distrito, para desarrollo
  * y demostraciones. Se activa solo con AUTH_PROVIDER=dev y NUNCA debe estar
@@ -13,7 +13,6 @@
  * sitio no contiene DNIs en claro.
  */
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { votantes } from "@/db/schema";
 
@@ -81,41 +80,4 @@ export function proveedorActivo(): "cidituc" | "dev" {
     );
   }
   return "dev";
-}
-
-// ---------------------------------------------------------------------------
-// OpenID Connect (CIDITUC)
-// ---------------------------------------------------------------------------
-
-export type ConfigOidc = {
-  issuer: string;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-};
-
-export function configOidc(): ConfigOidc | null {
-  const issuer = process.env.CIDITUC_ISSUER?.trim();
-  const clientId = process.env.CIDITUC_CLIENT_ID?.trim();
-  const clientSecret = process.env.CIDITUC_CLIENT_SECRET?.trim();
-  const redirectUri = process.env.CIDITUC_REDIRECT_URI?.trim();
-  if (!issuer || !clientId || !clientSecret || !redirectUri) return null;
-  return { issuer, clientId, clientSecret, redirectUri };
-}
-
-type Descubrimiento = {
-  authorization_endpoint: string;
-  token_endpoint: string;
-  userinfo_endpoint: string;
-};
-
-export async function descubrirOidc(config: ConfigOidc): Promise<Descubrimiento> {
-  const respuesta = await fetch(
-    `${config.issuer.replace(/\/$/, "")}/.well-known/openid-configuration`,
-    { next: { revalidate: 3600 } },
-  );
-  if (!respuesta.ok) {
-    throw new Error(`No se pudo descubrir el proveedor OIDC (${respuesta.status}).`);
-  }
-  return (await respuesta.json()) as Descubrimiento;
 }

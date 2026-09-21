@@ -18,12 +18,20 @@ type Proyecto = {
 
 type Props = {
   proveedor: "cidituc" | "dev";
+  /** URL del Derivador, o null si el ingreso todavia no esta habilitado. */
+  urlIngreso: string | null;
   sesion: { distrito: number | null; nombre: string | null } | null;
   proyectos: Proyecto[];
   yaVoto: boolean;
 };
 
-export default function PanelVotacion({ proveedor, sesion, proyectos, yaVoto }: Props) {
+export default function PanelVotacion({
+  proveedor,
+  urlIngreso,
+  sesion,
+  proyectos,
+  yaVoto,
+}: Props) {
   const [elegido, setElegido] = useState<Proyecto | null>(null);
   const [estado, setEstado] = useState<
     | { tipo: "inicial" }
@@ -62,13 +70,26 @@ export default function PanelVotacion({ proveedor, sesion, proyectos, yaVoto }: 
           Para votar necesitás tu cuenta CIDITUC. Si todavía no la tenés, podés crearla desde la
           página de la Municipalidad o en las asambleas participativas.
         </p>
-        <a
-          href="/api/auth/ingresar"
-          className="mt-5 inline-block rounded-xl px-5 py-3 text-sm font-semibold text-white"
-          style={{ background: "var(--color-marca-700)" }}
-        >
-          Ingresar con CIDITUC
-        </a>
+        {urlIngreso ? (
+          <a
+            href={urlIngreso}
+            className="mt-5 inline-block rounded-xl px-5 py-3 text-sm font-semibold text-white"
+            style={{ background: "var(--color-marca-700)" }}
+          >
+            Ingresar con CIDITUC
+          </a>
+        ) : (
+          /*
+           * Sin el boton, y diciendo por que. Mientras el Derivador no tenga
+           * desplegada la entrada de este sitio, el ingreso termina con la
+           * persona varada en la pantalla de CIDITUC, sin mensaje: es mejor no
+           * ofrecerlo que dejarla ahi.
+           */
+          <p className="mt-5 text-sm font-medium" style={{ color: "var(--acento-texto)" }}>
+            El ingreso con ciudadanía digital todavía no está habilitado. Cuando lo esté, vas a
+            poder entrar desde acá.
+          </p>
+        )}
       </div>
     ) : (
       <LoginDev />
