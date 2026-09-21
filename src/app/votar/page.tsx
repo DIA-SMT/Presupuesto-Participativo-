@@ -81,6 +81,7 @@ export default async function Votar() {
             slug: p.slug,
             titulo: p.titulo,
             barrio: p.barrio,
+            categoriaSlug: p.categoriaSlug,
             categoriaNombre: p.categoriaNombre,
             categoriaColor: p.categoriaColor,
           }))}

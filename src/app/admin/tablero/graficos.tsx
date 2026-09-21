@@ -11,7 +11,12 @@
  * valores, la tabla con los mismos numeros en un <details>. El color nunca
  * distingue por si solo: siempre hay texto al lado.
  */
-import { ETIQUETA_ESTADO, formatearNumero, formatearFechaCorta } from "@/lib/formato";
+import {
+  ETIQUETA_ESTADO,
+  colorCategoria,
+  formatearNumero,
+  formatearFechaCorta,
+} from "@/lib/formato";
 
 // ---------------------------------------------------------------------------
 // Colores y formatos compartidos por los graficos
@@ -30,14 +35,6 @@ export const COLOR_ESTADO_TABLERO: Record<string, string> = {
   integrado: "var(--color-estado-integrado)",
   ganador: "var(--color-estado-ganador)",
 };
-
-/** Color de cada categoria del programa, por el slug que trae la base. */
-export function colorCategoria(slug: string): string {
-  if (slug.includes("ambiental")) return "var(--color-cat-ambiental)";
-  if (slug.includes("deportivo")) return "var(--color-cat-deportivo)";
-  if (slug.includes("urbana")) return "var(--color-cat-urbana)";
-  return "var(--color-marca-500)";
-}
 
 const decimales = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 });
 
@@ -470,7 +467,7 @@ export function MapaCalorCategorias({
                   y={ALTO_ENCABEZADO - 8}
                   width={ANCHO_CELDA - 4}
                   height={3}
-                  fill={colorCategoria(categoria.slug)}
+                  fill={colorCategoria(categoria.slug) ?? "var(--color-marca-500)"}
                   rx={1.5}
                 />
               </g>
@@ -492,7 +489,7 @@ export function MapaCalorCategorias({
                 </text>
                 {categorias.map((categoria, columna) => {
                   const valor = fila.valores[columna] ?? 0;
-                  const color = colorCategoria(categoria.slug);
+                  const color = colorCategoria(categoria.slug) ?? "var(--color-marca-500)";
                   return (
                     <g key={categoria.slug}>
                       <rect

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Mapa from "@/components/Mapa";
 import { Chip, Vacio } from "@/components/ui";
 import { getDistritos, getEdicionActiva, getTextos } from "@/db/queries";
-import { formatearNumero } from "@/lib/formato";
+import { colorCategoria, formatearNumero } from "@/lib/formato";
 
 export const metadata: Metadata = {
   title: "Distritos",
@@ -55,7 +55,12 @@ export default async function Distritos() {
               href={`/distritos/${distrito.numero}`}
               className="superficie group flex h-full flex-col rounded-2xl p-5 transition hover:shadow-lg"
               style={{
-                borderLeft: `4px solid ${distrito.ganador?.categoriaColor ?? "var(--borde)"}`,
+                borderLeft: `4px solid ${
+                  colorCategoria(
+                    distrito.ganador?.categoriaSlug,
+                    distrito.ganador?.categoriaColor,
+                  ) ?? "var(--borde)"
+                }`,
               }}
             >
               <div className="flex items-center justify-between gap-3">

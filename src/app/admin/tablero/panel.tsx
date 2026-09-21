@@ -22,6 +22,7 @@ import type {
 import {
   ETIQUETA_ETAPA,
   ETIQUETA_PRESUPUESTO,
+  colorCategoria,
   formatearNumero,
   formatearPesos,
 } from "@/lib/formato";
@@ -31,7 +32,6 @@ import {
   BarraMini,
   MapaCalorCategorias,
   SerieDiaria,
-  colorCategoria,
   formatearPorcentaje,
   type FilaMatriz,
   type PuntoGrafico,
@@ -423,7 +423,7 @@ export default function PanelTablero({
                   <span
                     aria-hidden="true"
                     className="inline-block h-3 w-3 rounded-sm"
-                    style={{ background: colorCategoria(categoria.slug) }}
+                    style={{ background: colorCategoria(categoria.slug) ?? "var(--color-marca-500)" }}
                   />
                   {categoria.nombre}
                 </li>

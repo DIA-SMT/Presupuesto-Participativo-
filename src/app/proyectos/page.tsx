@@ -10,7 +10,7 @@ import {
   listarIdeas,
   type EstadoIdea,
 } from "@/db/queries";
-import { ETIQUETA_ESTADO, formatearNumero } from "@/lib/formato";
+import { ETIQUETA_ESTADO, colorCategoria, formatearNumero } from "@/lib/formato";
 
 export const metadata: Metadata = {
   title: "Proyectos e ideas",
@@ -113,7 +113,7 @@ export default async function Proyectos({ searchParams }: Props) {
               distrito: idea.distrito,
               lat: idea.lat!,
               lon: idea.lon!,
-              color: idea.categoriaColor ?? "var(--color-marca-600)",
+              color: colorCategoria(idea.categoriaSlug, idea.categoriaColor) ?? "var(--color-marca-600)",
               estado: idea.estado,
               ganador: idea.ganador,
               aproximada: idea.ubicacionAproximada,

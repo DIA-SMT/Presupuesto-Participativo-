@@ -5,11 +5,13 @@
  * eleccion del proyecto del propio distrito y confirmacion del voto.
  */
 import { useState } from "react";
+import { colorCategoria } from "@/lib/formato";
 
 type Proyecto = {
   slug: string;
   titulo: string;
   barrio: string | null;
+  categoriaSlug: string | null;
   categoriaNombre: string | null;
   categoriaColor: string | null;
 };
@@ -131,6 +133,10 @@ export default function PanelVotacion({ proveedor, sesion, proyectos, yaVoto }: 
             <legend className="sr-only">Proyectos de tu distrito</legend>
             {proyectos.map((proyecto) => {
               const seleccionado = elegido?.slug === proyecto.slug;
+              const colorDeCategoria = colorCategoria(
+                proyecto.categoriaSlug,
+                proyecto.categoriaColor,
+              );
               return (
                 <label
                   key={proyecto.slug}
@@ -138,7 +144,7 @@ export default function PanelVotacion({ proveedor, sesion, proyectos, yaVoto }: 
                   style={{
                     borderColor: seleccionado ? "var(--color-marca-600)" : "var(--borde)",
                     borderWidth: 2,
-                    borderLeft: `4px solid ${proyecto.categoriaColor ?? "var(--borde)"}`,
+                    borderLeft: `4px solid ${colorDeCategoria ?? "var(--borde)"}`,
                   }}
                 >
                   <input

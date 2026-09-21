@@ -7,6 +7,7 @@ import { getDistrito, getEdicionActiva } from "@/db/queries";
 import {
   DESCRIPCION_ESTADO,
   ETIQUETA_ESTADO,
+  colorCategoria,
   formatearNumero,
 } from "@/lib/formato";
 
@@ -33,6 +34,7 @@ export default async function PaginaDistrito({ params }: Props) {
   if (!distrito) notFound();
 
   const ganador = distrito.ganador;
+  const colorDeCategoria = colorCategoria(ganador?.categoriaSlug, ganador?.categoriaColor);
   const otras = distrito.ideas.filter((idea) => !idea.ganador);
   const conPunto = distrito.ideas.filter((idea) => idea.lat !== null);
 
@@ -101,12 +103,12 @@ export default async function PaginaDistrito({ params }: Props) {
           <h2 className="text-xl font-bold">Proyecto ganador</h2>
           <article
             className="superficie mt-4 rounded-2xl p-6"
-            style={{ borderLeft: `5px solid ${ganador.categoriaColor ?? "var(--borde)"}` }}
+            style={{ borderLeft: `5px solid ${colorDeCategoria ?? "var(--borde)"}` }}
           >
             <div className="flex flex-wrap items-center gap-2">
               <ChipEstado estado="ganador" />
               {ganador.categoriaNombre && (
-                <Chip color={ganador.categoriaColor ?? undefined}>{ganador.categoriaNombre}</Chip>
+                <Chip color={colorDeCategoria ?? undefined}>{ganador.categoriaNombre}</Chip>
               )}
               <Chip color="var(--ganador-texto)">
                 {formatearNumero(ganador.votos)} votos
@@ -175,7 +177,7 @@ export default async function PaginaDistrito({ params }: Props) {
               distrito: idea.distrito,
               lat: idea.lat!,
               lon: idea.lon!,
-              color: idea.categoriaColor ?? "var(--color-marca-600)",
+              color: colorCategoria(idea.categoriaSlug, idea.categoriaColor) ?? "var(--color-marca-600)",
               estado: idea.estado,
               ganador: idea.ganador,
               aproximada: idea.ubicacionAproximada,
