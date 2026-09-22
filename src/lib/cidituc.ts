@@ -16,6 +16,7 @@
  * CIDITUC", la guia de integracion de la Direccion de IA (Lucas Nahuz) salida
  * del Portal del Becario de ELCOP y probada en produccion el 11/8/2026.
  */
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Agent, request as pedirHttps } from "node:https";
 import { rootCertificates } from "node:tls";
 
@@ -47,9 +48,75 @@ export function claveDeApp(): string {
   return process.env.CIDITUC_APP?.trim() || "presupuesto-participativo";
 }
 
-/** La URL del boton "Ingresar con CIDITUC". */
-export function urlDeIngreso(): string {
-  return `${DERIVADOR}/#/login?next=${encodeURIComponent(claveDeApp())}`;
+/**
+ * El boton no lleva directo al Derivador: pasa por una ruta nuestra que planta
+ * la cookie del estado y recien ahi redirige. Ver `nuevoEstado`.
+ */
+export const RUTA_INGRESO = "/auth/cidituc/ingresar";
+
+/**
+ * El estado que ata la vuelta a la salida.
+ *
+ * Sin esto, el callback abre sesion con cualquier token valido que le llegue,
+ * aunque el ingreso no haya empezado en este navegador. Alguien puede pedir un
+ * token con SU cuenta, no usarlo, y mandarle a otra persona el link del callback
+ * con ese token colgado: la persona hace clic, el token es legitimo —CIDITUC lo
+ * firmo— y queda con la sesion del otro. Si despues vota, cree que voto ella y
+ * su voto sigue sin usarse.
+ *
+ * Con el estado, la salida deja un numero al azar en una cookie de la persona y
+ * se lo pasa al Derivador, que lo devuelve; el callback los compara. Un link
+ * fabricado por otro no puede traer el numero que esta en LA cookie de la
+ * victima. Es lo mismo que ya hace UrbanIA.
+ *
+ * Dura 10 minutos y es de un solo uso. Efecto conocido y aceptado: si alguien
+ * abre el ingreso en dos pestañas, la segunda pisa la cookie de la primera y la
+ * vuelta de la primera falla con "estado"; el mensaje le dice que entre de nuevo.
+ */
+export const COOKIE_ESTADO = "pp_cidituc_estado";
+export const DURACION_ESTADO = 600;
+
+export function nuevoEstado(): string {
+  return randomBytes(16).toString("hex");
+}
+
+/** Comparacion en tiempo constante: es una credencial, aunque sea de un rato. */
+export function mismoEstado(uno: string | null | undefined, otro: string | null | undefined): boolean {
+  if (!uno || !otro || uno.length !== otro.length) return false;
+  return timingSafeEqual(Buffer.from(uno), Buffer.from(otro));
+}
+
+/**
+ * El origen del Derivador.
+ *
+ * Es fijo, salvo en desarrollo: con CIDITUC_DERIVADOR se puede apuntar al
+ * Derivador que corre en la maquina (http://localhost:5173) y probar el ingreso
+ * de punta a punta. En produccion la variable se IGNORA, no se "respeta si esta"
+ * — el ingreso real es uno solo, y una variable de desarrollo que igual funciona
+ * en produccion es exactamente la que despues se cuela en un deploy.
+ *
+ * La variable lleva SOLO el origen. El `#/login?...` lo pone el codigo, asi el
+ * `#` no pasa nunca por un archivo .env, donde abriria un comentario y se
+ * comeria el resto de la linea.
+ */
+function derivador(): string {
+  if (process.env.NODE_ENV !== "production") {
+    const local = process.env.CIDITUC_DERIVADOR?.trim().replace(/\/$/, "");
+    if (local) return local;
+  }
+  return DERIVADOR;
+}
+
+/**
+ * La URL del Derivador para esta app.
+ *
+ * El `state` va DENTRO del fragmento, al lado de `next`: el Derivador usa
+ * HashRouter y lee la query del hash, no la de la URL. Puesto despues del `#`
+ * de la manera "normal" no lo veria nunca.
+ */
+export function urlDeIngreso(estado: string): string {
+  const parametros = new URLSearchParams({ next: claveDeApp(), state: estado });
+  return `${derivador()}/#/login?${parametros}`;
 }
 
 /**

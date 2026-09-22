@@ -110,7 +110,8 @@ const APPS_EXTERNAS = new Map([
 ]);
 
 const RESPALDO_CALLBACK = new Map([
-  ["presupuesto-participativo", "https://<el sitio>/auth/cidituc/callback"],
+  ["presupuesto-participativo",
+   "https://presupuestoparticipativo.smt.gob.ar/auth/cidituc/callback"],
 ]);
 ```
 

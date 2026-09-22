@@ -10,6 +10,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ingresoHabilitado,
+  mismoEstado,
+  nuevoEstado,
   personaDeRespuesta,
   texto,
   urlDeIngreso,
@@ -20,21 +22,55 @@ import {
 test("la URL de ingreso lleva el # del HashRouter", () => {
   // Sin el `#` el Derivador cae en su ruta comodin y expulsa a la persona a
   // ciudaddigital.smt.gob.ar.
-  const url = urlDeIngreso();
+  const url = urlDeIngreso("abc123");
   assert.ok(url.startsWith("https://cidituc.smt.gob.ar/#/login?next="), url);
+});
+
+test("el estado viaja DENTRO del fragmento, donde el Derivador lo lee", () => {
+  // Puesto antes del `#` el Derivador no lo veria nunca: lee la query del hash.
+  const url = urlDeIngreso("abc123");
+  const hash = url.slice(url.indexOf("#") + 1);
+  const query = new URLSearchParams(hash.slice(hash.indexOf("?") + 1));
+  assert.equal(query.get("state"), "abc123");
+  assert.equal(query.get("next"), "presupuesto-participativo");
 });
 
 test("la clave de la app se puede cambiar por entorno", () => {
   const antes = process.env.CIDITUC_APP;
   try {
     delete process.env.CIDITUC_APP;
-    assert.equal(urlDeIngreso(), "https://cidituc.smt.gob.ar/#/login?next=presupuesto-participativo");
+    assert.equal(
+      urlDeIngreso("x"),
+      "https://cidituc.smt.gob.ar/#/login?next=presupuesto-participativo&state=x",
+    );
     process.env.CIDITUC_APP = "otra-clave";
-    assert.equal(urlDeIngreso(), "https://cidituc.smt.gob.ar/#/login?next=otra-clave");
+    assert.equal(urlDeIngreso("x"), "https://cidituc.smt.gob.ar/#/login?next=otra-clave&state=x");
   } finally {
     if (antes === undefined) delete process.env.CIDITUC_APP;
     else process.env.CIDITUC_APP = antes;
   }
+});
+
+// --- El estado que ata la vuelta a la salida ---------------------------------
+
+test("cada salida lleva un estado distinto y largo", () => {
+  const uno = nuevoEstado();
+  const otro = nuevoEstado();
+  assert.notEqual(uno, otro);
+  assert.match(uno, /^[0-9a-f]{32}$/);
+});
+
+test("el estado solo coincide consigo mismo", () => {
+  const estado = nuevoEstado();
+  assert.equal(mismoEstado(estado, estado), true);
+  assert.equal(mismoEstado(estado, nuevoEstado()), false);
+  // Lo que importa: sin cookie, o sin state en la vuelta, NO pasa. Ahi es donde
+  // entraria el link fabricado por otro.
+  assert.equal(mismoEstado(undefined, estado), false);
+  assert.equal(mismoEstado(estado, undefined), false);
+  assert.equal(mismoEstado(null, null), false);
+  assert.equal(mismoEstado("", ""), false);
+  assert.equal(mismoEstado(estado, estado.slice(0, -1)), false);
 });
 
 test("el boton esta apagado salvo que se lo encienda explicitamente", () => {
