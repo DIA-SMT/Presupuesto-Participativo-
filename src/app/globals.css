@@ -326,7 +326,7 @@
 }
 
 .solapa[aria-current] .solapa-numero {
-  color: var(--color-marca-700);
+  color: var(--marca-texto);
 }
 
 /* Enlace de salto al contenido, visible solo al tabular. */

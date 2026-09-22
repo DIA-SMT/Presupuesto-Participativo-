@@ -1,7 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { IdeaVista } from "@/db/queries";
-import { COLOR_ESTADO, ETIQUETA_ESTADO, formatearNumero, recortar } from "@/lib/formato";
+import {
+  COLOR_ESTADO,
+  ETIQUETA_ESTADO,
+  colorCategoria,
+  formatearNumero,
+  recortar,
+} from "@/lib/formato";
 
 export function Chip({
   children,
@@ -129,11 +135,12 @@ export function Dato({
 
 export function TarjetaProyecto({ idea }: { idea: IdeaVista }) {
   const resumen = idea.problema ?? idea.solucion ?? idea.beneficios;
+  const colorDeCategoria = colorCategoria(idea.categoriaSlug, idea.categoriaColor);
   return (
     <article
       className="superficie flex h-full flex-col rounded-2xl p-5 transition hover:shadow-lg"
       style={{
-        borderLeft: `4px solid ${idea.categoriaColor ?? "var(--borde)"}`,
+        borderLeft: `4px solid ${colorDeCategoria ?? "var(--borde)"}`,
       }}
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">

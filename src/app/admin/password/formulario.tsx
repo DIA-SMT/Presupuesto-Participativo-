@@ -78,7 +78,7 @@ export default function FormularioPassword() {
           <span
             role={estado.ok ? "status" : "alert"}
             className="text-sm"
-            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--color-acento-600)" }}
+            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
           >
             {estado.ok ? (estado.mensaje ?? "Contraseña actualizada.") : estado.error}
           </span>

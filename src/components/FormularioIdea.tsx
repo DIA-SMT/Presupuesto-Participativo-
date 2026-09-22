@@ -52,7 +52,11 @@
  * IA; ahora guarda el texto entero, porque hay que mostrarlo.
  */
 import { useEffect, useRef, useState } from "react";
-import DocumentoIdea, { type BloqueActivo } from "@/components/DocumentoIdea";
+import DocumentoIdea, {
+  type BloqueActivo,
+  type CampoEditable,
+  type EdicionDocumento,
+} from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
 import type { PropuestaIA, RespuestaAsistente } from "@/app/api/ideas/asistente/route";
 
@@ -71,6 +75,9 @@ const LARGOS = {
   solucion: 4000,
   beneficios: 3000,
 } as const;
+
+/** El barrio no esta en LARGOS porque no es un campo de redaccion. */
+const LARGO_BARRIO = 120;
 
 /** Los tres campos largos, los unicos con ayuda de redaccion. */
 type CampoLargo = "problema" | "solucion" | "beneficios";
@@ -278,6 +285,14 @@ export default function FormularioIdea({
   const refProblema = useRef<HTMLTextAreaElement>(null);
   const refSolucion = useRef<HTMLTextAreaElement>(null);
   const refBeneficios = useRef<HTMLTextAreaElement>(null);
+  /** Los campos que el documento puede escribir, para espejarlos de este lado. */
+  const REF_DEL_CAMPO = {
+    titulo: refTitulo,
+    barrio: refBarrio,
+    solucion: refSolucion,
+    problema: refProblema,
+    beneficios: refBeneficios,
+  } as const;
   /**
    * El ultimo barrio que puso el mapa. Sirve para distinguir "esto lo completo
    * un clic" de "esto lo escribio la persona": si el valor del campo coincide
@@ -420,8 +435,10 @@ export default function FormularioIdea({
    *
    * Devuelve de una vez el texto formalizado de cada campo que tenga contenido,
    * un titulo sugerido, que le falta a la propuesta, si ya hay una parecida en
-   * el distrito y los aspectos de obra para tildar. Nada se aplica solo: queda
-   * a la vista y la persona acepta o descarta.
+   * el distrito y los aspectos de obra para tildar. El texto reescrito queda a
+   * la vista y la persona acepta o descarta campo por campo; los detalles que
+   * ella misma tildo entran derecho (ver el comentario de mas abajo, donde se
+   * decide cual de los dos caminos es).
    *
    * Nunca bloquea el envio: si falla, avisa y el formulario sigue andando.
    */
@@ -452,7 +469,33 @@ export default function FormularioIdea({
         throw new Error(cuerpo?.error ?? "No se pudo generar la ayuda.");
       }
 
-      setRevision((await respuesta.json()) as RespuestaAsistente);
+      const datos = (await respuesta.json()) as RespuestaAsistente;
+
+      /*
+       * Los detalles elegidos entran DERECHO al texto, sin una segunda
+       * confirmacion.
+       *
+       * "Nada se aplica sin que lo aceptes" sigue valiendo: lo que cambia es
+       * DONDE se acepta. Cuando alguien tilda "pavimento definitivo" y aprieta
+       * "Agregar los 3 elegidos", ya eligio dos veces; volver a mostrarle los
+       * mismos textos para que los apruebe campo por campo es preguntarle lo
+       * mismo una tercera vez, y el boton ya prometia agregarlos.
+       *
+       * El otro camino —"Mejorar con IA" a secas— SI conserva la revision campo
+       * por campo, y ahi corresponde: la IA reescribio lo que la persona habia
+       * escrito, sin que nadie se lo pidiera renglon por renglon.
+       *
+       * Lo aplicado no queda invisible: `setAplicados` deja el resumen de que
+       * campos se tocaron, y el texto se sigue pudiendo editar en el formulario
+       * o en el documento mismo.
+       */
+      if (agregar?.length && datos.propuesta) {
+        escribirPropuesta(datos.propuesta);
+        setRevision({ ...datos, propuesta: null });
+      } else {
+        setRevision(datos);
+      }
+
       setElegidos([]);
       setEstado({ tipo: "editando" });
     } catch (causa) {
@@ -473,11 +516,13 @@ export default function FormularioIdea({
   }
 
   /**
-   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
-   * retoques que les haya hecho (ver CampoPropuesto). Lo que viene null no se
-   * toca: puede ser un campo que la IA no reescribio o uno que ella quito.
+   * Escribe en el formulario los campos de una propuesta. Lo que viene null no
+   * se toca: puede ser un campo que la IA no reescribio o uno que ella quito.
+   *
+   * Esta separado de `aplicarPropuesta` porque hay dos caminos que terminan
+   * escribiendo, y solo uno pide confirmacion. Ver el comentario de `pedirAyuda`.
    */
-  function aplicarPropuesta(p: PropuestaIA) {
+  function escribirPropuesta(p: PropuestaIA) {
     const escribir = (
       ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
       campo: keyof typeof valores,
@@ -494,12 +539,56 @@ export default function FormularioIdea({
     setAplicados(
       CAMPOS_PROPUESTA.filter(({ campo }) => p[campo]).map(({ etiqueta }) => etiqueta),
     );
+  }
+
+  /**
+   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
+   * retoques que les haya hecho (ver CampoPropuesto).
+   */
+  function aplicarPropuesta(p: PropuestaIA) {
+    escribirPropuesta(p);
     setRevision({ ...revision!, propuesta: null });
   }
 
-  /** Un campo cambio: se espeja en estado para redibujar el documento. */
+  /**
+   * Un campo cambio: se espeja en estado para redibujar el documento.
+   *
+   * ACA NO SE TRANSFORMA EL TEXTO. Ni `trim()`, ni normalizar comillas, ni
+   * colapsar espacios. Desde que el documento se escribe encima (ver CampoDoc en
+   * DocumentoIdea.tsx), este estado alimenta un textarea controlado: si el valor
+   * que vuelve difiere del que el nodo tiene, React reescribe el nodo y el
+   * cursor se va al final en CADA tecla. Es un sintoma rarisimo de rastrear
+   * hasta acá, asi que queda dicho donde se rompe.
+   */
   function anotarValor(campo: keyof typeof valores, valor: string) {
     setValores((previo) => (previo[campo] === valor ? previo : { ...previo, [campo]: valor }));
+  }
+
+  /**
+   * Lo que se escribe en el documento de la derecha.
+   *
+   * Espeja en el campo de la izquierda, que sigue sin estar controlado (ver el
+   * encabezado del archivo), y anota el valor. No hay ciclo: asignar `.value`
+   * desde JavaScript no dispara `input`, y `anotarValor` corta cuando el valor
+   * no cambio.
+   */
+  function escribirDesdeDocumento(campo: CampoEditable, valor: string) {
+    // El tope del campo hay que aplicarlo a mano: `maxLength` frena a quien
+    // escribe, pero no a una asignacion por codigo, y el servidor rechazaria un
+    // texto largo sin que nadie haya visto un aviso.
+    const tope = campo === "barrio" ? LARGO_BARRIO : LARGOS[campo];
+    const texto = valor.slice(0, tope);
+
+    const ref = REF_DEL_CAMPO[campo].current;
+    // Escribirle `.value` a un campo enfocado le manda el cursor al final. En la
+    // practica el foco esta en el documento, pero la guarda va igual.
+    if (ref && ref !== document.activeElement) ref.value = texto;
+
+    // Si lo toca la persona, el barrio deja de ser "lo que puso el mapa": si no,
+    // la ayuda de la izquierda seguiria diciendo que lo completo un clic.
+    if (campo === "barrio") setBarrioAutomatico(false);
+
+    anotarValor(campo, texto);
   }
 
   async function enviar(datos: FormData) {
@@ -628,6 +717,26 @@ export default function FormularioIdea({
   const enviando = estado.tipo === "enviando";
   const revisando = estado.tipo === "revisando";
   const ocupado = enviando || revisando;
+
+  /**
+   * Todo lo que el documento necesita para dejarse escribir encima. Es el MISMO
+   * objeto para las dos instancias —el panel de al lado y la ventana del
+   * telefono—: las dos escriben en el mismo estado, asi que da igual en cual se
+   * escriba. Va acá abajo y no con las otras funciones porque necesita
+   * `ocupado`, que se calcula recien en estas lineas.
+   */
+  const edicionDelDocumento: EdicionDocumento = {
+    onEscribir: escribirDesdeDocumento,
+    onElegirCategoria: (slug) => {
+      if (refCategoria.current) refCategoria.current.value = slug;
+      anotarValor("categoria", slug);
+    },
+    onFocoBloque: setBloqueActivo,
+    categorias,
+    categoriaSlug: valores.categoria,
+    topes: { ...LARGOS, barrio: LARGO_BARRIO },
+    deshabilitado: !abierta || ocupado,
+  };
 
   return (
     <form
@@ -1161,7 +1270,8 @@ export default function FormularioIdea({
         {conIA && !revision && !revisando && (
           <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
             Escribí con tus palabras y después pedí «Mejorar con IA»: ordena tu texto, te dice qué
-            le falta y te ofrece detalles de obra para elegir. Nada se aplica sin que lo aceptes.
+            le falta y te ofrece detalles de obra para elegir. El texto que reescribe lo aceptás
+            vos campo por campo; los detalles que tildes entran derecho.
           </p>
         )}
 
@@ -1170,6 +1280,7 @@ export default function FormularioIdea({
             anio={anio}
             poligono={poligono}
             activo={bloqueActivo}
+            edicion={edicionDelDocumento}
             datos={{
               titulo: valores.titulo,
               // El nombre de la categoria, no el slug: esto lo lee una persona.
@@ -1250,6 +1361,7 @@ export default function FormularioIdea({
             anio={anio}
             poligono={poligono}
             activo={bloqueActivo}
+            edicion={edicionDelDocumento}
             datos={{
               titulo: valores.titulo,
               categoria: categorias.find((c) => c.slug === valores.categoria)?.nombre ?? "",

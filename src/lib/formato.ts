@@ -17,14 +17,51 @@ export const DESCRIPCION_ESTADO: Record<string, string> = {
   ganador: "Fue el proyecto más votado de su distrito y se incorpora al presupuesto municipal.",
 };
 
+/*
+ * Estos valores terminan siendo el color de LETRA de la pastilla de estado
+ * (`Chip` en components/ui.tsx), asi que los que eran un azul de fondo de la
+ * rampa usan el token de texto, que se aclara en el tema oscuro.
+ */
 export const COLOR_ESTADO: Record<string, string> = {
   borrador: "var(--color-estado-nofactible)",
   pendiente: "var(--color-estado-nofactible)",
-  factible: "var(--color-estado-factible)",
+  factible: "var(--marca-texto)",
   no_factible: "var(--color-estado-nofactible)",
   integrado: "var(--color-estado-integrado)",
   ganador: "var(--ganador-texto)",
 };
+
+/**
+ * El color de una categoria, tomado del TOKEN del tema y no del hex que trae la
+ * base.
+ *
+ * `categorias.color` se siembra desde data/contenido-sitio.json con tres hexes
+ * calculados para fondo blanco, asi que en el tema oscuro no se adaptan: la
+ * pastilla de "Espacio de innovacion urbana" daba 2.18:1 sobre el fondo, contra
+ * el 4.5:1 que pide WCAG 1.4.3. Los --color-cat-* si se aclaran en oscuro (ver
+ * globals.css), y en claro valen EXACTAMENTE los mismos hexes que siembra el
+ * JSON: por eso cambiar de uno al otro no altera el tema claro.
+ *
+ * El `respaldo` es para una categoria que no sea ninguna de las tres: se pinta
+ * con lo que traiga la base, que es lo que se hacia hasta ahora. Si el programa
+ * suma una categoria hay que darle su token; hasta que lo tenga, su color no
+ * sigue al tema, pero tampoco se pierde.
+ *
+ * El slug se compara por parte y no entero porque los de la base son
+ * "socio-ambiental", "cultural-deportivo" e "innovacion-urbana", y el resto del
+ * codigo (el tablero, las pruebas) ya venia usando los cortos.
+ */
+export function colorCategoria(
+  slug: string | null | undefined,
+  respaldo: string | null | undefined = null,
+): string | null {
+  if (slug) {
+    if (slug.includes("ambiental")) return "var(--color-cat-ambiental)";
+    if (slug.includes("deportivo")) return "var(--color-cat-deportivo)";
+    if (slug.includes("urbana")) return "var(--color-cat-urbana)";
+  }
+  return respaldo ?? null;
+}
 
 export const ETIQUETA_PRESUPUESTO: Record<string, string> = {
   sin_asignar: "Sin presupuesto asignado",

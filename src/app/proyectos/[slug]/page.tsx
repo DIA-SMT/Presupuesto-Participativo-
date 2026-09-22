@@ -8,6 +8,7 @@ import {
   DESCRIPCION_ESTADO,
   ETAPAS_PRESUPUESTO,
   ETIQUETA_PRESUPUESTO,
+  colorCategoria,
   formatearFecha,
   formatearNumero,
   formatearPesos,
@@ -33,6 +34,8 @@ export default async function PaginaProyecto({ params }: Props) {
   const { slug } = await params;
   const idea = await getIdea(slug);
   if (!idea) notFound();
+
+  const colorDeCategoria = colorCategoria(idea.categoriaSlug, idea.categoriaColor);
 
   const edicion = await getEdicionActiva();
   const avances = idea.ganador ? await getAvances(idea.id) : [];
@@ -65,7 +68,7 @@ export default async function PaginaProyecto({ params }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           <ChipEstado estado={idea.estado} />
           {idea.categoriaNombre && (
-            <Chip color={idea.categoriaColor ?? undefined}>{idea.categoriaNombre}</Chip>
+            <Chip color={colorDeCategoria ?? undefined}>{idea.categoriaNombre}</Chip>
           )}
           <Chip>Distrito {idea.distrito}</Chip>
           {idea.ganador && idea.votos > 0 && (
@@ -171,7 +174,10 @@ export default async function PaginaProyecto({ params }: Props) {
                                 ? "color-mix(in srgb, var(--color-marca-600) 38%, transparent)"
                                 : "var(--borde)"
                             }`,
-                            color: alcanzada ? "var(--color-marca-600)" : "var(--texto-suave)",
+                            // La rampa --color-marca-* pinta el fondo y el borde de la pastilla,
+                            // pero como letra no llega al 4.5:1 sobre el tema oscuro: el texto va
+                            // con el token de rol, que cambia con el tema.
+                            color: alcanzada ? "var(--marca-texto)" : "var(--texto-suave)",
                           }}
                           aria-current={actual === indice ? "step" : undefined}
                         >
@@ -292,7 +298,7 @@ export default async function PaginaProyecto({ params }: Props) {
                     distrito: idea.distrito,
                     lat: idea.lat,
                     lon: idea.lon,
-                    color: idea.categoriaColor ?? "var(--color-marca-600)",
+                    color: colorDeCategoria ?? "var(--color-marca-600)",
                     estado: idea.estado,
                     ganador: idea.ganador,
                     aproximada: idea.ubicacionAproximada,

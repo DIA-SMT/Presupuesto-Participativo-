@@ -302,6 +302,11 @@ export default async function Privacidad() {
 /**
  * Inventario de datos. El campo `caracter` es lo que exige el art. 6 inc. c de
  * la ley: si el dato es obligatorio o facultativo.
+ *
+ * `color` se usa como color de LETRA (la pastilla del caracter), no solo como
+ * borde de la tarjeta: por eso tiene que salir de un token que cambie con el
+ * tema. Las rampas del @theme estan oscurecidas para llevar blanco encima y
+ * como texto no llegan al 4.5:1 sobre el fondo oscuro.
  */
 const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: string }> = [
   {
@@ -328,7 +333,7 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
   {
     dato: "Tu documento, nombre y distrito, al empadronarte para votar",
     caracter: "Obligatorio para poder votar",
-    color: "var(--color-estado-factible)",
+    color: "var(--marca-texto)",
     finalidad:
       "Sirven para verificar que sos vecino o vecina de la ciudad y garantizar un voto por persona en su distrito. El documento se guarda hasheado (no en claro); del número solo conservamos los últimos tres dígitos, para que la mesa de ayuda pueda identificarte si tenés un problema.",
   },
