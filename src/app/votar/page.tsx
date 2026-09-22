@@ -5,7 +5,7 @@ import { Aviso } from "@/components/ui";
 import { db } from "@/db";
 import { votos } from "@/db/schema";
 import { getEdicionActiva, getTextos, listarIdeas } from "@/db/queries";
-import { ingresoHabilitado, urlDeIngreso } from "@/lib/cidituc";
+import { RUTA_INGRESO, ingresoHabilitado } from "@/lib/cidituc";
 import { proveedorActivo } from "@/lib/empadronamiento";
 import { getSesionVotante } from "@/lib/sesion";
 import { formatearRango } from "@/lib/formato";
@@ -26,6 +26,8 @@ export const dynamic = "force-dynamic";
  */
 const MENSAJE_ERROR_INGRESO: Record<string, string> = {
   "sin-token": "El ingreso volvió sin credencial. Probá de nuevo desde el botón.",
+  estado:
+    "No pudimos confirmar que el ingreso haya empezado en este navegador, así que no lo dimos por válido. Entrá de nuevo desde el botón.",
   "token-invalido":
     "Tu credencial de CIDITUC no es válida o ya venció. Volvé a ingresar para obtener una nueva.",
   "sin-perfil":
@@ -71,7 +73,7 @@ export default async function Votar({ searchParams }: Props) {
    * persona se autentica bien y queda varada en la pantalla de ellos: es peor
    * que no ofrecerlo.
    */
-  const urlIngreso = proveedor === "cidituc" && ingresoHabilitado() ? urlDeIngreso() : null;
+  const urlIngreso = proveedor === "cidituc" && ingresoHabilitado() ? RUTA_INGRESO : null;
 
   const proyectos =
     abierta && sesion?.distrito

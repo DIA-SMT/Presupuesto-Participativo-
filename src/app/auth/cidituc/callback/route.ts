@@ -8,7 +8,9 @@
  * Todo lo que sabe de CIDITUC vive en src/lib/cidituc.ts; aca estan las reglas
  * del sitio: quien puede abrir sesion, que se guarda y como se vuelve.
  */
-import { consultarPerfil } from "@/lib/cidituc";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
 import { empadronar } from "@/lib/empadronamiento";
 import { crearSesionVotante } from "@/lib/sesion";
 import { getEdicionActiva } from "@/db/queries";
@@ -24,19 +26,36 @@ export const runtime = "nodejs";
  * manda a todos a insistir contra una puerta cerrada: "no pudimos consultar tus
  * datos" se arregla reintentando y "la votacion no esta abierta" no.
  */
-function volver(request: Request, motivo?: string): Response {
+function volver(request: Request, motivo?: string): NextResponse {
   // La vuelta se arma sobre la URL con la que LLEGO el pedido, no sobre
   // SITE_URL: asi la persona termina en el mismo sitio del que salio. Con
   // SITE_URL, un `npm run dev` en un puerto que no sea el 3000 la mandaba al
   // 3000, y un despliegue de vista previa la sacaba a produccion.
   const destino = new URL("/votar", request.url);
   if (motivo) destino.searchParams.set("error", motivo);
-  return Response.redirect(destino);
+  const respuesta = NextResponse.redirect(destino);
+  // El estado es de un solo uso: se borra pase lo que pase, asi un reintento
+  // arranca limpio en vez de chocar con el sobrante del intento anterior.
+  respuesta.cookies.delete(COOKIE_ESTADO);
+  return respuesta;
 }
 
 export async function GET(request: Request) {
-  const token = new URL(request.url).searchParams.get("auth");
+  const parametros = new URL(request.url).searchParams;
+  const token = parametros.get("auth");
   if (!token) return volver(request, "sin-token");
+
+  /*
+   * La vuelta tiene que corresponder a una salida de ESTE navegador. Sin esta
+   * comparacion, alguien puede pedir un token con su cuenta y mandarle a otra
+   * persona el link del callback con ese token: el token es legitimo, asi que
+   * la persona quedaria con la sesion del otro sin enterarse. El numero de la
+   * cookie lo pone /auth/cidituc/ingresar y el Derivador lo devuelve tal cual.
+   */
+  const estadoGuardado = (await cookies()).get(COOKIE_ESTADO)?.value;
+  if (!mismoEstado(estadoGuardado, parametros.get("state"))) {
+    return volver(request, "estado");
+  }
 
   const limite = await consumir(`cidituc:${hashearIp(ipDe(request))}`, 20, 600);
   if (!limite.permitido) return volver(request, "demasiados-intentos");
@@ -58,10 +77,15 @@ export async function GET(request: Request) {
       dni: resultado.persona.documento,
       nombre: resultado.persona.nombre,
       /*
-       * CIDITUC no dice en que distrito vive la persona: su perfil trae
-       * documento, nombre y contacto, no domicilio. Si el padron ya tenia un
-       * distrito para ella se conserva (empadronar ignora el null al
-       * actualizar); si no, /votar le explica que le falta.
+       * CIDITUC no dice en que distrito vive la persona, y sacarlo de su perfil
+       * no es directo: trae `nombre_barrio` e `id_barrio`, pero el
+       * `domicilio_persona` vino VACIO en la cuenta con la que se probo, y de
+       * los 322 barrios de la capa del sitio hay 100 que tocan mas de un
+       * distrito. El barrio sirve para proponer, no para asignar.
+       *
+       * Si el padron ya tenia un distrito para la persona se conserva
+       * (empadronar ignora el null al actualizar); si no, /votar le explica que
+       * le falta.
        */
       distrito: null,
       proveedor: "cidituc",
