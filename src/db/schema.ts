@@ -8,6 +8,19 @@
  *    en la tabla `avances`, para que el seguimiento de obra sea publicable.
  *  - `problema`, `solucion` y `beneficios` son campos separados y validados.
  *  - el DNI del padron se guarda hasheado; nunca en claro.
+ *
+ * TODAS las tablas llevan `.enableRLS()` y ninguna tiene politicas. Supabase
+ * publica el esquema `public` por su Data API (PostgREST) con los roles `anon`
+ * y `authenticated`, que reciben permisos sobre cada tabla nueva; sin RLS,
+ * cualquiera con la anon key (que es publica por diseno) leeria y escribiria
+ * `admins.password_hash`, el padron y los votos sin pasar por este sitio. Con
+ * RLS encendido y sin politicas, esos roles no ven ni una fila.
+ *
+ * A la aplicacion no la afecta: entra con el rol DUENO de las tablas, y el
+ * dueno se saltea RLS salvo que la tabla tenga FORCE ROW LEVEL SECURITY, que
+ * aca no se usa. Lo prueba scripts/tests/base-segura.test.ts, que ademas falla
+ * si aparece una tabla en `public` sin RLS: una tabla nueva sin
+ * `.enableRLS()` no pasa la prueba.
  */
 import { sql } from "drizzle-orm";
 import {
@@ -172,7 +185,7 @@ export const distritos = pgTable("distritos", {
   centroideLon: numeric("centroide_lon", { precision: 10, scale: 7 }).notNull(),
   /** Barrios de referencia, para que el vecino se ubique sin mirar el mapa. */
   referencia: text("referencia"),
-});
+}).enableRLS();
 
 export const categorias = pgTable("categorias", {
   id: serial("id").primaryKey(),
@@ -182,7 +195,7 @@ export const categorias = pgTable("categorias", {
   /** Color de la categoria en mapas y tarjetas (hex). */
   color: varchar("color", { length: 7 }).notNull(),
   orden: smallint("orden").notNull().default(0),
-});
+}).enableRLS();
 
 export const ediciones = pgTable(
   "ediciones",
@@ -201,7 +214,7 @@ export const ediciones = pgTable(
   // Invariante del sitio: hay como maximo una edicion activa. El indice
   // parcial lo garantiza en la base y no solo en el codigo que la activa.
   (t) => [uniqueIndex("ediciones_una_activa_idx").on(t.activa).where(sql`${t.activa}`)],
-);
+).enableRLS();
 
 // ---------------------------------------------------------------------------
 // Ideas y proyectos
@@ -333,7 +346,7 @@ export const ideas = pgTable(
       .on(t.edicionId, t.distritoId)
       .where(sql`${t.ganador}`),
   ],
-);
+).enableRLS();
 
 /**
  * Historial de la revision de cada idea. Es append-only: no se edita ni se
@@ -359,7 +372,7 @@ export const revisiones = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("revisiones_idea_idx").on(t.ideaId, t.createdAt)],
-);
+).enableRLS();
 
 /**
  * Informe de impacto de una idea, generado por el modelo a pedido del equipo.
@@ -407,7 +420,7 @@ export const informesImpacto = pgTable("informes_impacto", {
   }),
   pedidoPorNombre: text("pedido_por_nombre").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}).enableRLS();
 
 /** Historial publico de ejecucion de un proyecto ganador. */
 export const avances = pgTable(
@@ -430,7 +443,7 @@ export const avances = pgTable(
       .defaultNow(),
   },
   (t) => [index("avances_idea_idx").on(t.ideaId)],
-);
+).enableRLS();
 
 // ---------------------------------------------------------------------------
 // Padron y votacion
@@ -455,7 +468,7 @@ export const votantes = pgTable(
       .defaultNow(),
   },
   (t) => [index("votantes_distrito_idx").on(t.distritoId)],
-);
+).enableRLS();
 
 export const votos = pgTable(
   "votos",
@@ -486,7 +499,7 @@ export const votos = pgTable(
     index("votos_edicion_fecha_idx").on(t.edicionId, t.createdAt),
     index("votos_edicion_distrito_idx").on(t.edicionId, t.distritoId),
   ],
-);
+).enableRLS();
 
 // ---------------------------------------------------------------------------
 // Backoffice y contenido editable
@@ -509,7 +522,7 @@ export const admins = pgTable("admins", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}).enableRLS();
 
 /**
  * Bitacora de las cuentas del backoffice: quien dio de alta, cambio de rol o
@@ -532,7 +545,7 @@ export const bitacoraEquipo = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("bitacora_equipo_fecha_idx").on(t.createdAt)],
-);
+).enableRLS();
 
 /**
  * Tercera bitacora del backoffice: lo que se le hace al SISTEMA y al contenido
@@ -588,7 +601,7 @@ export const bitacoraSistema = pgTable(
   // filtros por accion y entidad se aplican sobre esa lectura: el volumen es de
   // unos cientos de filas por edicion, asi que no necesitan indice propio.
   (t) => [index("bitacora_sistema_fecha_idx").on(t.createdAt)],
-);
+).enableRLS();
 
 /** Textos editables del sitio, equivalente al /api/text del sitio anterior. */
 export const textos = pgTable("textos", {
@@ -598,7 +611,7 @@ export const textos = pgTable("textos", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}).enableRLS();
 
 export const faq = pgTable("faq", {
   id: serial("id").primaryKey(),
@@ -606,7 +619,7 @@ export const faq = pgTable("faq", {
   pregunta: text("pregunta").notNull(),
   respuesta: text("respuesta").notNull(),
   publicada: boolean("publicada").notNull().default(true),
-});
+}).enableRLS();
 
 export const novedades = pgTable("novedades", {
   id: serial("id").primaryKey(),
@@ -618,7 +631,7 @@ export const novedades = pgTable("novedades", {
   distritoId: integer("distrito_id").references(() => distritos.id),
   imagenUrl: text("imagen_url"),
   publicada: boolean("publicada").notNull().default(true),
-});
+}).enableRLS();
 
 /** Cronograma de la edicion, para la home y el chatbot. */
 export const hitos = pgTable("hitos", {
@@ -632,7 +645,7 @@ export const hitos = pgTable("hitos", {
   desde: date("desde"),
   hasta: date("hasta"),
   etapa: etapaEdicion("etapa"),
-});
+}).enableRLS();
 
 /**
  * Registro de consultas al chatbot. Sirve para dos cosas: medir que pregunta
@@ -703,7 +716,7 @@ export const chatConsultas = pgTable(
       .on(t.createdAt)
       .where(sql`NOT ${t.resuelta}`),
   ],
-);
+).enableRLS();
 
 /** Contador simple para limitar abuso por IP sin depender de Redis. */
 export const rateLimit = pgTable("rate_limit", {
@@ -712,4 +725,4 @@ export const rateLimit = pgTable("rate_limit", {
   ventanaDesde: timestamp("ventana_desde", { withTimezone: true })
     .notNull()
     .default(sql`now()`),
-});
+}).enableRLS();
