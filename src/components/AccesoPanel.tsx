@@ -1,22 +1,19 @@
 "use client";
 
 /**
- * La unica puerta al backoffice desde el sitio publico, a la derecha del
- * encabezado. Segun haya o no sesion del equipo:
+ * Atajo al backoffice a la derecha del encabezado, solo para quien ya tiene
+ * sesion del equipo:
  *
- *  - SIN sesion: el boton "Ingresar", que lleva a /admin/ingresar. Estuvo
- *    primero al pie, en letra chica, para no hacerle creer al vecino que
- *    necesita usuario y contrasena para mirar el sitio o votar (no los
- *    necesita: para participar entra con su DNI por CIDITUC, sin contrasena).
- *    Pero al pie no lo encontraba nadie, empezando por el propio equipo, y
- *    Lucas pidio el boton a la vista en el encabezado (26/08/2026). La
- *    confusion posible la desarma la pantalla de destino: /admin/ingresar dice
- *    a quien esta dirigida.
+ *  - SIN sesion: nada. El panel no se anuncia en el sitio publico: se entra
+ *    escribiendo /admin en la barra de direcciones. Hubo un boton "Ingresar"
+ *    que llevaba a /admin/ingresar (primero al pie y desde el 26/08/2026 en el
+ *    encabezado), y Lucas pidio sacarlo el 23/09/2026: el vecino lo tomaba
+ *    como SU ingreso, y el suyo es con CIDITUC, en /ingresar.
  *
  *  - CON sesion: el atajo al panel con la cuenta a la vista. Quien tiene la
- *    cookie pp_admin es del equipo y quiere llegar rapido. Lo ve cualquier
- *    rol: adentro, cada pantalla y cada accion releen el rol de la base y
- *    recortan lo que se puede hacer.
+ *    cookie pp_admin es del equipo y quiere llegar rapido; un vecino nunca lo
+ *    ve. Lo ve cualquier rol: adentro, cada pantalla y cada accion releen el
+ *    rol de la base y recortan lo que se puede hacer.
  *
  * Por que es un componente cliente
  * --------------------------------
@@ -52,35 +49,7 @@ export default function AccesoPanel({
 }) {
   const pathname = usePathname();
   if (estaEnElPanel(pathname)) return null;
-  return cuenta ? <AtajoAlPanel cuenta={cuenta} /> : <BotonIngresar />;
-}
-
-/**
- * El boton de ingreso. No entra en el `<nav>` de las secciones ni se pinta
- * como esas pastillas: es una puerta, no una seccion del sitio. Secundario a
- * proposito (borde y fondo de tarjeta, como los botones secundarios del
- * hero): el protagonista del encabezado sigue siendo el llamado de la etapa
- * ("Presenta tu idea" / "Votar"), no el login.
- *
- * `rel="nofollow"` acompana al `robots: noindex` de /admin/ingresar: la puerta
- * del backoffice no tiene por que estar en un buscador.
- */
-function BotonIngresar() {
-  return (
-    <Link
-      href="/admin/ingresar"
-      rel="nofollow"
-      className="flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition hover:brightness-95 sm:py-1.5"
-      style={{
-        background: "var(--fondo-tarjeta)",
-        border: "1px solid var(--borde-control)",
-        color: "var(--marca-texto)",
-      }}
-    >
-      <IconoPersona />
-      Ingresar
-    </Link>
-  );
+  return cuenta ? <AtajoAlPanel cuenta={cuenta} /> : null;
 }
 
 /**
@@ -113,27 +82,6 @@ function AtajoAlPanel({ cuenta }: { cuenta: string }) {
         </span>
       </span>
     </Link>
-  );
-}
-
-/** Silueta de persona: dice "cuenta", el gesto universal del login. */
-function IconoPersona() {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4.5 20.5c1.5-3.4 4.2-5 7.5-5s6 1.6 7.5 5" />
-    </svg>
   );
 }
 
