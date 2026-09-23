@@ -2,14 +2,17 @@
 
 Sitio del Presupuesto Participativo de San Miguel de Tucumán. Next.js 16
 (App Router) + Drizzle sobre Postgres (Supabase en producción, PGlite embebido
-en desarrollo — sin Docker) + MapLibre + chatbot con la API de Claude. Leer el `README.md` para el mapa completo del proyecto.
+en desarrollo — sin Docker) + MapLibre + funciones de lenguaje (chat, asistente
+de carga, informe de impacto) por **OpenRouter** con el SDK de OpenAI, todas a
+través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del proyecto.
 
 ## Comandos
 
 - `npm run dev` — desarrollo (la base embebida se abre sola; correr `npm run setup` la primera vez)
-- `npm run setup` — arranque desde cero: esquema + ETL + seed
-- `npm test` — pruebas de normalización y geografía (no necesitan base)
-- `npm run typecheck` — TypeScript estricto, sin emitir
+- `npm run setup` — arranque desde cero de la base de desarrollo: esquema + ETL + seed (se niega si la base es remota)
+- `npm test` — pruebas de normalización, geografía, reglas y el candado de producción (las que usan base levantan una PGlite descartable)
+- `npm run typecheck` — `next typegen` + TypeScript estricto, sin emitir
+- `npm run lint` — ESLint con la config de Next (hay errores previos en `src/`; en la CI no bloquea todavía)
 - `npm run etl` — regenera `data/proyectos-2025.json` y el reporte de limpieza
 
 ## Convenciones del código
@@ -38,6 +41,18 @@ en desarrollo — sin Docker) + MapLibre + chatbot con la API de Claude. Leer el
 - Sin `DATABASE_URL`, la base es PGlite en `./data/pg`: **de proceso único**.
   Cerrar `npm run dev` antes de correr `npm run seed` o `npm run build`.
   Si la carpeta se corrompe, se borra y se recrea con `db:migrate` + `seed`.
+- `.env.local` **no lleva la URL de producción**: `DATABASE_URL` va vacía y el
+  desarrollo usa PGlite. Los scripts que escriben (`db:migrate`, `seed`,
+  `crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`,
+  `aplicar-geografia --aplicar`, `ver-ideas-web --borrar … --confirmar`) se
+  niegan a correr contra una base remota salvo con `--produccion`
+  (`npm run x -- --produccion`: sin el `--` npm se queda el flag), y con el
+  flag muestran el host y esperan 5 s antes de escribir. El candado es
+  `scripts/produccion.ts`: todo script nuevo que escriba en la base lo llama
+  antes de la primera consulta. `setup` se niega siempre con una base remota, y
+  `seed -- --produccion` solo corre sobre una base vacía. Nunca pasar
+  `--produccion` ni poner la URL de Supabase sin un pedido explícito del
+  usuario para esa corrida.
 - El esquema se cambia con migraciones versionadas: se edita `src/db/schema.ts`,
   se corre `npm run db:generate` y el SQL de `drizzle/` **se lee antes de
   aplicarlo** con `npm run db:migrate`. `drizzle-kit push` ya no se usa: proponía
@@ -59,8 +74,11 @@ en desarrollo — sin Docker) + MapLibre + chatbot con la API de Claude. Leer el
   lo bloquea en producción (`src/lib/empadronamiento.ts`).
 - La etapa del proceso vive en la tabla `ediciones` (fila `activa = true`), no
   en variables de entorno; se cambia desde `/admin`.
-- Sin `ANTHROPIC_API_KEY`, `/api/chat` degrada al buscador determinístico de
-  `src/lib/chat-sin-ia.ts` — el chat nunca debe romperse por falta de clave.
+- Sin `OPENROUTER_API_KEY`, `/api/chat` degrada al buscador determinístico de
+  `src/lib/chat-sin-ia.ts` y el asistente de carga y el informe de impacto se
+  desactivan — nada debe romperse por falta de clave. El modelo sale de
+  `OPENROUTER_MODELO` (o de `OPENROUTER_MODELO_CHAT`, `_ASISTENTE`, `_INFORME`
+  por función); ver `src/lib/modelo.ts`.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
