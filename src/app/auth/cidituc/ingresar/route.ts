@@ -1,7 +1,7 @@
 /**
  * Salida hacia CIDITUC.
  *
- * El boton de /votar apunta aca y no directo al Derivador porque hay que dejar
+ * El boton de /ingresar apunta aca y no directo al Derivador porque hay que dejar
  * una cookie antes de irse: el estado que ata la vuelta a esta salida (ver
  * `COOKIE_ESTADO` en src/lib/cidituc.ts). Una pagina no puede escribir cookies
  * mientras se renderiza; una ruta si.
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   // El interruptor se mira tambien aca, no solo en la pagina: el boton se puede
   // esconder, pero la URL igual se puede escribir a mano.
   if (!ingresoHabilitado()) {
-    const destino = new URL("/votar", request.url);
+    const destino = new URL("/ingresar", request.url);
     destino.searchParams.set("error", "ingreso-cerrado");
     return NextResponse.redirect(destino);
   }

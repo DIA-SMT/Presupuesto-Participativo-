@@ -14,10 +14,11 @@ export const metadata: Metadata = {
  * Puerta del backoffice.
  *
  * A esta pantalla llegan dos publicos y solo uno tiene que estar: el equipo del
- * municipio, y algun vecino que siguio el enlace del pie del sitio sin saber
- * que era. Por eso hay tres cosas antes y despues del formulario: de quien es
- * el panel, la salida de vuelta al sitio, y el aviso de que para participar no
- * hace falta ninguna cuenta (el vecino entra con su DNI por CIDITUC).
+ * municipio, y algun vecino que llego por la direccion sin saber que era (el
+ * sitio publico no enlaza el panel). Por eso hay tres cosas antes y despues del
+ * formulario: de quien es el panel, la salida de vuelta al sitio, y el aviso de
+ * que para participar no hace falta ninguna cuenta del panel (el vecino entra
+ * con CIDITUC, en /ingresar).
  *
  * Lo que NO hay, a proposito: ninguna pista sobre que cuentas existen ni como
  * se consigue una. El mensaje de error del formulario tampoco distingue entre
@@ -69,12 +70,12 @@ export default async function Ingresar() {
         <p className="text-sm font-semibold">¿Sos vecino o vecina?</p>
         <p className="mt-1.5 text-sm" style={{ color: "var(--texto-suave)" }}>
           Entonces esta pantalla no es para vos, y no te falta ninguna cuenta:
-          para presentar una idea o votar se ingresa con tu DNI, no con correo y
-          contraseña.
+          para votar se ingresa con tu ciudadanía digital CIDITUC, no con
+          correo y contraseña.
         </p>
         <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-          <Link href="/" className="font-medium underline">
-            Ir al sitio
+          <Link href="/ingresar" className="font-medium underline">
+            Ingresar para votar
           </Link>
           <Link href="/acerca-de" className="font-medium underline">
             Cómo participar

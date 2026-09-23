@@ -22,16 +22,17 @@ export const runtime = "nodejs";
  * Siempre se vuelve por redireccion y a una URL limpia: el token no puede
  * quedar en la barra de direcciones ni en el historial de la persona.
  *
- * El motivo viaja como codigo y /votar lo traduce. Un unico "error al ingresar"
- * manda a todos a insistir contra una puerta cerrada: "no pudimos consultar tus
- * datos" se arregla reintentando y "la votacion no esta abierta" no.
+ * Si sale bien se va a /votar; si no, a /ingresar con el motivo como codigo, y
+ * /ingresar lo traduce. Un unico "error al ingresar" manda a todos a insistir
+ * contra una puerta cerrada: "no pudimos consultar tus datos" se arregla
+ * reintentando y "la votacion no esta abierta" no.
  */
 function volver(request: Request, motivo?: string): NextResponse {
   // La vuelta se arma sobre la URL con la que LLEGO el pedido, no sobre
   // SITE_URL: asi la persona termina en el mismo sitio del que salio. Con
   // SITE_URL, un `npm run dev` en un puerto que no sea el 3000 la mandaba al
   // 3000, y un despliegue de vista previa la sacaba a produccion.
-  const destino = new URL("/votar", request.url);
+  const destino = new URL(motivo ? "/ingresar" : "/votar", request.url);
   if (motivo) destino.searchParams.set("error", motivo);
   const respuesta = NextResponse.redirect(destino);
   // El estado es de un solo uso: se borra pase lo que pase, asi un reintento
