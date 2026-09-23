@@ -90,9 +90,12 @@ async function borrar(argumentos: string[]) {
   if (numero === null) salirConUso("Falta el numero: --borrar 12");
 
   // El candado va antes de la primera consulta, y solo cuando se va a escribir.
-  if (confirmar) {
-    await exigirPermisoDeEscritura(`npx tsx scripts/ver-ideas-web.ts ${argumentos.join(" ")}`);
-  }
+  // La vista previa dice contra que base mira, como el listado: el numero que
+  // se ve en PGlite no es la idea de produccion con el mismo numero.
+  const { destino } = confirmar
+    ? await exigirPermisoDeEscritura(`npx tsx scripts/ver-ideas-web.ts ${argumentos.join(" ")}`)
+    : { destino: destinoDeLaBase(process.env.DATABASE_URL) };
+  console.log(`Base: ${destino.descripcion}`);
 
   const edicion = anio === null ? sql`e.activa` : sql`e.anio = ${anio}`;
   const [idea] = await consultar<IdeaWeb>(sql`

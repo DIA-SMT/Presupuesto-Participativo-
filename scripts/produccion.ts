@@ -26,8 +26,8 @@ export const FLAG_PRODUCCION = "--produccion";
 
 /**
  * Hosts que se consideran esta maquina. Lista cerrada a proposito: cualquier
- * otra cosa, incluido un host vacio o una URL que no se pudo leer, se trata
- * como remota. Equivocarse para ese lado cuesta escribir un flag de mas;
+ * otra cosa, incluido un host vacio, se trata como remota (y una URL que no se
+ * pudo leer, como desconocida: peor todavia). Equivocarse para ese lado cuesta escribir un flag de mas;
  * equivocarse para el otro cuesta la base de produccion.
  */
 const HOSTS_LOCALES = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -37,18 +37,26 @@ export type DestinoBase =
   | { tipo: "pglite"; descripcion: string }
   /** Un Postgres en esta maquina (localhost). */
   | { tipo: "postgres-local"; descripcion: string }
-  /** Cualquier otra cosa. Supabase cae aca. */
-  | { tipo: "remota"; descripcion: string };
+  /** Un Postgres en otra maquina. Supabase cae aca. */
+  | { tipo: "remota"; descripcion: string }
+  /**
+   * Un valor que no se sabe a donde va: un esquema que src/db no reconoce, o
+   * una URL de Postgres que no se pudo leer. No se escribe ni con el flag.
+   */
+  | { tipo: "desconocida"; descripcion: string };
 
 /**
  * A donde apunta una DATABASE_URL, con una descripcion que se puede imprimir:
  * host, puerto y base, nunca el usuario ni la contrasena.
  *
  * Replica el criterio de src/db/index.ts para decidir el driver (vacio o
- * `pglite:` es PGlite; `postgres://` o `postgresql://` es Postgres), con una
- * diferencia a proposito: lo que src/db no reconoce lo abre como PGlite, y aca
- * se trata como remoto. Un valor raro en DATABASE_URL es motivo para frenar,
- * no para adivinar.
+ * `pglite:` es PGlite; `postgres://` o `postgresql://`, tal cual y en
+ * minuscula, es Postgres), con una diferencia a proposito: lo que src/db no
+ * reconoce lo abre como PGlite en ./data/pg, y aca es "desconocida". Un valor
+ * raro en DATABASE_URL es motivo para frenar, no para adivinar. Y no alcanza
+ * con tratarlo como remoto: con `--produccion` el script seguiria, y src/db (o
+ * migrar.ts, que decide igual) escribiria en la PGlite local mientras quien lo
+ * corrio cree haber tocado produccion.
  */
 export function destinoDeLaBase(urlCruda: string | undefined): DestinoBase {
   const url = (urlCruda ?? "").trim();
@@ -58,10 +66,13 @@ export function destinoDeLaBase(urlCruda: string | undefined): DestinoBase {
     return { tipo: "pglite", descripcion: `PGlite en ${url.slice("pglite:".length)}` };
   }
 
-  if (!/^postgres(ql)?:\/\//i.test(url)) {
+  // Sin la `i`: src/db compara con startsWith, y `POSTGRES://` alla es PGlite.
+  if (!/^postgres(ql)?:\/\//.test(url)) {
     return {
-      tipo: "remota",
-      descripcion: "(DATABASE_URL con un formato que no se reconoce: se trata como remota)",
+      tipo: "desconocida",
+      descripcion:
+        "DATABASE_URL tiene un formato que no se reconoce (se espera postgresql://" +
+        " en minuscula, pglite:<carpeta> o nada)",
     };
   }
 
@@ -69,11 +80,15 @@ export function destinoDeLaBase(urlCruda: string | undefined): DestinoBase {
   try {
     leida = new URL(url);
   } catch {
-    // Pasa con contrasenas que tienen `#`, `/` o `@` sin codificar. No se
-    // imprime nada de la URL: justamente puede llevar la clave en claro.
+    // Pasa con contrasenas que tienen `#`, `/` o `:` sin codificar. No se
+    // imprime nada de la URL: justamente puede llevar la clave en claro. Y no
+    // se deja escribir ni con el flag: sin un host legible no hay nada que
+    // mostrar antes de empezar, y node-postgres podria leerla de otra forma.
     return {
-      tipo: "remota",
-      descripcion: "(DATABASE_URL que no se pudo leer: se trata como remota)",
+      tipo: "desconocida",
+      descripcion:
+        "DATABASE_URL no se pudo leer (suele ser una contrasena con # / : o %" +
+        " sin codificar: se escriben %23 %2F %3A %25)",
     };
   }
 
@@ -136,6 +151,20 @@ export function evaluarEscritura(entrada: {
 }): Veredicto {
   const destino = destinoDeLaBase(entrada.url);
   const pidioProduccion = entrada.argumentos.includes(FLAG_PRODUCCION);
+
+  if (destino.tipo === "desconocida") {
+    return {
+      permitido: false,
+      destino,
+      motivo: [
+        `${destino.descripcion}.`,
+        "",
+        "No se sabe a que base iria esta escritura, asi que no se hace, tampoco con",
+        `${FLAG_PRODUCCION}. Corregi DATABASE_URL, o sacala del entorno para usar`,
+        "PGlite en ./data/pg.",
+      ].join("\n"),
+    };
+  }
 
   if (destino.tipo === "remota") {
     if (pidioProduccion) return { permitido: true, destino, produccion: true };

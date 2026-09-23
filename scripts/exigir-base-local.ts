@@ -14,6 +14,11 @@ import { destinoDeLaBase } from "./produccion";
 
 const destino = destinoDeLaBase(process.env.DATABASE_URL);
 
+if (destino.tipo === "desconocida") {
+  console.error(`\nNO SE ESCRIBIO NADA: ${destino.descripcion}.\n`);
+  process.exit(1);
+}
+
 if (destino.tipo === "remota") {
   console.error(
     `\nNO SE ESCRIBIO NADA: DATABASE_URL apunta a una base remota (${destino.descripcion}).` +

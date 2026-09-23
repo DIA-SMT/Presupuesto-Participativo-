@@ -109,7 +109,9 @@ flag, antes de empezar muestran el host (sin usuario ni contraseña) y esperan
 5 segundos, para poder cancelar con Ctrl+C si no era la base que se creía. Y al
 revés: `--produccion` contra una base local también se rechaza, para que nadie
 crea que purgó o migró producción cuando lo hizo en PGlite. "Remota" es
-cualquier host que no sea `localhost`, `127.0.0.1` o `::1`. El candado está en
+cualquier host que no sea `localhost`, `127.0.0.1` o `::1`. Una `DATABASE_URL`
+que no se entiende (otro esquema, o una contraseña con `#`, `/`, `:` o `%` sin
+codificar) no deja escribir ni con el flag. El candado está en
 `scripts/produccion.ts`, con sus pruebas.
 
 La URL se pone solo para esa corrida, nunca en `.env.local` (se copia del botón

@@ -70,24 +70,42 @@ test("?host= manda sobre el host de la URL: localhost con host remoto es remota"
   assert.match(destino.descripcion, /supabase\.co/);
 });
 
-test("una URL que no se puede leer se trata como remota y no se imprime", () => {
+test("una URL que no se puede leer es desconocida y no se imprime", () => {
   // Una clave con `#` sin codificar corta la URL: new URL() tira o lee otra
   // cosa. En ningun caso tiene que aparecer la clave en el mensaje.
   const destino = destinoDeLaBase("postgresql://postgres:cla#ve@@:::/postgres");
-  assert.equal(destino.tipo, "remota");
-  assert.ok(!destino.descripcion.includes("cla"), destino.descripcion);
+  assert.equal(destino.tipo, "desconocida");
+  assert.ok(!destino.descripcion.includes("cla#ve"), destino.descripcion);
 });
 
-test("un esquema que no se reconoce se trata como remoto, no como PGlite", () => {
-  // src/db abriria PGlite con esto; el candado prefiere frenar a adivinar.
-  const destino = destinoDeLaBase("mysql://yo:clave@servidor/pp");
-  assert.equal(destino.tipo, "remota");
-  assert.ok(!destino.descripcion.includes("clave"), destino.descripcion);
+test("un esquema que src/db no reconoce es desconocido, no PGlite", () => {
+  // src/db abriria PGlite con cualquiera de estas; el candado prefiere frenar
+  // a adivinar. `POSTGRES://` incluido: src/db compara en minuscula.
+  for (const url of ["mysql://yo:clave@servidor/pp", "POSTGRES://yo:clave@servidor/pp"]) {
+    const destino = destinoDeLaBase(url);
+    assert.equal(destino.tipo, "desconocida", url);
+    assert.ok(!destino.descripcion.includes("clave"), destino.descripcion);
+  }
+});
+
+test("con una base desconocida no se escribe, ni siquiera con --produccion", () => {
+  // Con el flag, tratarla como remota dejaba seguir al script, y src/db (o
+  // migrar.ts) terminaba escribiendo en la PGlite local: el operador creia
+  // haber migrado produccion.
+  for (const url of ["mysql://yo:clave@servidor/pp", "postgresql://u:a/b@host/pp"]) {
+    for (const argumentos of [[], [FLAG_PRODUCCION]]) {
+      const veredicto = evaluarEscritura({ url, argumentos, comando: "npm run db:migrate" });
+      assert.equal(veredicto.permitido, false, `${url} ${argumentos.join(" ")}`);
+    }
+  }
 });
 
 test("un host que no esta en la lista es remoto aunque sea de la red local", () => {
   assert.equal(destinoDeLaBase("postgres://yo:clave@192.168.0.10/pp").tipo, "remota");
-  assert.equal(destinoDeLaBase("postgres://yo:clave@/pp").tipo, "remota");
+  // Sin host, node-postgres va a PGHOST o a localhost: no se sabe cual.
+  assert.equal(destinoDeLaBase("postgres:///pp").tipo, "remota");
+  // Con credenciales y sin host, new URL() ni siquiera la lee.
+  assert.equal(destinoDeLaBase("postgres://yo:clave@/pp").tipo, "desconocida");
 });
 
 // --- La decision -------------------------------------------------------------
