@@ -16,7 +16,7 @@
     "seed": "tsx scripts/seed.ts",
     "crear-admin": "tsx scripts/crear-admin.ts",
     "purgar-contactos": "tsx scripts/purgar-contactos.ts",
-    "setup": "npm run db:migrate && npm run etl && npm run seed",
+    "setup": "tsx scripts/exigir-base-local.ts && npm run db:migrate && npm run etl && npm run seed",
     "test": "tsx --test scripts/tests/*.test.ts",
     "postinstall": "node scripts/copiar-maplibre.mjs"
   },

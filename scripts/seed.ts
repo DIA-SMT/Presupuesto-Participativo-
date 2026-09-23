@@ -6,6 +6,20 @@
  *
  * No correrlo mientras `npm run dev` esta levantado: PGlite bloquea la carpeta
  * de datos por proceso.
+ *
+ * NUNCA contra la base de produccion. "Idempotente" quiere decir que no
+ * duplica filas, no que no pisa nada: reactiva la 2025 y desactiva cualquier
+ * otra edicion (la que este en curso deja de verse en el sitio), reescribe las
+ * ideas 2025 con lo que diga el JSON del ETL (se pierde lo que el equipo haya
+ * corregido a mano), borra y recarga las preguntas frecuentes y el cronograma
+ * 2025, y le restablece la contrasena al admin de ADMIN_EMAIL. Para cada una
+ * de esas cosas en produccion hay un camino propio: /admin/ediciones,
+ * `npm run crear-admin`, scripts/aplicar-geografia.ts.
+ *
+ * Por eso tiene doble candado. Contra una base remota exige `--produccion`
+ * (scripts/produccion.ts, como todo script que escribe), y aun con el flag solo
+ * corre si esa base esta vacia: el unico uso remoto legitimo es la primera
+ * carga de un proyecto de Supabase nuevo.
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
 import "./cargar-env";
@@ -26,6 +40,7 @@ import { hashearPassword } from "../src/lib/password";
 import { normalizar } from "../src/lib/texto";
 import { distritoDelPunto, type ColeccionDistritos } from "../src/lib/geo";
 import type { IdeaLimpia } from "./etl";
+import { exigirPermisoDeEscritura } from "./produccion";
 
 type Contenido = {
   textos: Record<string, string>;
@@ -60,6 +75,9 @@ const dataset = JSON.parse(
 ) as { anio: number; ideas: IdeaLimpia[] };
 
 async function main() {
+  // Antes de abrir ninguna conexion: contra una base remota hace falta el flag.
+  const { destino } = await exigirPermisoDeEscritura("npm run seed");
+
   // PGlite es de proceso unico: si `npm run dev` esta corriendo, la carpeta de
   // datos esta tomada y escribir desde aca la romperia. Se verifica primero.
   try {
@@ -71,6 +89,31 @@ async function main() {
         "\npersiste, borra la carpeta ./data/pg y corre: npm run db:migrate && npm run seed\n",
     );
     process.exit(1);
+  }
+
+  // Segundo candado, solo en remoto: la base tiene que estar vacia. Alcanza con
+  // mirar `ediciones`: toda base en uso tiene al menos una, y las ideas no
+  // pueden existir sin la suya (clave foranea NOT NULL). Las ideas se cuentan
+  // solo para que el mensaje diga que hay en juego.
+  if (destino.tipo === "remota") {
+    const [cargado] = await consultar<{ ediciones: number; ideas: number }>(sql`
+      SELECT (SELECT count(*) FROM ediciones)::int AS ediciones,
+             (SELECT count(*) FROM ideas)::int AS ideas
+    `);
+    if (Number(cargado.ediciones) > 0) {
+      console.error(
+        `\nNO SE ESCRIBIO NADA: ${destino.descripcion} ya tiene datos` +
+          ` (${cargado.ediciones} ediciones, ${cargado.ideas} ideas).` +
+          "\n\nEl seed contra una base remota solo sirve para la primera carga de una" +
+          "\nbase vacia. Sobre una con datos reactivaria la 2025, reescribiria sus ideas," +
+          "\nborraria las preguntas frecuentes y le cambiaria la contrasena al admin." +
+          "\n\nPara lo que se suele querer en produccion:" +
+          "\n  - una cuenta del panel ........ npm run crear-admin -- --produccion ..." +
+          "\n  - la etapa del proceso ........ /admin/ediciones" +
+          "\n  - el esquema .................. npm run db:migrate -- --produccion\n",
+      );
+      process.exit(1);
+    }
   }
 
   // -------------------------------------------------------------------------

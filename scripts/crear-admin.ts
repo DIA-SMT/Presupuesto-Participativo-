@@ -8,6 +8,10 @@
  *
  *   npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" moderador
  *
+ * En produccion, con la URL de Supabase en DATABASE_URL solo para esa corrida,
+ * se agrega `--produccion` (en cualquier lugar despues del `--`): sin el flag el
+ * script se niega a escribir en una base remota (scripts/produccion.ts).
+ *
  * La contrasena sale de ADMIN_PASSWORD; si la variable no esta, la genera al
  * azar y la imprime UNA sola vez. Cuando la genera el script, la cuenta queda
  * marcada con `debe_cambiar_password`: quien la reciba tiene que cambiarla en
@@ -21,6 +25,7 @@ import { consultar, db } from "../src/db";
 import { admins, bitacoraEquipo } from "../src/db/schema";
 import { hashearPassword } from "../src/lib/password";
 import { MINIMO_PASSWORD } from "../src/lib/politica-password";
+import { exigirPermisoDeEscritura, sinFlagProduccion } from "./produccion";
 
 const ROLES = ["admin", "moderador", "lector"] as const;
 type Rol = (typeof ROLES)[number];
@@ -31,14 +36,19 @@ const AUTOR = "consola (scripts/crear-admin)";
 function salirConUso(mensaje: string): never {
   console.error(`\n${mensaje}`);
   console.error(
-    '\nUso: npm run crear-admin -- <correo> "<Nombre Apellido>" [admin|moderador|lector]\n' +
-      "\nLa contrasena se toma de ADMIN_PASSWORD; si no esta, se genera una al azar.\n",
+    '\nUso: npm run crear-admin -- <correo> "<Nombre Apellido>" [admin|moderador|lector] [--produccion]\n' +
+      "\nLa contrasena se toma de ADMIN_PASSWORD; si no esta, se genera una al azar." +
+      "\n--produccion hace falta cuando DATABASE_URL apunta a una base remota.\n",
   );
   process.exit(1);
 }
 
 async function main() {
-  const [emailCrudo, nombreCrudo, rolCrudo = "moderador"] = process.argv.slice(2);
+  // Los posicionales se leen sin el flag: asi `--produccion` puede ir en
+  // cualquier lugar sin correr el correo o el rol.
+  const [emailCrudo, nombreCrudo, rolCrudo = "moderador"] = sinFlagProduccion(
+    process.argv.slice(2),
+  );
 
   const email = (emailCrudo ?? "").trim().toLowerCase();
   const nombre = (nombreCrudo ?? "").trim();
@@ -53,6 +63,11 @@ async function main() {
     salirConUso(`Rol desconocido: "${rolCrudo}". Tiene que ser admin, moderador o lector.`);
   }
   const rol = rolCrudo as Rol;
+
+  // Despues de validar (un error de tipeo no tiene por que esperar la cuenta
+  // regresiva) y antes de abrir ninguna conexion: contra una base remota hace
+  // falta el flag.
+  await exigirPermisoDeEscritura(`npm run crear-admin -- ${email} "${nombre}" ${rol}`);
 
   // PGlite es de proceso unico: si `npm run dev` esta corriendo, la carpeta de
   // datos esta tomada y esta escritura la romperia.
