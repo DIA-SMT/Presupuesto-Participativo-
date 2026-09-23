@@ -453,7 +453,10 @@ export const votantes = pgTable(
   "votantes",
   {
     id: serial("id").primaryKey(),
-    /** sha256(dni + pepper). El DNI en claro no se guarda nunca. */
+    /**
+     * sha256(dni + DNI_PEPPER), ver `hashearDni` en src/lib/empadronamiento.ts.
+     * El DNI en claro no se guarda nunca.
+     */
     dniHash: varchar("dni_hash", { length: 64 }).notNull().unique(),
     /** Ultimos 3 digitos, solo para que la mesa de ayuda pueda identificar. */
     dniCola: varchar("dni_cola", { length: 3 }),
@@ -461,13 +464,30 @@ export const votantes = pgTable(
     distritoId: integer("distrito_id").references(() => distritos.id),
     /** "cidituc" o "dev". */
     proveedor: varchar("proveedor", { length: 30 }).notNull(),
+    /** Id de la persona en el proveedor (CIDITUC: `persona.id`). Null en "dev". */
     proveedorSub: text("proveedor_sub"),
     verificado: boolean("verificado").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("votantes_distrito_idx").on(t.distritoId)],
+  (t) => [
+    index("votantes_distrito_idx").on(t.distritoId),
+    /**
+     * Una cuenta del proveedor, un votante. El unique de `dni_hash` no alcanza
+     * solo: si el hash del mismo DNI cambia (se cambio DNI_PEPPER, o CIDITUC
+     * corrigio el documento de la cuenta), la misma persona entraria como
+     * votante NUEVO y podria votar otra vez en la misma edicion. Con este
+     * indice ese alta rebota y `empadronar` lo informa, en lugar de abrir un
+     * segundo lugar en el padron.
+     *
+     * Parcial sobre `proveedor_sub IS NOT NULL` porque el login "dev" no tiene
+     * sub: sus filas no identifican a nadie y no entran en la regla.
+     */
+    uniqueIndex("votantes_proveedor_sub_idx")
+      .on(t.proveedor, t.proveedorSub)
+      .where(sql`${t.proveedorSub} IS NOT NULL`),
+  ],
 ).enableRLS();
 
 export const votos = pgTable(
