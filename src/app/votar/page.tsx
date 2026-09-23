@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import PanelVotacion from "@/components/PanelVotacion";
 import { Aviso } from "@/components/ui";
 import { db } from "@/db";
 import { votos } from "@/db/schema";
 import { getEdicionActiva, getTextos, listarIdeas } from "@/db/queries";
-import { RUTA_INGRESO, ingresoHabilitado } from "@/lib/cidituc";
-import { proveedorActivo } from "@/lib/empadronamiento";
 import { getSesionVotante } from "@/lib/sesion";
 import { formatearRango } from "@/lib/formato";
 
@@ -18,34 +17,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-/**
- * Los motivos con los que puede volver el ingreso de CIDITUC
- * (src/app/auth/cidituc/callback/route.ts). Cada uno dice algo distinto a
- * proposito: reintentar arregla "no pudimos consultar tus datos" y no arregla
- * "la votacion no esta abierta", asi que no pueden compartir el mismo cartel.
- */
-const MENSAJE_ERROR_INGRESO: Record<string, string> = {
-  "sin-token": "El ingreso volvió sin credencial. Probá de nuevo desde el botón.",
-  estado:
-    "No pudimos confirmar que el ingreso haya empezado en este navegador, así que no lo dimos por válido. Entrá de nuevo desde el botón.",
-  "token-invalido":
-    "Tu credencial de CIDITUC no es válida o ya venció. Volvé a ingresar para obtener una nueva.",
-  "sin-perfil":
-    "No pudimos consultar tus datos en CIDITUC en este momento. Probá de nuevo en un rato; si sigue igual, avisanos.",
-  "sin-documento":
-    "CIDITUC no nos devolvió tu número de documento, así que no podemos empadronarte. Escribinos para que lo revisemos.",
-  "sin-padron": "No pudimos guardar tu empadronamiento. Probá de nuevo en un rato.",
-  "fuera-de-etapa": "La votación no está abierta en este momento, así que no hace falta ingresar.",
-  "demasiados-intentos": "Hubo demasiados intentos desde tu conexión. Esperá unos minutos.",
-};
-
-type Props = {
-  searchParams: Promise<{ error?: string }>;
-};
-
-export default async function Votar({ searchParams }: Props) {
-  const { error } = await searchParams;
-  const mensajeError = error ? MENSAJE_ERROR_INGRESO[error] : undefined;
+export default async function Votar() {
   const edicion = await getEdicionActiva();
   const textos = await getTextos();
 
@@ -60,20 +32,13 @@ export default async function Votar({ searchParams }: Props) {
   const abierta = edicion.etapa === "votacion";
   const sesion = abierta ? await getSesionVotante() : null;
 
-  let proveedor: "cidituc" | "dev" = "dev";
-  try {
-    proveedor = proveedorActivo();
-  } catch {
-    proveedor = "cidituc";
-  }
-
   /*
-   * El boton de CIDITUC solo se muestra cuando el Derivador ya tiene desplegada
-   * la entrada de esta app (CIDITUC_INGRESO_HABILITADO). Antes de eso la
-   * persona se autentica bien y queda varada en la pantalla de ellos: es peor
-   * que no ofrecerlo.
+   * Para votar hay que haber entrado con CIDITUC. Sin sesion la boleta no se
+   * muestra: se manda a /ingresar, que explica el ingreso y tiene el boton.
+   * Con la votacion cerrada no se manda a ningun lado: no hay nada que
+   * ingresar, y el aviso de abajo dice cuando se vota.
    */
-  const urlIngreso = proveedor === "cidituc" && ingresoHabilitado() ? RUTA_INGRESO : null;
+  if (abierta && !sesion) redirect("/ingresar");
 
   const proyectos =
     abierta && sesion?.distrito
@@ -109,17 +74,9 @@ export default async function Votar({ searchParams }: Props) {
         </p>
       </header>
 
-      {mensajeError && (
-        <div className="mt-6 max-w-3xl">
-          <Aviso tono="atencion">{mensajeError}</Aviso>
-        </div>
-      )}
-
-      {abierta ? (
+      {abierta && sesion ? (
         <PanelVotacion
-          proveedor={proveedor}
-          urlIngreso={urlIngreso}
-          sesion={sesion ? { distrito: sesion.distrito, nombre: sesion.nombre } : null}
+          sesion={{ distrito: sesion.distrito, nombre: sesion.nombre }}
           proyectos={proyectos.map((p) => ({
             slug: p.slug,
             titulo: p.titulo,
