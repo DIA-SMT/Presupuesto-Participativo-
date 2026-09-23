@@ -114,7 +114,10 @@ export default async function AdminIdeas({ searchParams }: Props) {
   }
 
   // La ficha se pide por id y se descarta si es de otra edicion: la bandeja
-  // trabaja siempre sobre la edicion activa.
+  // trabaja siempre sobre la edicion activa. Por eso la etapa que se le pasa al
+  // panel (para deshabilitar lo que la etapa no permite) es la de la activa: es
+  // la de la edicion de la idea abierta. Las acciones igual la releen de la
+  // base; esto es solo para avisar antes de que alguien apriete el boton.
   const idPedido = Number(parametros.idea);
   const candidata =
     Number.isInteger(idPedido) && idPedido > 0 ? await getIdeaAdmin(idPedido) : null;
@@ -125,6 +128,7 @@ export default async function AdminIdeas({ searchParams }: Props) {
   return (
     <PanelBandeja
       anio={edicion.anio}
+      etapa={edicion.etapa}
       resumen={resumen}
       filas={resultado.filas}
       total={resultado.total}

@@ -36,6 +36,7 @@ import type {
   ResumenBandeja,
   RolAdmin,
 } from "@/db/queries";
+import { puedeCambiarIdea, puedeProclamar, type Etapa, type Veredicto } from "@/lib/etapas";
 import { ETIQUETA_ESTADO, formatearNumero, formatearPesos } from "@/lib/formato";
 import {
   despublicarIdea,
@@ -335,6 +336,7 @@ function ventanaPaginas(pagina: number, paginas: number): (number | null)[] {
 
 export default function PanelBandeja({
   anio,
+  etapa,
   resumen,
   filas,
   total,
@@ -349,6 +351,8 @@ export default function PanelBandeja({
   ahora,
 }: {
   anio: number;
+  /** Etapa de la edicion activa, que es la de todas las ideas de la bandeja. */
+  etapa: Etapa;
   resumen: ResumenBandeja;
   filas: FilaBandeja[];
   /** Ideas que matchean el filtro, sin límite: es el total del paginador. */
@@ -881,6 +885,7 @@ export default function PanelBandeja({
             <Ficha
               key={ficha.id}
               ficha={ficha}
+              etapa={etapa}
               historial={historial}
               informe={informe}
               rol={rol}
@@ -994,12 +999,14 @@ function EnlacePagina({
 
 function Ficha({
   ficha,
+  etapa,
   historial,
   informe,
   rol,
   soloLectura,
 }: {
   ficha: IdeaAdmin;
+  etapa: Etapa;
   historial: FilaRevision[];
   informe: InformeImpacto | null;
   rol: RolAdmin;
@@ -1128,14 +1135,16 @@ function Ficha({
               revisión primero, y eso lo puede hacer solo un administrador.
             </div>
           ) : (
-            <FormularioEvaluacion ficha={ficha} />
+            <FormularioEvaluacion ficha={ficha} etapa={etapa} />
           )}
 
-          <FormularioPublicacion ficha={ficha} />
+          <FormularioPublicacion ficha={ficha} etapa={etapa} />
 
-          {rol === "admin" && !ficha.ganador && <FormularioProclamacion ficha={ficha} />}
+          {rol === "admin" && !ficha.ganador && (
+            <FormularioProclamacion ficha={ficha} etapa={etapa} />
+          )}
 
-          <FormularioReapertura ficha={ficha} rol={rol} />
+          <FormularioReapertura ficha={ficha} rol={rol} etapa={etapa} />
         </div>
       )}
 
@@ -1155,7 +1164,7 @@ function DatoFicha({ etiqueta, children }: { etiqueta: string; children: React.R
   );
 }
 
-function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
+function FormularioEvaluacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa }) {
   const [resultado, accion, pendiente] = useActionState(evaluarIdea, null);
   const inicial: EstadoIdea = ESTADOS_EVALUACION.includes(ficha.estado)
     ? ficha.estado
@@ -1166,6 +1175,17 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
   const exige = estado === "no_factible" || estado === "integrado";
   const escritos = devolucion.trim().length;
   const falta = exige && escritos < MINIMO_DEVOLUCION;
+
+  // Con la votacion abierta algunos estados no se ofrecen: los que sacarian a
+  // la idea de la votacion o la meterian. El estado actual siempre queda
+  // habilitado (no mueve nada), asi que la devolucion se puede seguir editando.
+  const permitidos = new Map(
+    ESTADOS_EVALUACION.map((valor) => [
+      valor,
+      puedeCambiarIdea(etapa, ficha, { accion: "evaluar", estado: valor }),
+    ]),
+  );
+  const motivoBloqueo = primerMotivo([...permitidos.values()]);
 
   return (
     <form action={accion} className="grid gap-3">
@@ -1181,12 +1201,17 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
           style={estiloCampo}
           className="rounded-xl px-3 py-2"
         >
-          {ESTADOS_EVALUACION.map((valor) => (
-            <option key={valor} value={valor}>
-              {ETIQUETA_ESTADO[valor] ?? valor}
-            </option>
-          ))}
+          {ESTADOS_EVALUACION.map((valor) => {
+            const habilitado = permitidos.get(valor)?.permitido ?? true;
+            return (
+              <option key={valor} value={valor} disabled={!habilitado}>
+                {ETIQUETA_ESTADO[valor] ?? valor}
+                {habilitado ? "" : " (no disponible en votación)"}
+              </option>
+            );
+          })}
         </select>
+        {motivoBloqueo && <AvisoEtapa motivo={motivoBloqueo} />}
       </label>
 
       <label className="grid gap-1 text-sm">
@@ -1228,11 +1253,15 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
   );
 }
 
-function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
+function FormularioPublicacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa }) {
   const [resultado, accion, pendiente] = useActionState(
     ficha.publicada ? despublicarIdea : publicarIdea,
     null,
   );
+  const veredicto = puedeCambiarIdea(etapa, ficha, {
+    accion: ficha.publicada ? "despublicar" : "publicar",
+  });
+  const bloqueado = !veredicto.permitido;
 
   return (
     <form action={accion} className="grid gap-3" style={{ borderTop: "1px solid var(--borde)" }}>
@@ -1240,6 +1269,7 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
       <h3 className="mt-4 text-sm font-bold">
         {ficha.publicada ? "Sacar del sitio público" : "Publicar en el sitio"}
       </h3>
+      {!veredicto.permitido && <AvisoEtapa motivo={veredicto.motivo} />}
 
       <label className="grid gap-1 text-sm">
         <span className="font-medium">
@@ -1252,6 +1282,7 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
           maxLength={5000}
           minLength={ficha.publicada ? MINIMO_MOTIVO : undefined}
           required={ficha.publicada}
+          disabled={bloqueado}
           placeholder={
             ficha.publicada
               ? "Por qué se saca algo que los vecinos ya vieron publicado."
@@ -1265,7 +1296,7 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pendiente}
+          disabled={pendiente || bloqueado}
           className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           style={{
             background: ficha.publicada ? "var(--color-acento-600)" : "var(--color-marca-700)",
@@ -1281,24 +1312,31 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
   );
 }
 
-function FormularioProclamacion({ ficha }: { ficha: IdeaAdmin }) {
+function FormularioProclamacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa }) {
   const [resultado, accion, pendiente] = useActionState(proclamarGanador, null);
+  const veredicto = puedeProclamar(etapa);
+  const bloqueado = !veredicto.permitido;
 
   return (
     <form action={accion} className="grid gap-3" style={{ borderTop: "1px solid var(--borde)" }}>
       <input type="hidden" name="id" value={ficha.id} />
       <h3 className="mt-4 text-sm font-bold">Proclamar proyecto ganador</h3>
-      <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-        Solo se puede proclamar la idea más votada del distrito entre las factibles y publicadas. Si
-        no es la más votada, si hay empate en el primer puesto o si el distrito ya tiene ganador, la
-        acción lo explica y no cambia nada.
-      </p>
+      {veredicto.permitido ? (
+        <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+          Solo se puede proclamar la idea más votada del distrito entre las factibles y publicadas.
+          Si no es la más votada, si hay empate en el primer puesto o si el distrito ya tiene
+          ganador, la acción lo explica y no cambia nada.
+        </p>
+      ) : (
+        <AvisoEtapa motivo={veredicto.motivo} />
+      )}
 
       <label className="grid gap-1 text-sm">
         <span className="font-medium">Nota para el historial (opcional)</span>
         <input
           name="nota"
           maxLength={5000}
+          disabled={bloqueado}
           placeholder="Si la dejás vacía se guarda el distrito y la cantidad de votos."
           style={estiloCampo}
           className="rounded-xl px-3 py-2"
@@ -1308,7 +1346,7 @@ function FormularioProclamacion({ ficha }: { ficha: IdeaAdmin }) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pendiente}
+          disabled={pendiente || bloqueado}
           className="rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
           style={{ background: "var(--color-estado-ganador)", color: "#fff" }}
         >
@@ -1320,8 +1358,18 @@ function FormularioProclamacion({ ficha }: { ficha: IdeaAdmin }) {
   );
 }
 
-function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin }) {
+function FormularioReapertura({
+  ficha,
+  rol,
+  etapa,
+}: {
+  ficha: IdeaAdmin;
+  rol: RolAdmin;
+  etapa: Etapa;
+}) {
   const [resultado, accion, pendiente] = useActionState(reabrirRevision, null);
+  const veredicto = puedeCambiarIdea(etapa, ficha, { accion: "reabrir" });
+  const bloqueado = !veredicto.permitido;
 
   return (
     <form action={accion} className="grid gap-3" style={{ borderTop: "1px solid var(--borde)" }}>
@@ -1334,6 +1382,7 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
           rol !== "admin" &&
           " Esta idea está proclamada: dar marcha atrás lo puede hacer solo un administrador."}
       </p>
+      {!veredicto.permitido && <AvisoEtapa motivo={veredicto.motivo} />}
 
       <label className="grid gap-1 text-sm">
         <span className="font-medium">Motivo (obligatorio, mínimo {MINIMO_MOTIVO} caracteres)</span>
@@ -1342,6 +1391,7 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
           required
           minLength={MINIMO_MOTIVO}
           maxLength={5000}
+          disabled={bloqueado}
           placeholder="Por qué se reabre."
           style={estiloCampo}
           className="rounded-xl px-3 py-2"
@@ -1351,7 +1401,7 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pendiente}
+          disabled={pendiente || bloqueado}
           className="rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
           style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
         >
@@ -1361,6 +1411,28 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
       </div>
     </form>
   );
+}
+
+/**
+ * Por que la etapa de la edicion no deja usar un formulario, dicho ANTES de que
+ * alguien apriete el boton (que queda deshabilitado). El texto sale de
+ * src/lib/etapas.ts, el mismo que devolveria la accion si igual llegara: la
+ * pantalla avisa, pero quien decide es el servidor.
+ */
+function AvisoEtapa({ motivo }: { motivo: string }) {
+  return (
+    <span className="text-xs" style={{ color: "var(--acento-texto)" }}>
+      {motivo}
+    </span>
+  );
+}
+
+/** El motivo del primer veredicto que rechaza, o null si todos permiten. */
+function primerMotivo(veredictos: Veredicto[]): string | null {
+  for (const veredicto of veredictos) {
+    if (!veredicto.permitido) return veredicto.motivo;
+  }
+  return null;
 }
 
 function MensajeAccion({

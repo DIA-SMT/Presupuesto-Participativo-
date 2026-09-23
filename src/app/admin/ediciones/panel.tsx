@@ -21,6 +21,12 @@ import {
   guardarHito,
 } from "../acciones";
 import {
+  ETAPAS,
+  puedeActivarOtraEdicion,
+  type ContextoEdicion,
+  type Etapa,
+} from "@/lib/etapas";
+import {
   ETIQUETA_ETAPA,
   formatearNumero,
   formatearPesos,
@@ -40,7 +46,7 @@ type Hito = {
 export type FilaEdicion = {
   id: number;
   anio: number;
-  etapa: string;
+  etapa: Etapa;
   activa: boolean;
   presupuestoTotal: number | null;
   ideasDesde: string | null;
@@ -54,16 +60,17 @@ export type FilaEdicion = {
 
 type Rol = "admin" | "moderador" | "lector";
 
-const ETAPAS = ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const;
-
 const anioProximo = new Date().getFullYear() + 1;
 
 export default function PanelEdiciones({
   ediciones,
   rol,
+  contextoActiva,
 }: {
   ediciones: FilaEdicion[];
   rol: Rol;
+  /** Votos y ganadores de la edicion activa: deciden a que etapas se puede volver. */
+  contextoActiva: ContextoEdicion | null;
 }) {
   const activa = ediciones.find((edicion) => edicion.activa) ?? null;
   const [abierta, setAbierta] = useState<number | null>(activa?.id ?? ediciones[0]?.id ?? null);
@@ -174,6 +181,10 @@ export default function PanelEdiciones({
                         edicionId={edicion.id}
                         etapa={edicion.etapa}
                         rol={rol}
+                        // La page lo calcula para la activa, que es esta. El
+                        // respaldo usa los votos del listado y ningun ganador:
+                        // si alguna vez falta, la accion decide igual.
+                        contexto={contextoActiva ?? { votos: edicion.votos, ganadores: 0 }}
                       />
                     </div>
                   ) : (
@@ -187,7 +198,10 @@ export default function PanelEdiciones({
                   <FormularioEdicion edicion={edicion} soloLectura={!puedeEdiciones} />
 
                   {!edicion.activa && puedeEdiciones && (
-                    <BloqueActivar edicion={edicion} anioActiva={activa?.anio ?? null} />
+                    <BloqueActivar
+                      edicion={edicion}
+                      activa={activa ? { anio: activa.anio, etapa: activa.etapa } : null}
+                    />
                   )}
 
                   <Cronograma edicion={edicion} soloLectura={!puedeCronograma} />
@@ -352,15 +366,22 @@ function FormularioEdicion({
 // Activacion
 // ---------------------------------------------------------------------------
 
+/**
+ * Activacion de una edicion inactiva. Con la activa en votacion el boton queda
+ * deshabilitado y dice por que (`puedeActivarOtraEdicion`): activar otra cortaria
+ * esa votacion en el acto. La accion lo vuelve a mirar en la base.
+ */
 function BloqueActivar({
   edicion,
-  anioActiva,
+  activa,
 }: {
   edicion: FilaEdicion;
-  anioActiva: number | null;
+  activa: { anio: number; etapa: Etapa } | null;
 }) {
   const [estado, accion, pendiente] = useActionState(activarEdicion, null);
   const [confirmando, setConfirmando] = useState(false);
+  const veredicto = puedeActivarOtraEdicion(activa);
+  const anioActiva = activa?.anio ?? null;
 
   return (
     <div
@@ -369,7 +390,11 @@ function BloqueActivar({
     >
       <h3 className="text-sm font-bold">Activar la edición {edicion.anio}</h3>
 
-      {!confirmando ? (
+      {!veredicto.permitido ? (
+        <p className="mt-1 text-xs" style={{ color: "var(--acento-texto)" }}>
+          {veredicto.motivo}
+        </p>
+      ) : !confirmando ? (
         <>
           <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
             {anioActiva
@@ -395,14 +420,27 @@ function BloqueActivar({
           <p className="text-sm">
             Todo el sitio público va a mostrar la edición <strong>{edicion.anio}</strong>: la
             portada, el mapa, la votación, transparencia y el chatbot.
-            {anioActiva ? (
+            {activa ? (
               <>
                 {" "}
-                La edición <strong>{anioActiva}</strong> queda inactiva y pasa al archivo.
+                La edición <strong>{activa.anio}</strong> queda inactiva y pasa al archivo, en la
+                etapa “{ETIQUETA_ETAPA[activa.etapa] ?? activa.etapa}”.
               </>
             ) : null}{" "}
             ¿Confirmás el cambio?
           </p>
+          {/*
+            La etapa de una edicion inactiva no hace nada en el sitio, y por eso
+            nadie la mira. Pero al activarla vale en el acto: si quedo guardada
+            en "votacion", activar ES abrir la votacion publica, sin pasar por la
+            confirmacion del selector de etapa.
+          */}
+          {edicion.etapa === "votacion" && (
+            <p className="mt-2 text-sm font-semibold" style={{ color: "var(--acento-texto)" }}>
+              Ojo: esta edición está guardada en la etapa “{ETIQUETA_ETAPA.votacion}”. Al
+              activarla, la votación pública se abre en el acto.
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               type="submit"
