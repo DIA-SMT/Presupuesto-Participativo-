@@ -109,3 +109,24 @@ test("la pagina del distrito respeta el orden que se le pide", async () => {
   const porVotos = await consultas.getDistrito(1, edicionId);
   assert.equal(porVotos?.ideas[0].slug, "zanja");
 });
+
+test("los espacios cuentan: el orden va palabra por palabra, no letra por letra", async () => {
+  // En el distrito 2, para no tocar la boleta del distrito 1 de arriba. Ya
+  // tiene "Aaa otro distrito".
+  const titulos: Array<[titulo: string, slug: string]> = [
+    ["Laguna del parque", "laguna"],
+    ["La Plaza del barrio", "la-plaza"],
+    ["¿Qué hacemos con el baldío?", "baldio"],
+    ["Pista de skate", "pista"],
+  ];
+  for (const [titulo, slug] of titulos) {
+    await crearIdea(base, { edicionId, distrito: 2, titulo, slug, votos: 0 });
+  }
+  const boleta = await consultas.listarIdeas({ edicionId, distrito: 2, orden: "alfabetico" });
+  assert.deepEqual(
+    boleta.map((idea) => idea.slug),
+    // "La Plaza" antes que "Laguna", como en una guia; el "¿" del principio no
+    // cuenta, asi que "Qué" va con la Q, despues de "Pista".
+    ["otro", "la-plaza", "laguna", "pista", "baldio"],
+  );
+});

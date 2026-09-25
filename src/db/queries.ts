@@ -452,19 +452,31 @@ export function ordenDeIdeasPara(etapa: EtapaEdicion): OrdenIdeas {
  * se creo la base (PGlite en desarrollo, Supabase en produccion) y el sitio no
  * usa extensiones, asi que "Árbol" podia caer despues de "Zanja" en una y no en
  * la otra. `Intl.Collator` con "es" da el orden de un diccionario: sin
- * distinguir mayusculas ni tildes, la ñ despues de la n, "Plaza 2" antes que
- * "Plaza 10", y sin tropezar con comillas o signos al principio del titulo.
+ * distinguir mayusculas ni tildes, la ñ despues de la n y "Plaza 2" antes que
+ * "Plaza 10".
+ *
+ * Las comillas y signos del PRINCIPIO del titulo se sacan a mano antes de
+ * comparar (`claveDeTitulo`), para que "“Club” del barrio" vaya con la C y
+ * "¿Qué hacemos?" con la Q. No se usa `ignorePunctuation` del Collator: ese
+ * ignora tambien los espacios, y el orden quedaba letra por letra ("Laguna"
+ * antes que "La Plaza"), que no es el de una lista en castellano.
  */
 const COLACION_TITULOS = new Intl.Collator("es-AR", {
   sensitivity: "base",
   numeric: true,
-  ignorePunctuation: true,
 });
+
+/** El titulo sin los signos del principio (comillas, ¿, ¡, guiones). */
+function claveDeTitulo(titulo: string): string {
+  return titulo.replace(/^[^\p{L}\p{N}]+/u, "");
+}
 
 /** Titulo, y si empatan, distrito e id: el mismo orden en cada carga. */
 function compararAlfabetico(a: IdeaVista, b: IdeaVista): number {
   return (
-    COLACION_TITULOS.compare(a.titulo, b.titulo) || a.distrito - b.distrito || a.id - b.id
+    COLACION_TITULOS.compare(claveDeTitulo(a.titulo), claveDeTitulo(b.titulo)) ||
+    a.distrito - b.distrito ||
+    a.id - b.id
   );
 }
 
