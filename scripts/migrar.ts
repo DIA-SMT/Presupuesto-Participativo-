@@ -24,7 +24,7 @@ import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import { migrate as migrarNodePg } from "drizzle-orm/node-postgres/migrator";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { migrate as migrarPglite } from "drizzle-orm/pglite/migrator";
-import { RUTA_PGLITE } from "../src/db";
+import { opcionesDePool, RUTA_PGLITE } from "../src/db";
 import { exigirPermisoDeEscritura } from "./produccion";
 
 const CARPETA = "./drizzle";
@@ -40,8 +40,11 @@ async function main() {
     const { host, port } = new URL(url);
     console.log(`Migrando Postgres en ${host}${port ? "" : " (puerto por defecto)"}`);
     // Una sola conexion: el DDL es secuencial y no hay que ocupar el pooler.
+    // La URL y el TLS salen de `opcionesDePool`, igual que en la aplicacion:
+    // con la URL cruda la migracion contra Supabase viajaba en claro, clave del
+    // pooler incluida, y un `?sslmode=` en la URL volvia a pisar la opcion ssl.
     const pool = new Pool({
-      connectionString: url,
+      ...opcionesDePool(url),
       max: 1,
       connectionTimeoutMillis: 20_000,
     });
