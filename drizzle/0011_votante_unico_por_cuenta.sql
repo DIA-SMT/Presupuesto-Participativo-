@@ -1,0 +1,39 @@
+-- Una cuenta del proveedor de identidad, un votante: indice UNIQUE sobre
+-- `votantes (proveedor, proveedor_sub)`.
+--
+-- Por que: hasta ahora lo unico que impedia que una persona tuviera dos filas
+-- en el padron era el unique de `dni_hash`. Pero ese hash depende de la
+-- pimienta (DNI_PEPPER, antes SESSION_SECRET): si la pimienta cambia, o si
+-- CIDITUC corrige el documento de una cuenta, la MISMA cuenta llega con otro
+-- hash, `empadronar` no encuentra la fila vieja y abre una nueva. Como la regla
+-- de "un voto por persona" (`votos_una_persona_un_voto`) se apoya en
+-- `votante_id`, esa persona podria votar dos veces en la misma edicion. Con este
+-- indice el alta rebota: la cuenta de CIDITUC ya tiene su lugar en el padron.
+--
+-- Es un indice PARCIAL (`proveedor_sub IS NOT NULL`): el login de prueba "dev"
+-- no tiene sub y sus filas no entran en la regla. Postgres ya trata los NULL
+-- como distintos en un unique, asi que el WHERE no cambia que filas se aceptan;
+-- lo que hace es dejar escrito que la regla es sobre cuentas, y achicar el
+-- indice.
+--
+-- ANTES DE APLICARLA EN SUPABASE, confirmar que no haya cuentas repetidas; si
+-- las hay, la creacion del indice falla. No deja nada a medias, pero ojo: el
+-- runner aplica TODAS las pendientes en una sola transaccion (ver `migrate` en
+-- node_modules/drizzle-orm/pg-core/dialect.js), asi que si esta falla tampoco
+-- queda aplicada la 0010 que venia con ella. Se probo asi: una base en la 0009
+-- con dos filas de la misma cuenta termino sin indice y sin RLS. Consulta de
+-- solo lectura, desde el SQL Editor:
+--
+--   SELECT proveedor, count(*) AS filas FROM votantes
+--   WHERE proveedor_sub IS NOT NULL
+--   GROUP BY proveedor, proveedor_sub HAVING count(*) > 1;
+--
+-- Tiene que volver vacia. Si no, cada caso es una persona con dos filas: hay
+-- que decidir a mano cual queda (y revisar si voto con las dos) antes de migrar.
+--
+-- Migracion nueva, sin IF NOT EXISTS: si el indice ya existiera con otra
+-- definicion tiene que fallar y avisar. Generada con `npm run db:generate`; el
+-- SQL de abajo es el que escribio drizzle-kit, sin tocar. Probada desde cero
+-- contra PGlite descartables; NO se aplico contra la base compartida.
+
+CREATE UNIQUE INDEX "votantes_proveedor_sub_idx" ON "votantes" USING btree ("proveedor","proveedor_sub") WHERE "votantes"."proveedor_sub" IS NOT NULL;

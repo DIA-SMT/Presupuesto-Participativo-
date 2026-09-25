@@ -5,9 +5,13 @@
  */
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { atributosCookie, borradoCookie, nombreCookie } from "@/lib/cookies";
 
-const COOKIE_VOTANTE = "pp_votante";
-const COOKIE_ADMIN = "pp_admin";
+// En produccion llevan el prefijo __Host- (ver src/lib/cookies.ts): otro
+// sistema bajo *.smt.gob.ar no las puede plantar ni pisar. Escritura, lectura
+// y borrado usan estas dos constantes y nada mas.
+const COOKIE_VOTANTE = nombreCookie("pp_votante");
+const COOKIE_ADMIN = nombreCookie("pp_admin");
 const DURACION_VOTANTE = 60 * 60 * 4; // 4 horas: alcanza para votar
 const DURACION_ADMIN = 60 * 60 * 12;
 
@@ -52,19 +56,12 @@ async function leer<T>(token: string | undefined, tipo: string): Promise<T | nul
   }
 }
 
-const opcionesCookie = {
-  httpOnly: true,
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-};
-
 // --- Votante ----------------------------------------------------------------
 
 export async function crearSesionVotante(datos: Omit<SesionVotante, "tipo">) {
   const token = await firmar({ tipo: "votante", ...datos }, DURACION_VOTANTE);
   (await cookies()).set(COOKIE_VOTANTE, token, {
-    ...opcionesCookie,
+    ...atributosCookie(),
     maxAge: DURACION_VOTANTE,
   });
 }
@@ -74,8 +71,17 @@ export async function getSesionVotante(): Promise<SesionVotante | null> {
   return leer<SesionVotante>(token, "votante");
 }
 
+/**
+ * Cierra la sesion del votante. La llaman el boton "Salir" del panel de
+ * votacion (POST /api/auth/salir) y la emision del voto: una vez registrado, la
+ * sesion ya no sirve para nada, y en una tablet de asamblea quedaria abierta
+ * para la persona que sigue en la fila.
+ *
+ * Solo cierra NUESTRA sesion. Si CIDITUC mantiene la suya en ese navegador,
+ * eso es de CIDITUC y desde aca no se puede cerrar.
+ */
 export async function cerrarSesionVotante() {
-  (await cookies()).delete(COOKIE_VOTANTE);
+  (await cookies()).delete(borradoCookie(COOKIE_VOTANTE));
 }
 
 // --- Admin --------------------------------------------------------------------
@@ -83,7 +89,7 @@ export async function cerrarSesionVotante() {
 export async function crearSesionAdmin(datos: Omit<SesionAdmin, "tipo">) {
   const token = await firmar({ tipo: "admin", ...datos }, DURACION_ADMIN);
   (await cookies()).set(COOKIE_ADMIN, token, {
-    ...opcionesCookie,
+    ...atributosCookie(),
     maxAge: DURACION_ADMIN,
   });
 }
@@ -94,5 +100,5 @@ export async function getSesionAdmin(): Promise<SesionAdmin | null> {
 }
 
 export async function cerrarSesionAdmin() {
-  (await cookies()).delete(COOKIE_ADMIN);
+  (await cookies()).delete(borradoCookie(COOKIE_ADMIN));
 }

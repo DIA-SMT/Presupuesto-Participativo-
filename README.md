@@ -34,15 +34,26 @@ desplegarse en **Vercel**.
 
 ## Cómo levantarlo (desarrollo)
 
-Requisitos: **Node 20+**. Nada más — sin Docker, sin Postgres instalado: en
-desarrollo la base es PGlite (Postgres embebido) y vive en `./data/pg`.
+Requisitos: **Node 20.9+** (la CI usa Node 24). Nada más — sin Docker, sin
+Postgres instalado: en desarrollo la base es **PGlite** (Postgres embebido) y
+vive en `./data/pg`, dentro de tu copia del repo.
 
 ```bash
 npm install
-copy .env.example .env.local   # completar SESSION_SECRET y ADMIN_*
-npm run setup                  # crea el esquema, migra la edición 2025 y la carga
+copy .env.example .env.local   # completar SESSION_SECRET y ADMIN_*; DATABASE_URL queda vacía
+npm run setup                  # crea el esquema, migra la edición 2025 y la carga en PGlite
 npm run dev                    # http://localhost:3000
 ```
+
+> **`.env.local` no lleva la URL de producción.** `DATABASE_URL` va vacía, y así
+> `npm run dev`, el seed y todos los scripts trabajan sobre PGlite. Hasta
+> septiembre de 2026 `.env.local` apuntaba a Supabase, y cualquier `npm run setup`
+> o `npm run seed` reescribía la base real: reactivaba la 2025, pisaba sus ideas,
+> borraba las preguntas frecuentes y el cronograma y le cambiaba la contraseña
+> al admin. Ahora los scripts se defienden solos (ver
+> [Tocar producción desde la terminal](#tocar-producción-desde-la-terminal)),
+> pero la regla sigue: la URL de Supabase se pega en la terminal para la corrida
+> que la necesita y no queda guardada en ningún archivo.
 
 > PGlite es de proceso único: **cerrar `npm run dev` antes de correr
 > `npm run seed`** (el seed lo detecta y avisa). Si la base queda inutilizable,
@@ -52,17 +63,22 @@ npm run dev                    # http://localhost:3000
 
 | Variable | Qué hace |
 |---|---|
-| `DATABASE_URL` | Vacío = PGlite local. Con la URL de Supabase = Postgres real |
-| `SESSION_SECRET` | Firma de sesiones y hash de DNI/IP. Mínimo 32 caracteres |
+| `DATABASE_URL` | **Vacía en `.env.local`**: PGlite local. La URL de Supabase va solo en las variables de Vercel y, para un script puntual, en la terminal con `--produccion` |
+| `SESSION_SECRET` | Firma de sesiones, de los códigos de seguimiento de ideas y de las respuestas del chat. Mínimo 32 caracteres. **Ya no hashea el DNI**: eso es `DNI_PEPPER` |
+| `DNI_PEPPER` | Pimienta del hash del DNI del padrón. Obligatoria en producción y con base remota (en local hay una fija de desarrollo). **No se rota nunca durante una edición**: cambiarla equivale a vaciar el padrón |
+| `IP_PEPPER` | Opcional: pimienta del hash de la IP. Sin ella se deriva de `DNI_PEPPER` |
+| `DATABASE_CA_PEM` | Raíz de Supabase (`prod-ca-2021.crt`) para **verificar** el TLS de la base. Sin ella la conexión va cifrada pero sin verificar. Cómo obtenerla y la huella, en `.env.example` |
 | `OPENROUTER_API_KEY` | Clave del modelo, compartida por el chat, el asistente de carga y el informe de impacto. **Sin ella nada rompe**: el chat cae al buscador determinístico y las funciones de IA quedan desactivadas |
 | `OPENROUTER_MODELO` | Modelo con la forma `proveedor/modelo` (por defecto `anthropic/claude-sonnet-5`). Se puede afinar por función con `OPENROUTER_MODELO_CHAT`, `_ASISTENTE` e `_INFORME` |
 | `CHAT_RATE_LIMIT` | Consultas por IP por hora (por defecto 30) |
-| `AUTH_PROVIDER` | `dev` (login de prueba, solo desarrollo) o `cidituc` (la ciudadanía digital real) |
+| `CHAT_TOPE_TOKENS_DIA` | Tope diario de tokens de IA entre chat, asistente e informe. Pasado, el chat contesta con el buscador y el resto no se ofrece. Vacío: sin tope |
+| `AUTH_PROVIDER` | `dev` (login de prueba) o `cidituc` (la ciudadanía digital real). `dev` queda bloqueado en producción **y con cualquier base remota** |
 | `CIDITUC_APP` | Clave con la que la app está registrada en el Derivador (por defecto `presupuesto-participativo`) |
 | `CIDITUC_INGRESO_HABILITADO` | `true` enciende el botón de ingreso. Se enciende **después** de que el Derivador despliegue la entrada de esta app |
 | `CIDITUC_CA_PEM` | Cadena de Sectigo (intermedio + raíz) para hablar con `estadisticas.smt.gob.ar:5000`. Ver más abajo |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario inicial del backoffice, creado por el seed |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario del backoffice que el seed crea en tu PGlite. En producción las cuentas se crean con `npm run crear-admin` |
 | `SITE_URL` | URL pública del sitio en producción |
+| `MODO_PRUEBA_IDEAS` | `1` abre el alta de ideas fuera de etapa para cualquiera. Solo para demostraciones locales: **nunca en producción** |
 
 La etapa del proceso (ideas → evaluación → votación → seguimiento) **no** se
 configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
@@ -73,18 +89,103 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
    **Transaction pooler** (Settings → Database → Connection string, puerto
    `6543`). No hace falta habilitar ninguna extensión: el sitio no usa PostGIS
    ni unaccent (la geografía se resuelve en la aplicación).
-2. **Cargar la base**: en la máquina local, poner esa URL en `DATABASE_URL` de
-   `.env.local` y correr `npm run setup`. Eso crea el esquema y migra la
-   edición 2025 directamente en Supabase.
+2. **Cargar la base** — solo si el proyecto de Supabase es **nuevo y está
+   vacío**: la primera carga se describe al final de la sección siguiente. La
+   base que ya está en uso no se vuelve a cargar nunca: se le aplican las
+   migraciones nuevas y nada más.
 3. **Vercel**: importar el repo y configurar las variables de entorno del
-   proyecto: `DATABASE_URL` (la misma de Supabase), `SESSION_SECRET`,
-   `OPENROUTER_API_KEY`, `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
+   proyecto: `DATABASE_URL` (la del Transaction pooler), `SESSION_SECRET`,
+   `DNI_PEPPER`, `DATABASE_CA_PEM`, `OPENROUTER_API_KEY`, `CHAT_TOPE_TOKENS_DIA`,
+   `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
    hasta tener CIDITUC), `SITE_URL`, `CIDITUC_CA_PEM` y, cuando el Derivador
    tenga desplegada la entrada de esta app, `CIDITUC_INGRESO_HABILITADO=true`.
+   Vercel es el único lugar donde la URL de producción queda guardada.
 4. El mismo código detecta la URL: con Supabase usa node-postgres (`Pool` de
    `pg`, una consulta por conexión, que es lo que tolera el pooler en modo
    transacción); sin URL usa PGlite. No hay ramas de código distintas entre
    desarrollo y producción.
+
+### Primer deploy con la Fase 1 (en este orden)
+
+La base de producción ya tiene datos, y tres cambios de la Fase 1 dependen de
+que el entorno esté preparado ANTES de desplegar:
+
+1. **`DNI_PEPPER` con exactamente el valor actual de `SESSION_SECRET`**, en
+   Production (y en Preview si comparte la base). Hasta ahora el DNI se hasheaba
+   con `SESSION_SECRET`: con el mismo valor los hashes quedan idénticos y el
+   padrón se conserva (hay una prueba de eso). Sin `DNI_PEPPER`, votar falla con
+   "sin-padron"; con otro valor, cada persona pasa a ser un votante nuevo. Si
+   `SESSION_SECRET` está marcada como *Sensitive* en Vercel no se puede leer:
+   resolverlo antes de desplegar. Recién después se puede rotar `SESSION_SECRET`.
+2. **`DATABASE_CA_PEM`** con la raíz de Supabase (confirmar la huella que
+   figura en `.env.example`), probándola primero en un deploy de Preview: con la
+   CA como único almacén, un certificado equivocado deja al sitio sin base.
+3. **Antes de `npm run db:migrate -- --produccion`**, las dos consultas de
+   solo lectura que están en el encabezado de `drizzle/0010_habilitar_rls.sql`
+   (quién es dueño de cada tabla: la app tiene que serlo para que RLS no la
+   afecte) y de `drizzle/0011_votante_unico_por_cuenta.sql` (cuentas de
+   CIDITUC repetidas en el padrón). El runner aplica todas las migraciones
+   pendientes en una sola transacción: si una falla, no queda ninguna.
+
+Efectos de una sola vez, esperados: se cierran las sesiones abiertas (las
+cookies pasan a llamarse `__Host-…`), los contadores de límite por IP arrancan
+de cero (cambió la pimienta de la IP) y las respuestas del chat guardadas en el
+navegador dejan de viajar como contexto (ahora van firmadas).
+
+### Tocar producción desde la terminal
+
+Los scripts que escriben en la base **se niegan a correr contra una base
+remota** salvo que se les pase `--produccion`: `db:migrate`, `seed`,
+`crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`,
+`aplicar-geografia --aplicar` y `ver-ideas-web --borrar … --confirmar`. Con el
+flag, antes de empezar muestran el host (sin usuario ni contraseña) y esperan
+5 segundos, para poder cancelar con Ctrl+C si no era la base que se creía. Y al
+revés: `--produccion` contra una base local también se rechaza, para que nadie
+crea que purgó o migró producción cuando lo hizo en PGlite. "Remota" es
+cualquier host que no sea `localhost`, `127.0.0.1` o `::1`. Una `DATABASE_URL`
+que no se entiende (otro esquema, o una contraseña con `#`, `/`, `:` o `%` sin
+codificar) no deja escribir ni con el flag. El candado está en
+`scripts/produccion.ts`, con sus pruebas.
+
+La URL se pone solo para esa corrida, nunca en `.env.local` (se copia del botón
+*Connect* de Supabase o de las variables de Vercel):
+
+```powershell
+# PowerShell
+$env:DATABASE_URL = "postgresql://postgres.<ref>:<clave>@aws-0-sa-east-1.pooler.supabase.com:6543/postgres"
+npm run db:migrate -- --produccion
+Remove-Item Env:DATABASE_URL
+```
+
+```bash
+# Git Bash: la variable vive solo durante ese comando
+DATABASE_URL="postgresql://postgres.<ref>:<clave>@aws-0-sa-east-1.pooler.supabase.com:6543/postgres" \
+  npm run db:migrate -- --produccion
+```
+
+El `--` antes del flag es lo que hace que npm se lo pase al script. Sin él npm se
+lo queda, el script no lo recibe y lo rechaza (avisando por qué).
+
+| Qué se hace en producción | Cómo |
+|---|---|
+| Aplicar las migraciones nuevas | `npm run db:migrate -- --produccion` (ver [Cambios de esquema](#cambios-de-esquema-siempre-por-migraciones)) |
+| Dar de alta una cuenta del panel | `npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" moderador --produccion` |
+| Purgar los contactos de una edición cerrada | `npm run purgar-contactos` (solo muestra) y después `npm run purgar-contactos -- --confirmar --produccion` |
+| Cambiar la etapa del proceso | Desde `/admin/ediciones`. `scripts/cambiar-etapa.ts` es para pruebas locales (también deja rastro en la bitácora) |
+| Borrar una idea cargada en una demostración | `npx tsx scripts/ver-ideas-web.ts --borrar <número>` (muestra cuál) y después con `--confirmar --produccion` |
+
+**`npm run setup` y `npm run seed` no se corren contra Supabase.** `setup` se
+niega siempre ante una base remota, sin flag que lo habilite. `seed` con
+`--produccion` solo corre si la base está **vacía** (sin ninguna edición):
+existe para la primera carga de un proyecto nuevo, nunca para "poner al día" la
+base que está en uso. Esa primera carga, con la URL del proyecto nuevo en la
+terminal y `ADMIN_EMAIL` / `ADMIN_PASSWORD` para la primera cuenta, es
+`npm run db:migrate -- --produccion`, `npm run etl` y
+`npm run seed -- --produccion`.
+
+Si el pooler en modo transacción (puerto `6543`) rechaza el DDL de una
+migración, se migra por el Session pooler (puerto `5432`) — `db:migrate` lo
+sugiere en el mensaje de error. La aplicación sigue usando el `6543`.
 
 ### Ingreso con CIDITUC
 
@@ -178,16 +279,38 @@ proyecto Landing Elecop (Dirección de IA).
   `estadisticas`) que llaman exactamente a las mismas consultas que las
   páginas. Si un dato no está cargado, la herramienta lo dice y el asistente
   lo repite en lugar de inventarlo. La clave de API nunca llega al navegador.
-  Sin clave configurada, el endpoint responde con un buscador determinístico
-  (`src/lib/chat-sin-ia.ts`). Cada consulta queda registrada (pregunta,
+  Sin clave configurada, con el tope diario pasado o si el proveedor falla (sin
+  crédito, modelo mal escrito, caído, colgado a mitad de la respuesta), el
+  endpoint responde con un buscador determinístico (`src/lib/chat-sin-ia.ts`). Cada consulta queda registrada (pregunta,
   herramientas usadas, tokens, latencia, IP hasheada) en `chat_consultas`. El
   panel **no** tiene pantalla para leer esa tabla: la tenía (`/admin/consultas`)
   y se borró porque mostraba sobre todo las llamadas del asistente de carga, con
   el JSON crudo de cada propuesta. Para consultarla hay que ir a la base.
 - **Votación**: sesión JWT en cookie httpOnly; un voto por persona garantizado
   por restricción UNIQUE en la base (no solo por lógica de aplicación); el DNI
-  se guarda hasheado con pepper, nunca en claro. El proveedor `dev` permite
-  probar el flujo completo sin CIDITUC y queda bloqueado en producción.
+  se guarda hasheado con `DNI_PEPPER`, nunca en claro. La boleta sale en orden
+  alfabético (y los listados también, mientras se vota): por votos, el que va
+  ganando aparecía primero. El voto relee la etapa y la idea dentro de su
+  transacción (`src/app/api/votos/registrar.ts`) y cierra la sesión apenas se
+  registra. El proveedor `dev` permite probar el flujo completo sin CIDITUC y
+  queda bloqueado en producción y con cualquier base remota.
+- **Reglas por etapa** (`src/lib/etapas.ts`, con pruebas): durante la votación
+  no se sacan ni se meten proyectos en la boleta, se proclama solo cuando la
+  votación terminó y no se activa otra edición con una votación abierta. Las
+  aplican las acciones del panel, que releen la etapa de la base con la fila
+  bloqueada.
+- **Base segura**: con base remota la conexión va siempre por TLS y los
+  parámetros `ssl` de la URL se ignoran (`src/db/index.ts`). Todas las tablas
+  tienen RLS habilitado sin políticas, para que la Data API de Supabase no las
+  exponga con la clave anónima; la app entra como dueña y no la afecta. **Toda
+  tabla nueva lleva `.enableRLS()` en `schema.ts`**: lo exige
+  `scripts/tests/base-segura.test.ts`.
+- **Seguridad HTTP**: los POST exigen `Origin` del propio sitio y
+  `Content-Type: application/json` (`src/lib/origen.ts`; `gob.ar` está en la
+  Public Suffix List, así que cualquier `*.smt.gob.ar` cuenta como el mismo
+  sitio para la cookie). Encabezados de seguridad para todo el sitio en
+  `next.config.ts`, y cookies con prefijo `__Host-` en producción
+  (`src/lib/cookies.ts`).
 - **Rate limiting** por IP hasheada sobre una tabla de la base (sin Redis).
 
 ## Datos y migración de la edición 2025
@@ -230,13 +353,23 @@ campo `notasMigracion` de cada idea, visible en la ficha pública):
 | Comando | Qué hace |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm run setup` | `db:migrate` + `etl` + `seed` en un paso (idempotente) |
+| `npm run setup` | Solo desarrollo: comprueba que la base sea local y corre `db:migrate` + `etl` + `seed` |
 | `npm run db:generate` | Genera la migración SQL a partir de `src/db/schema.ts` |
 | `npm run db:migrate` | Aplica las migraciones pendientes de `drizzle/` |
-| `npm run etl` | Regenera el dataset limpio y el reporte de limpieza |
-| `npm run seed` | Carga/actualiza la base |
-| `npm test` | Pruebas de normalización y point-in-polygon |
-| `npm run typecheck` | TypeScript sin emitir |
+| `npm run etl` | Regenera el dataset limpio y el reporte de limpieza (no toca la base) |
+| `npm run seed` | Carga la edición 2025 en la base de desarrollo. Pisa contenido: no es para producción |
+| `npm run crear-admin` | Crea o actualiza **una** cuenta del panel, con fila en la bitácora del equipo |
+| `npm run purgar-contactos` | Borra el contacto de los autores de las ediciones cerradas; sin `--confirmar` solo muestra |
+| `npm test` | Pruebas (normalización, geografía, reglas de votación y de revisión, candado de producción). Las que usan base levantan una PGlite descartable |
+| `npm run typecheck` | Genera los tipos de Next (`next typegen`) y corre TypeScript sin emitir |
+| `npm run lint` | ESLint con la configuración de Next (`eslint .`) |
+
+Los que escriben en la base piden `--produccion` para correr contra una base
+remota: ver [Tocar producción desde la terminal](#tocar-producción-desde-la-terminal).
+
+Cada push y cada pull request corre `typecheck`, `test` y `lint` en GitHub
+Actions (`.github/workflows/ci.yml`), con Node 24 y sin ningún secreto. El lint
+todavía no bloquea el merge (ver Pendientes).
 
 ### Cambios de esquema: siempre por migraciones
 
@@ -245,6 +378,12 @@ por migración versionada**: editar el esquema, correr `npm run db:generate`
 (crea el SQL en `drizzle/` con un nombre descriptivo), revisar ese SQL, y
 aplicarlo con `npm run db:migrate`. La migración se commitea junto con el
 cambio del esquema.
+
+Eso la aplica en tu PGlite. A producción llega después, con la URL de Supabase
+en la terminal solo para esa corrida: `npm run db:migrate -- --produccion` (ver
+[Tocar producción desde la terminal](#tocar-producción-desde-la-terminal)). Es
+el único script que se corre contra Supabase como parte del trabajo de todos
+los días.
 
 No usar `drizzle-kit push` (por eso no hay script para eso): `push` empuja el
 esquema sin dejar registro, y la base de producción lleva la cuenta de qué
@@ -272,3 +411,19 @@ archivo nuevo en `drizzle/`.
   votos. Si el municipio conserva los textos, se cargan por el admin.
 - **7 ideas con distrito dudoso**: listadas en `data/reporte-limpieza.md`,
   requieren confirmación del equipo.
+- **Aviso por mail**: la casilla "quiero dejar mi correo" del formulario está
+  apagada (`AVISO_POR_MAIL_HABILITADO` en `src/lib/aviso-por-mail.ts`) porque
+  no existe el envío de mails; la API tampoco guarda el correo mientras tanto.
+  `/privacidad` todavía describe esa casilla: lo revisa Legales junto con el
+  resto de la página.
+- **Resultados parciales**: `/api/proyectos` y las herramientas del chat siguen
+  devolviendo los votos de cada idea durante la votación. Mostrar u ocultar los
+  parciales es una decisión del programa que falta tomar, y con ella se decide
+  también su orden: la boleta, los listados y la ficha ya ordenan
+  alfabéticamente mientras se vota, pero el chat y los datos abiertos todavía
+  ordenan por votos.
+- **Lint con errores previos**: `npm run lint` volvió a correr (antes usaba
+  `next lint`, que Next 16 eliminó), y encontró errores que ya estaban en `src/`.
+  La mayoría son de `react-hooks/rules-of-hooks`: los hooks propios se llaman
+  `usar…` y las herramientas de React solo reconocen como hook lo que empieza con
+  `use`. Mientras no se resuelvan, el paso de lint de la CI no bloquea.

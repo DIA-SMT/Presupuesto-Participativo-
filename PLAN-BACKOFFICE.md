@@ -25,6 +25,33 @@ existe porque sin ella las demás se pisan entre sí. Lo que está marcado como
 Las tandas 8 y 9 no estaban en el plan original: salieron de un relevamiento de
 la sección de administración una vez que estuvo armada. Están más abajo.
 
+> **Estado real al 23/09/2026** (nota agregada; el plan de abajo no se
+> reescribió y sigue describiendo lo que se construyó). El commit `98d0f8d`
+> (02/09) recortó el panel a leer, evaluar y exportar propuestas y **borró** seis
+> pantallas: `/admin/equipo`, `/admin/bitacora`, `/admin/contenido`,
+> `/admin/obras`, `/admin/consultas` y `/admin/tablero`. El tablero volvió en
+> `e5e5a57` (07/09); las otras cinco no existen. Hoy el panel es `/admin`
+> (propuestas), `/admin/ediciones`, `/admin/tablero`, `/admin/migue` (lo que la
+> gente le pregunta al chat) y `/admin/password`. Donde este documento da por
+> hechas esas pantallas, el trabajo se hizo y después se sacó:
+>
+> - Las cuentas del panel se crean por consola, con `npm run crear-admin` (deja
+>   su fila en `bitacora_equipo`).
+> - `bitacora_equipo` y `bitacora_sistema` se siguen escribiendo, pero no hay
+>   pantalla para leerlas.
+> - Los textos del sitio, las novedades, los montos y los avances de obra no se
+>   editan desde ningún lado del panel.
+> - Las server actions de esas pantallas (`guardarTexto`, `crearNovedad`,
+>   `crearAvance`, `borrarAvance`, `guardarPresupuestoIdea`, `crearAdmin`,
+>   `cambiarRolAdmin`, `activarAdmin`) siguen en `src/app/admin/acciones.ts`
+>   sin ningún llamador.
+>
+> De "Lo que falta", el punto 3 ya no aplica: `npm run lint` corre con
+> `eslint .`, con errores previos en `src/` que todavía no bloquean la CI (ver
+> README, "Pendientes conocidos"). Y "la base está al día" es del 25/08: hoy hay
+> migraciones hasta la `0009`, y lo que tiene aplicado Supabase se mira con
+> `npx tsx scripts/ver-migraciones.ts`, que solo lee.
+
 **La base está al día**: las cinco migraciones (`0000` a `0004`) aplicadas en
 Supabase, con su registro en `drizzle.__drizzle_migrations`. El esquema pasó de
 14 a 17 tablas.

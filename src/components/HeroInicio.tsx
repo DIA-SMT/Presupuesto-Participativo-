@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import heroImagen from "../../public/images/presupuesto-participativo/hero-mapa-distritos.png";
+import heroImagenOscura from "../../public/images/presupuesto-participativo/hero-mapa-distritos-oscuro.webp";
 
 /**
  * Portada de la home.
@@ -23,6 +24,13 @@ import heroImagen from "../../public/images/presupuesto-participativo/hero-mapa-
  *    El fondo de la seccion es ese mismo degrade, asi que a la izquierda de la
  *    imagen el color coincide a cualquier altura y la union no se ve: es lo que
  *    hace que se lea como una pieza sola y no como una foto pegada.
+ *
+ * 4. **En el tema oscuro el dibujo es otro archivo.** El fondo claro esta
+ *    pintado en el PNG (no tiene transparencia), asi que sobre un fondo oscuro
+ *    se veia un rectangulo claro. `hero-mapa-distritos-oscuro.webp` es el mismo
+ *    dibujo con el fondo separado (lo genera `node scripts/hero-oscuro.mjs`, que
+ *    explica como): el mapa, Migue y el logo quedan intactos y las sombras pasan
+ *    a ser translucidas. Las medidas 1 y 2 siguen valiendo tal cual.
  *
  * El ancho del dibujo esta topeado en 84vw (ver `.hero-lienzo`), de modo que su
  * parte dibujada nunca empieza antes del 49% de la pantalla. El texto esta
@@ -86,14 +94,37 @@ export default function HeroInicio() {
         </div>
       </div>
 
+      {/*
+        Una imagen por tema, y el CSS de abajo muestra la que corresponde. Es el
+        patron de la guia de Next ("Theme detection", en
+        node_modules/next/dist/docs/01-app/03-api-reference/02-components/image.md):
+        las dos quedan en carga diferida, que es lo que hace que el navegador
+        pida SOLO la visible (una imagen diferida con display: none no se
+        descarga), y fetchPriority="high" le devuelve la prioridad de portada.
+        Por eso no llevan `preload` (ni el viejo `priority`, deprecado en Next
+        16): precargadas, se bajarian las dos siempre.
+      */}
       <div className="hero-lienzo">
         <Image
           src={heroImagen}
           alt="Migue señalando el mapa en relieve de San Miguel de Tucumán con sus 20 distritos numerados"
-          priority
+          fetchPriority="high"
           placeholder="blur"
           sizes="(min-width: 75rem) 84vw, 100vw"
-          className="hero-imagen"
+          className="hero-imagen hero-imagen-clara"
+        />
+        {/*
+          Sin placeholder="blur": el borroso de un dibujo con transparencia es
+          una mancha gris clara, que sobre el fondo oscuro se veia como un
+          fogonazo mientras cargaba la imagen. Sin el, hasta que llega no hay
+          nada, y despues entra con la animacion del lienzo.
+        */}
+        <Image
+          src={heroImagenOscura}
+          alt="Migue señalando el mapa en relieve de San Miguel de Tucumán con sus 20 distritos numerados"
+          fetchPriority="high"
+          sizes="(min-width: 75rem) 84vw, 100vw"
+          className="hero-imagen hero-imagen-oscura"
         />
       </div>
 
@@ -142,22 +173,26 @@ const estilos = `
 
 .hero-lienzo { line-height: 0; }
 .hero-imagen { width: 100%; height: auto; }
+/* La version recortada solo se muestra en el tema oscuro (ver mas abajo). */
+.hero-imagen-oscura { display: none; }
 
 /*
-  EL HERO ES UNA ISLA CLARA, y por eso vuelve a declarar los tokens de texto en
-  sus valores del tema claro.
+  EN EL TEMA CLARO EL HERO ES UNA ISLA CLARA, y por eso vuelve a declarar los
+  tokens de texto en sus valores claros.
 
-  Su fondo es el degradado fijo #f2f5fa -> #dde5f0, elegido para empalmar con el
-  PNG de la ilustracion, que es claro. Ese fondo NO acompana al tema, asi que si
-  el texto de adentro toma los tokens del tema oscuro se aclara sobre un fondo
-  que sigue claro: el titulo quedaba celeste palido (#8ec7fc) sobre #e8ecf3 y la
-  bajada gris claro sobre gris claro. Paso de verdad y se veia ilegible.
-
-  Se declaran aca y no en cada regla para que valga para todo el subarbol: si
-  manana alguien agrega texto adentro del hero, hereda la paleta correcta sola.
+  Su fondo es un degradado FIJO, elegido para empalmar con el PNG de la
+  ilustracion, que tiene el fondo claro pintado. Ese fondo no acompana al tema:
+  si el texto de adentro tomara los tokens del tema oscuro se aclararia sobre un
+  fondo que sigue claro (el titulo quedaba celeste palido #8ec7fc sobre #e8ecf3,
+  1,41:1). Se declaran aca y no en cada regla para que valga para todo el
+  subarbol: si manana alguien agrega texto adentro del hero, hereda la paleta
+  correcta sola.
 
   --borde-control va explicito porque su valor se calcula donde se DECLARA (en
   :root, con el --texto de ahi): redeclarar --texto aca no lo recalcula.
+
+  En el tema oscuro esto se deshace entero (bloque "TEMA OSCURO", al final de
+  la maquetacion): fondo oscuro, dibujo recortado y tokens del tema.
 */
 .hero {
   --texto: #16202e;
@@ -165,6 +200,8 @@ const estilos = `
   --marca-texto: #084fc4;
   --fondo-tarjeta: #ffffff;
   --borde-control: color-mix(in srgb, #16202e 55%, transparent);
+  /* Donde cae el brillo del fondo oscuro: detras del mapa. */
+  --hero-brillo-en: 72% 55%;
 }
 
 @media (min-width: 75rem) {
@@ -219,7 +256,11 @@ const estilos = `
     SI llega hasta ese borde. Con #dde5f0 da 4,84:1, al precio de quedar 13
     niveles mas claro que la imagen. Ese desnivel lo tapa el puente de abajo.
   */
-  .hero { background: linear-gradient(to right, #f2f5fa 0%, #dde5f0 100%); }
+  .hero {
+    background: linear-gradient(to right, #f2f5fa 0%, #dde5f0 100%);
+    /* Apilado, el mapa queda abajo: el brillo lo sigue. */
+    --hero-brillo-en: 62% 78%;
+  }
 
   .hero-lienzo { position: relative; }
   /*
@@ -243,6 +284,66 @@ const estilos = `
     pointer-events: none;
   }
 }
+
+/*
+  TEMA OSCURO. El hero acompana al tema como el resto del sitio:
+
+  - El dibujo es la version recortada (sin el fondo claro pintado), asi que
+    ya no hay nada que empalmar: el fondo pasa a ser el --fondo del sitio, con
+    un brillo azul tenue detras del mapa. Encima del brillo va una capa que
+    vuelve a --fondo exacto en el borde de arriba y en el de abajo: el brillo
+    solo no alcanzaba (en el celular, con el mapa abajo, llegaba al borde) y se
+    veia la costura con la banda de numeros, que no tiene fondo propio.
+  - Los tokens de texto vuelven a los del tema (inherit toma el valor de
+    :root, que en oscuro es el oscuro). Medido: titulo #8ec7fc y bajada
+    #9aa9c0 dan 10,3:1 y 7,8:1 sobre #0c141f, y todavia 8,9:1 y 6,7:1 en el
+    centro del brillo (#0b2143), adonde el texto no llega. Las ondas que
+    conserva el recorte suben el fondo a lo sumo a #1b222c: 8,9:1 y 6,7:1.
+  - El "puente" del celular no hace falta: era para disimular el escalon entre
+    el fondo de la seccion y el borde de arriba del PNG, y el recorte no tiene
+    borde.
+
+  Va dos veces porque el tema se elige de dos maneras (igual que en
+  globals.css): por el sistema, salvo que el boton haya fijado el claro, o por
+  el boton. Los selectores le ganan por especificidad a los de arriba, incluidos
+  los de los @media de ancho.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hero {
+    --texto: inherit;
+    --texto-suave: inherit;
+    --marca-texto: inherit;
+    --fondo-tarjeta: inherit;
+    --borde-control: inherit;
+    background:
+      linear-gradient(to bottom, var(--fondo), transparent 14%, transparent 86%, var(--fondo)),
+      radial-gradient(
+        ellipse 60% 75% at var(--hero-brillo-en),
+        color-mix(in srgb, var(--color-marca-700) 22%, var(--fondo)) 0%,
+        var(--fondo) 72%
+      );
+  }
+  :root:not([data-theme="light"]) .hero-imagen-clara { display: none; }
+  :root:not([data-theme="light"]) .hero-imagen-oscura { display: block; }
+  :root:not([data-theme="light"]) .hero-lienzo::before { display: none; }
+}
+:root[data-theme="dark"] .hero {
+  --texto: inherit;
+  --texto-suave: inherit;
+  --marca-texto: inherit;
+  --fondo-tarjeta: inherit;
+  --borde-control: inherit;
+  background:
+    linear-gradient(to bottom, var(--fondo), transparent 14%, transparent 86%, var(--fondo)),
+    radial-gradient(
+      ellipse 60% 75% at var(--hero-brillo-en),
+      color-mix(in srgb, var(--color-marca-700) 22%, var(--fondo)) 0%,
+      var(--fondo) 72%
+    );
+}
+:root[data-theme="dark"] .hero-imagen-clara { display: none; }
+:root[data-theme="dark"] .hero-imagen-oscura { display: block; }
+:root[data-theme="dark"] .hero-lienzo::before { display: none; }
 
 .hero-volanta {
   font-size: 0.75rem;

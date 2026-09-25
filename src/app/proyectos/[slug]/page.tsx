@@ -3,7 +3,13 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Mapa from "@/components/Mapa";
 import { Chip, ChipEstado, TarjetaProyecto, Vacio } from "@/components/ui";
-import { getAvances, getEdicionActiva, getIdea, listarIdeas } from "@/db/queries";
+import {
+  getAvances,
+  getEdicionActiva,
+  getIdea,
+  listarIdeas,
+  ordenDeIdeasPara,
+} from "@/db/queries";
 import {
   DESCRIPCION_ESTADO,
   ETAPAS_PRESUPUESTO,
@@ -39,10 +45,17 @@ export default async function PaginaProyecto({ params }: Props) {
 
   const edicion = await getEdicionActiva();
   const avances = idea.ganador ? await getAvances(idea.id) : [];
+  // Mientras se vota, alfabetico como en /proyectos y en la boleta: por votos,
+  // "otros proyectos del distrito" eran justo los cuatro que van ganando.
   const relacionadas = edicion
-    ? (await listarIdeas({ edicionId: edicion.id, distrito: idea.distrito, limite: 4 })).filter(
-        (otra) => otra.slug !== idea.slug,
-      )
+    ? (
+        await listarIdeas({
+          edicionId: edicion.id,
+          distrito: idea.distrito,
+          limite: 4,
+          orden: ordenDeIdeasPara(edicion.etapa),
+        })
+      ).filter((otra) => otra.slug !== idea.slug)
     : [];
 
   const secciones = [

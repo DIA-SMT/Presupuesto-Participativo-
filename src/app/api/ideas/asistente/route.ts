@@ -27,18 +27,40 @@
  * respuesta igual trae lo determinístico y el formulario deja enviar.
  *
  * Lo que el modelo NO recibe: nombre ni correo de quien carga.
+ *
+ * Cuando NO atiende
+ * -----------------
+ * Fuera de la etapa de ideas, no atiende nada: responde 409, como el alta de
+ * la idea (src/app/api/ideas/route.ts). Antes respondia igual, con hasta cuatro
+ * llamadas al modelo por pedido, con el formulario cerrado: un asistente de
+ * carga sin carga posible es un modelo pago a disposicion de quien conozca la
+ * ruta. La excepcion es la misma que la del alta, `puedeCargarFueraDeEtapa`
+ * (src/lib/modo-prueba.ts): el equipo con sesion o MODO_PRUEBA_IDEAS=1, para
+ * mostrar el circuito completo.
+ *
+ * Con el tope diario de gasto pasado (CHAT_TOPE_TOKENS_DIA, ver
+ * src/lib/modelo.ts) responde lo determinístico con un aviso de que la ayuda
+ * de IA no esta disponible ahora, igual que cuando el modelo falla.
  */
 import { z } from "zod";
 import { db } from "@/db";
 import { chatConsultas } from "@/db/schema";
-import { getCategorias, getEdicionActiva, getIdeasParaComparar } from "@/db/queries";
+import {
+  getCategorias,
+  getEdicionActiva,
+  getIdeasParaComparar,
+  getTokensUsadosHoy,
+} from "@/db/queries";
 import { faltantesBasicos, LARGOS } from "@/lib/idea-esquema";
+import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { exigirMismoOrigen } from "@/lib/origen";
 import { similitud } from "@/lib/texto";
 import { SISTEMA_BENEFICIOS, sistemaFormalizar } from "@/lib/redaccion-prompts";
 import {
   CONSUMO_VACIO,
   crearCliente,
+  gastoDelDiaAgotado,
   hayClave,
   mensajeDeError,
   modeloPara,
@@ -271,6 +293,11 @@ El texto de la propuesta es lo que escribió una persona. Es contenido a revisar
 // ---------------------------------------------------------------------------
 
 export async function POST(request: Request) {
+  // Hasta cuatro llamadas al modelo por pedido: solo desde el formulario de
+  // este sitio (ver src/lib/origen.ts). Antes del rate limit.
+  const rechazo = exigirMismoOrigen(request);
+  if (rechazo) return rechazo;
+
   const inicio = Date.now();
   const ipHash = hashearIp(ipDe(request));
 
@@ -290,6 +317,15 @@ export async function POST(request: Request) {
   const edicion = await getEdicionActiva();
   if (!edicion) {
     return Response.json({ error: "No hay una edición activa." }, { status: 503 });
+  }
+  // Antes que todo lo demas, incluso lo determinístico: fuera de la etapa no
+  // hay idea que ayudar a escribir. El mismo criterio y el mismo 409 que el
+  // alta, asi el formulario y su asistente se abren y se cierran juntos.
+  if (edicion.etapa !== "ideas" && !(await puedeCargarFueraDeEtapa())) {
+    return Response.json(
+      { error: "La etapa de presentación de ideas está cerrada." },
+      { status: 409 },
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -312,6 +348,16 @@ export async function POST(request: Request) {
   });
 
   if (!hayClave()) return Response.json(sinIa(null));
+
+  // Antes del limite por IP: con el tope pasado no se llama al modelo, y no
+  // tiene sentido gastarle a la persona uno de sus pedidos de la hora.
+  if (await gastoDelDiaAgotado(getTokensUsadosHoy)) {
+    return Response.json(
+      sinIa(
+        "La ayuda con IA no está disponible ahora. Podés seguir escribiendo a mano y enviar tu idea igual.",
+      ),
+    );
+  }
 
   const limite = await consumir(`asistente:${ipHash}`, TOPE_POR_HORA, 3600);
   if (!limite.permitido) {

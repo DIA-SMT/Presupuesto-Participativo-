@@ -40,12 +40,19 @@ export default async function Votar() {
    */
   if (abierta && !sesion) redirect("/ingresar");
 
+  /*
+   * La boleta va en orden alfabetico, siempre. El orden por defecto de
+   * listarIdeas es por votos: en cada distrito el que iba ganando aparecia
+   * primero —y el primer lugar de una boleta suma votos por estar ahi— y quien
+   * votaba veia el ranking en vivo sin que nadie lo publicara.
+   */
   const proyectos =
     abierta && sesion?.distrito
       ? await listarIdeas({
           edicionId: edicion.id,
           distrito: sesion.distrito,
           estado: "factible",
+          orden: "alfabetico",
         })
       : [];
 

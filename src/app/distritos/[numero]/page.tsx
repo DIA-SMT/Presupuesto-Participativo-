@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Mapa from "@/components/Mapa";
 import { Aviso, Chip, ChipEstado, Dato, TarjetaProyecto, Vacio } from "@/components/ui";
-import { getDistrito, getEdicionActiva } from "@/db/queries";
+import { getDistrito, getEdicionActiva, ordenDeIdeasPara } from "@/db/queries";
 import {
   DESCRIPCION_ESTADO,
   ETIQUETA_ESTADO,
@@ -30,7 +30,11 @@ export default async function PaginaDistrito({ params }: Props) {
   const edicion = await getEdicionActiva();
   if (!edicion) notFound();
 
-  const distrito = await getDistrito(numero, edicion.id);
+  // Mientras se vota, las ideas del distrito van en orden alfabetico: por votos,
+  // la primera tarjeta era la que va ganando y el orden publicaba el ranking.
+  const distrito = await getDistrito(numero, edicion.id, {
+    orden: ordenDeIdeasPara(edicion.etapa),
+  });
   if (!distrito) notFound();
 
   const ganador = distrito.ganador;
@@ -140,6 +144,15 @@ export default async function PaginaDistrito({ params }: Props) {
             </Link>
           </article>
         </section>
+      ) : edicion.etapa === "votacion" ? (
+        // Mientras se vota no hay ganador todavia, y "no tiene proyecto
+        // ganador" se leia como que el distrito se habia quedado sin nada.
+        <div className="mt-10">
+          <Aviso>
+            La votación de la edición {edicion.anio} está abierta: el proyecto ganador del distrito
+            se conoce cuando termine. Las ideas de abajo están en orden alfabético.
+          </Aviso>
+        </div>
       ) : (
         <div className="mt-10">
           <Aviso tono="atencion">

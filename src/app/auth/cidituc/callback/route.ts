@@ -11,6 +11,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
+import { borradoCookie } from "@/lib/cookies";
 import { empadronar } from "@/lib/empadronamiento";
 import { crearSesionVotante } from "@/lib/sesion";
 import { getEdicionActiva } from "@/db/queries";
@@ -36,8 +37,10 @@ function volver(request: Request, motivo?: string): NextResponse {
   if (motivo) destino.searchParams.set("error", motivo);
   const respuesta = NextResponse.redirect(destino);
   // El estado es de un solo uso: se borra pase lo que pase, asi un reintento
-  // arranca limpio en vez de chocar con el sobrante del intento anterior.
-  respuesta.cookies.delete(COOKIE_ESTADO);
+  // arranca limpio en vez de chocar con el sobrante del intento anterior. Con
+  // los mismos atributos con que se escribio: un `delete(nombre)` a secas sale
+  // sin Secure, y el navegador descarta ese borrado de una cookie __Host-.
+  respuesta.cookies.delete(borradoCookie(COOKIE_ESTADO));
   return respuesta;
 }
 
@@ -84,9 +87,11 @@ export async function GET(request: Request) {
        * los 322 barrios de la capa del sitio hay 100 que tocan mas de un
        * distrito. El barrio sirve para proponer, no para asignar.
        *
-       * Si el padron ya tenia un distrito para la persona se conserva
-       * (empadronar ignora el null al actualizar); si no, /votar le explica que
-       * le falta.
+       * Si el padron ya tenia un distrito para la persona, se conserva solo si
+       * esa fila estaba verificada: `empadronar` ignora el null al actualizar,
+       * pero no hereda el distrito de una fila sin verificar, que pudo haberlo
+       * elegido quien la cargo (el login de prueba lo pide a mano). Si no queda
+       * un distrito que conservar, /votar le explica que le falta.
        */
       distrito: null,
       proveedor: "cidituc",

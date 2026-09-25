@@ -14,6 +14,7 @@ import {
   nuevoEstado,
   urlDeIngreso,
 } from "@/lib/cidituc";
+import { atributosCookie } from "@/lib/cookies";
 
 export const runtime = "nodejs";
 
@@ -29,14 +30,13 @@ export async function GET(request: Request) {
   const estado = nuevoEstado();
   const respuesta = NextResponse.redirect(urlDeIngreso(estado));
   respuesta.cookies.set(COOKIE_ESTADO, estado, {
-    httpOnly: true,
-    // "lax" y no "strict": la vuelta desde CIDITUC es una navegacion que viene
-    // de otro sitio, y con "strict" el navegador no mandaria la cookie y el
-    // ingreso fallaria siempre.
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // httpOnly, "lax" (y no "strict": la vuelta desde CIDITUC es una navegacion
+    // que viene de otro sitio, y con "strict" el navegador no mandaria la cookie
+    // y el ingreso fallaria siempre), Secure y Path=/ que pide el prefijo
+    // __Host- en produccion. Son los mismos atributos con los que la borra el
+    // callback: si no coincidieran, el borrado no valdria.
+    ...atributosCookie(),
     maxAge: DURACION_ESTADO,
-    path: "/",
   });
   return respuesta;
 }

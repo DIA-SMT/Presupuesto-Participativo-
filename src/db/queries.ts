@@ -357,7 +357,15 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
   }));
 }
 
-export async function getDistrito(numero: number, edicionId: number) {
+/**
+ * El distrito con sus ideas. `orden` pasa derecho a `listarIdeas`: la pagina
+ * del distrito pide "alfabetico" mientras se vota (ver `ordenDeIdeasPara`).
+ */
+export async function getDistrito(
+  numero: number,
+  edicionId: number,
+  opciones: { orden?: OrdenIdeas } = {},
+) {
   const [distrito] = await db
     .select({
       numero: distritos.numero,
@@ -371,7 +379,7 @@ export async function getDistrito(numero: number, edicionId: number) {
     .limit(1);
   if (!distrito) return null;
 
-  const lista = await listarIdeas({ edicionId, distrito: numero });
+  const lista = await listarIdeas({ edicionId, distrito: numero, orden: opciones.orden });
   return {
     numero: distrito.numero,
     nombre: distrito.nombre,
@@ -400,6 +408,20 @@ export async function distritoDeCoordenada(
 // Ideas
 // ---------------------------------------------------------------------------
 
+/**
+ * En que orden sale una lista de ideas.
+ *
+ *  - "votos" (el de siempre): ganadoras primero y despues las mas votadas. Es
+ *    el orden de un resultado, y fuera de la votacion es el que sirve.
+ *  - "alfabetico": por titulo, sin mirar los votos. Es el de la boleta.
+ *
+ * Mientras se vota, ordenar por votos hace dos daños: el que va ganando en
+ * cada distrito aparece primero —y el primer lugar de una boleta suma votos
+ * por estar ahi, no por el proyecto— y el orden mismo publica el ranking en
+ * vivo, aunque la pagina no muestre un solo numero.
+ */
+export type OrdenIdeas = "votos" | "alfabetico";
+
 export type FiltroIdeas = {
   edicionId: number;
   distrito?: number;
@@ -409,7 +431,54 @@ export type FiltroIdeas = {
   soloGanadores?: boolean;
   limite?: number;
   incluirNoPublicadas?: boolean;
+  /** Por defecto "votos", para no cambiarle el orden a nadie que no lo pida. */
+  orden?: OrdenIdeas;
 };
+
+/**
+ * El orden de las listas publicas de ideas segun la etapa: alfabetico mientras
+ * se vota, por votos el resto del tiempo. Lo usan /proyectos y
+ * /distritos/[numero]; la boleta de /votar va en alfabetico SIEMPRE, sin pasar
+ * por aca, porque ahi el orden neutral no depende de nada.
+ */
+export function ordenDeIdeasPara(etapa: EtapaEdicion): OrdenIdeas {
+  return etapa === "votacion" ? "alfabetico" : "votos";
+}
+
+/**
+ * Comparacion de titulos en castellano.
+ *
+ * No se ordena en SQL: el orden de Postgres depende de la collation con la que
+ * se creo la base (PGlite en desarrollo, Supabase en produccion) y el sitio no
+ * usa extensiones, asi que "Árbol" podia caer despues de "Zanja" en una y no en
+ * la otra. `Intl.Collator` con "es" da el orden de un diccionario: sin
+ * distinguir mayusculas ni tildes, la ñ despues de la n y "Plaza 2" antes que
+ * "Plaza 10".
+ *
+ * Las comillas y signos del PRINCIPIO del titulo se sacan a mano antes de
+ * comparar (`claveDeTitulo`), para que "“Club” del barrio" vaya con la C y
+ * "¿Qué hacemos?" con la Q. No se usa `ignorePunctuation` del Collator: ese
+ * ignora tambien los espacios, y el orden quedaba letra por letra ("Laguna"
+ * antes que "La Plaza"), que no es el de una lista en castellano.
+ */
+const COLACION_TITULOS = new Intl.Collator("es-AR", {
+  sensitivity: "base",
+  numeric: true,
+});
+
+/** El titulo sin los signos del principio (comillas, ¿, ¡, guiones). */
+function claveDeTitulo(titulo: string): string {
+  return titulo.replace(/^[^\p{L}\p{N}]+/u, "");
+}
+
+/** Titulo, y si empatan, distrito e id: el mismo orden en cada carga. */
+function compararAlfabetico(a: IdeaVista, b: IdeaVista): number {
+  return (
+    COLACION_TITULOS.compare(claveDeTitulo(a.titulo), claveDeTitulo(b.titulo)) ||
+    a.distrito - b.distrito ||
+    a.id - b.id
+  );
+}
 
 export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
   const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
@@ -433,6 +502,8 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
     if (busqueda) condiciones.push(busqueda);
   }
 
+  const alfabetico = filtro.orden === "alfabetico";
+
   const consulta = db
     .select(camposIdea)
     .from(ideas)
@@ -440,10 +511,25 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(and(...condiciones))
-    .orderBy(desc(ideas.ganador), desc(ideas.votos), asc(distritos.numero), asc(ideas.titulo));
+    .orderBy(
+      ...(alfabetico
+        ? // El orden de verdad lo pone `compararAlfabetico`, abajo.
+          [asc(ideas.id)]
+        : [desc(ideas.ganador), desc(ideas.votos), asc(distritos.numero), asc(ideas.titulo)]),
+    );
 
-  const filas = await (filtro.limite ? consulta.limit(filtro.limite) : consulta);
-  return filas.map((f) => aVista(f as Record<string, unknown>));
+  if (!alfabetico) {
+    const filas = await (filtro.limite ? consulta.limit(filtro.limite) : consulta);
+    return filas.map((f) => aVista(f as Record<string, unknown>));
+  }
+
+  // En alfabetico el tope se aplica DESPUES de ordenar: con un LIMIT en SQL
+  // saldrian las primeras N por id, no las primeras N por titulo. Son las
+  // ideas de una edicion, cientos a lo sumo.
+  const ordenadas = (await consulta)
+    .map((f) => aVista(f as Record<string, unknown>))
+    .sort(compararAlfabetico);
+  return filtro.limite ? ordenadas.slice(0, filtro.limite) : ordenadas;
 }
 
 export async function getIdea(
@@ -2220,5 +2306,39 @@ export async function getPreguntasRepetidasChat(
     sinResolver: Number(f.sin_resolver),
     tema: f.tema,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Gasto del modelo de lenguaje
+// ---------------------------------------------------------------------------
+
+/**
+ * Tokens gastados HOY, sumando las tres funciones que usan el modelo: el chat,
+ * el asistente de carga y el informe de impacto. Las tres registran su consumo
+ * en `chat_consultas` (columna `origen`, migracion 0005), asi que aca NO va el
+ * filtro `soloDelChat()`: el tope de CHAT_TOPE_TOKENS_DIA es de plata, y la
+ * plata sale de la misma cuenta del proveedor sin importar quien la gaste.
+ *
+ * Entrada mas salida. La lectura de cache (`cache_lectura`) no se suma aparte:
+ * en la API compatible con OpenAI ya viene incluida en `tokens_entrada`. Se
+ * cuenta a precio lleno, que es pasarse para el lado seguro. Tambien cuentan
+ * las filas con `ok = false`: una consulta que fallo a mitad de camino gasto
+ * lo que llego a gastar.
+ *
+ * El dia es el calendario de TUCUMAN, por lo mismo que `getUsoChatPorDia`: la
+ * sesion de Supabase esta en UTC y un `now()::date` cortaria el dia a las 21:00
+ * locales. La medianoche local se calcula una vez y se compara `created_at`
+ * contra ella, en lugar de convertir cada fila: asi la consulta puede usar el
+ * indice por fecha (`chat_consultas_fecha_idx`) y leer solo las filas de hoy.
+ */
+export async function getTokensUsadosHoy(): Promise<number> {
+  const [fila] = await consultar<{ tokens: string | number | null }>(sql`
+    SELECT coalesce(sum(coalesce(tokens_entrada, 0) + coalesce(tokens_salida, 0)), 0)::bigint AS tokens
+      FROM chat_consultas
+     WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Argentina/Tucuman')
+                          AT TIME ZONE 'America/Argentina/Tucuman')
+  `);
+  // bigint llega como texto con node-postgres: se convierte aca y no en quien llama.
+  return Number(fila?.tokens ?? 0);
 }
 
