@@ -372,7 +372,9 @@ export async function ejecutarHerramienta(
     case "ubicar_barrio": {
       const { barrio } = esquemaUbicar.parse(entrada);
       // La comparacion sin tildes usa la columna barrio_normalizado, que se
-      // llena al cargar cada idea (sin depender de la extension unaccent).
+      // llena al cargar cada idea (sin depender de la extension unaccent). Las
+      // descartadas quedan afuera aunque alguna quedara publicada: el barrio de
+      // un spam no le dice a nadie en que distrito vive.
       const patron = `%${normalizar(barrio)}%`;
       const filas = await consultar<{ numero: number; coincidencia: string }>(sql`
         SELECT d.numero, i.barrio AS coincidencia
@@ -380,6 +382,7 @@ export async function ejecutarHerramienta(
           JOIN distritos d ON d.id = i.distrito_id
          WHERE i.edicion_id = ${edicion.id}
            AND i.publicada
+           AND i.estado <> 'descartado'
            AND i.barrio IS NOT NULL
            AND i.barrio_normalizado LIKE ${patron}
          GROUP BY d.numero, i.barrio

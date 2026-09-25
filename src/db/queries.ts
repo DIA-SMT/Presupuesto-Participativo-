@@ -16,10 +16,12 @@ import {
 
   isNull,
   like,
+  ne,
   or,
   sql,
   type SQLWrapper,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { consultar, db } from "./index";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import { hashearDni } from "@/lib/empadronamiento";
@@ -63,6 +65,18 @@ export type CanalCarga = "web" | "asamblea" | "municipio" | "migracion";
  * cada Record<EstadoIdea, ...> que no lo contempla.
  */
 export type EstadoIdea = (typeof estadoIdea.enumValues)[number];
+
+/**
+ * Una idea descartada (prueba, spam, carga repetida) no es una propuesta: no
+ * cuenta en NINGUN numero, ni publico ni del panel, y no aparece en ninguna
+ * lista salvo la solapa "Descartadas" de la bandeja. El descarte la deja sin
+ * publicar, asi que las consultas publicas ya la dejaban afuera por
+ * `publicada`; este filtro va igual en ellas, como segunda barrera: si algun dia
+ * una descartada quedara publicada (una carga a mano en la base, un script),
+ * seguiria sin verse. En las del panel es la unica barrera, porque esas cuentan
+ * tambien lo que no esta publicado.
+ */
+const NO_DESCARTADA = ne(ideas.estado, "descartado");
 
 export type IdeaVista = {
   id: number;
@@ -197,7 +211,7 @@ export type EdicionListada = {
   ideasHasta: string | null;
   votacionDesde: string | null;
   votacionHasta: string | null;
-  /** Todas las ideas de la edicion, publicadas o no. */
+  /** Todas las ideas de la edicion, publicadas o no. Sin las descartadas. */
   ideas: number;
   /** Votos emitidos por este sitio (filas de la tabla `votos`). */
   votos: number;
@@ -226,7 +240,8 @@ export async function getEdiciones(): Promise<EdicionListada[]> {
            e.ideas_hasta::text     AS ideas_hasta,
            e.votacion_desde::text  AS votacion_desde,
            e.votacion_hasta::text  AS votacion_hasta,
-           (SELECT count(*) FROM ideas i WHERE i.edicion_id = e.id)::int AS ideas,
+           (SELECT count(*) FROM ideas i
+             WHERE i.edicion_id = e.id AND i.estado <> 'descartado')::int AS ideas,
            (SELECT count(*) FROM votos v WHERE v.edicion_id = e.id)::int AS votos
       FROM ediciones e
      ORDER BY e.anio DESC
@@ -323,7 +338,7 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
            d.referencia,
            d.centroide_lat,
            d.centroide_lon,
-           count(i.id) FILTER (WHERE i.publicada)::int AS ideas,
+           count(i.id) FILTER (WHERE i.publicada AND i.estado <> 'descartado')::int AS ideas,
            g.slug        AS g_slug,
            g.titulo      AS g_titulo,
            g.votos       AS g_votos,
@@ -487,7 +502,10 @@ function compararAlfabetico(a: IdeaVista, b: IdeaVista): number {
 export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
   const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
 
-  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true));
+  // Lo publico no ve descartadas aunque alguna quedara publicada (ver
+  // NO_DESCARTADA). Va con el mismo interruptor que `publicada`: quien pide las
+  // no publicadas pide explicitamente lo que el sitio no muestra.
+  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true), NO_DESCARTADA);
   if (filtro.distrito) condiciones.push(eq(distritos.numero, filtro.distrito));
   if (filtro.categoria) condiciones.push(eq(categorias.slug, filtro.categoria));
   if (filtro.soloGanadores) condiciones.push(eq(ideas.ganador, true));
@@ -545,8 +563,9 @@ export async function getIdea(
   // Mismo criterio que listarIdeas: una idea sin publicar no existe para el
   // sitio ni para el chatbot. Sin este filtro, una idea recien enviada por el
   // formulario publico ya era visible en /proyectos/<slug>. El backoffice pide
-  // incluirNoPublicadas de forma explicita.
-  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true));
+  // incluirNoPublicadas de forma explicita. Una descartada tampoco existe para
+  // el sitio, aunque quedara publicada por error (ver NO_DESCARTADA).
+  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true), NO_DESCARTADA);
 
   const [fila] = await db
     .select({ ...camposIdea, notasMigracion: ideas.notasMigracion })
@@ -604,6 +623,12 @@ export type Estadisticas = {
   presupuestoPublicado: number;
 };
 
+/**
+ * Las cuentas PUBLICAS de una edicion: portada, /transparencia y el chat. Solo
+ * ideas publicadas y nunca descartadas (ver NO_DESCARTADA). Las del ganador no
+ * lo repiten: una descartada no puede ser ganadora (se descarta solo desde
+ * borrador o pendiente, y se proclama solo una factible).
+ */
 export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
   const [totales] = await consultar<{
     ideas: number;
@@ -616,13 +641,13 @@ export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
            coalesce(sum(votos) FILTER (WHERE ganador), 0)::int AS votos,
            sum(presupuesto_total) FILTER (WHERE ganador) AS presupuesto
       FROM ideas
-     WHERE edicion_id = ${edicion.id} AND publicada
+     WHERE edicion_id = ${edicion.id} AND publicada AND estado <> 'descartado'
   `);
 
   const estados = await consultar<{ estado: string; cantidad: number }>(sql`
     SELECT estado, count(*)::int AS cantidad
       FROM ideas
-     WHERE edicion_id = ${edicion.id} AND publicada
+     WHERE edicion_id = ${edicion.id} AND publicada AND estado <> 'descartado'
      GROUP BY estado
   `);
 
@@ -633,6 +658,7 @@ export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
       FROM categorias c
       LEFT JOIN ideas i
              ON i.categoria_id = c.id AND i.edicion_id = ${edicion.id} AND i.publicada
+            AND i.estado <> 'descartado'
      GROUP BY c.slug, c.nombre, c.color, c.orden
      ORDER BY c.orden
   `);
@@ -750,6 +776,8 @@ export type IdeaComparable = {
  *
  * Quedan afuera las que ya se integraron a otra (`integrada_en_id`): su idea
  * principal ya esta en la lista, y contarlas seria mostrar dos veces lo mismo.
+ * Y las descartadas: una prueba o un spam no es "una idea parecida ya
+ * presentada", y avisarle eso al vecino lo desalentaria por nada.
  */
 export async function getIdeasParaComparar(
   edicionId: number,
@@ -770,6 +798,7 @@ export async function getIdeasParaComparar(
         eq(ideas.edicionId, edicionId),
         eq(distritos.numero, distrito),
         isNull(ideas.integradaEnId),
+        NO_DESCARTADA,
       ),
     )
     .limit(300);
@@ -812,6 +841,11 @@ export type DireccionOrden = "asc" | "desc";
 
 export type FiltroBandeja = {
   edicionId: number;
+  /**
+   * Sin estado, trae todas MENOS las descartadas: una prueba o un spam no se
+   * mezcla con el trabajo del equipo. Las descartadas salen solo si se piden
+   * por estado (la solapa "Descartadas").
+   */
   estado?: EstadoIdea | EstadoIdea[];
   distrito?: number;
   texto?: string;
@@ -924,10 +958,12 @@ export async function listarIdeasBandeja(
 ): Promise<PaginaBandeja> {
   const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
 
-  if (filtro.estado) {
-    const estados = Array.isArray(filtro.estado) ? filtro.estado : [filtro.estado];
-    if (estados.length) condiciones.push(inArray(ideas.estado, estados));
-  }
+  const estados = !filtro.estado
+    ? []
+    : Array.isArray(filtro.estado)
+      ? filtro.estado
+      : [filtro.estado];
+  condiciones.push(estados.length ? inArray(ideas.estado, estados) : NO_DESCARTADA);
   if (filtro.distrito) condiciones.push(eq(distritos.numero, filtro.distrito));
   if (filtro.sinDevolucion) condiciones.push(SIN_DEVOLUCION);
   if (filtro.texto?.trim()) {
@@ -1031,6 +1067,12 @@ export type IdeaAdmin = IdeaVista & {
   tituloOriginal: string | null;
   coordenadasOriginales: string | null;
   canal: CanalCarga;
+  /** De donde vino, si la cargo el equipo ("Asamblea del distrito 7, ..."). */
+  canalDetalle: string | null;
+  /** La idea final en la que se integro esta, si se integro en otra. */
+  integradaEn: { id: number; numero: number | null; titulo: string } | null;
+  /** Cuantas ideas se integraron en esta. */
+  integradas: number;
   cargadoPor: string | null;
   autorNombre: string | null;
   /** Nunca el mail: solo si hay contacto para avisarle al autor. */
@@ -1043,6 +1085,9 @@ export type IdeaAdmin = IdeaVista & {
   updatedAt: Date;
 };
 
+/** La idea en la que se integro otra, para nombrarla en la ficha sin otra consulta. */
+const principal = alias(ideas, "principal");
+
 /** Ficha interna de una idea, con todo lo que el equipo necesita para revisar. */
 export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
   const [fila] = await db
@@ -1053,6 +1098,12 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
       tituloOriginal: ideas.tituloOriginal,
       coordenadasOriginales: ideas.coordenadasOriginales,
       canal: ideas.canal,
+      canalDetalle: ideas.canalDetalle,
+      principalId: principal.id,
+      principalNumero: principal.numero,
+      principalTitulo: principal.titulo,
+      integradas: sql<number>`(SELECT count(*)::int FROM ideas otra
+        WHERE otra.integrada_en_id = ${ideas.id})`,
       cargadoPor: ideas.cargadoPor,
       autorNombre: ideas.autorNombre,
       tieneContacto: sql<number>`CASE
@@ -1068,6 +1119,7 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .leftJoin(admins, eq(admins.id, ideas.revisadoPorId))
+    .leftJoin(principal, eq(principal.id, ideas.integradaEnId))
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(eq(ideas.id, id))
     .limit(1);
@@ -1080,6 +1132,16 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     tituloOriginal: fila.tituloOriginal,
     coordenadasOriginales: fila.coordenadasOriginales,
     canal: fila.canal,
+    canalDetalle: fila.canalDetalle,
+    integradaEn:
+      fila.principalId === null
+        ? null
+        : {
+            id: Number(fila.principalId),
+            numero: fila.principalNumero === null ? null : Number(fila.principalNumero),
+            titulo: fila.principalTitulo ?? "",
+          },
+    integradas: Number(fila.integradas ?? 0),
     cargadoPor: fila.cargadoPor,
     autorNombre: fila.autorNombre,
     tieneContacto: Number(fila.tieneContacto) === 1,
@@ -1160,7 +1222,13 @@ export async function getRevisiones(ideaId: number): Promise<FilaRevision[]> {
 }
 
 export type ResumenBandeja = {
+  /** Las ideas de la edicion SIN las descartadas: es la solapa "Todas". */
   total: number;
+  /**
+   * Cuantas hay en cada estado, incluidas las descartadas en su propia clave
+   * (la solapa "Descartadas"). Por eso `total` es la suma de todas las claves
+   * menos `descartado`.
+   */
   porEstado: Record<EstadoIdea, number>;
   /**
    * No factibles sin devolucion escrita. Es la deuda del equipo: cada una es un
@@ -1203,7 +1271,7 @@ export async function getResumenBandeja(edicionId: number): Promise<ResumenBande
   for (const fila of filas) {
     const cantidad = Number(fila.cantidad);
     porEstado[fila.estado] = cantidad;
-    total += cantidad;
+    if (fila.estado !== "descartado") total += cantidad;
   }
 
   return { total, porEstado, noFactiblesSinDevolucion: Number(deuda?.cantidad ?? 0) };
@@ -1213,10 +1281,16 @@ export async function getResumenBandeja(edicionId: number): Promise<ResumenBande
 // Tablero del backoffice
 // ---------------------------------------------------------------------------
 
+/**
+ * Los numeros del tablero. Ninguno cuenta las descartadas (prueba, spam, carga
+ * repetida): no son ideas presentadas. La unica excepcion es su propia clave en
+ * `porEstado`, que dice cuantas hay y que el tablero no dibuja.
+ */
 export type ResumenAdmin = {
   ideas: number;
   publicadas: number;
   sinPublicar: number;
+  /** Por estado; las descartadas solo en `porEstado.descartado`, fuera de `ideas`. */
   porEstado: Record<EstadoIdea, number>;
   /**
    * Ideas por canal de entrada. El tablero lo usa para decir en pantalla si la
@@ -1253,9 +1327,10 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
            coalesce(sum(votos), 0)::int AS votos_en_ideas,
            sum(presupuesto_total) FILTER (WHERE ganador) AS asignado
       FROM ideas
-     WHERE edicion_id = ${edicionId}
+     WHERE edicion_id = ${edicionId} AND estado <> 'descartado'
   `);
 
+  // Este SI trae las descartadas, en su propia clave: ver ResumenAdmin.
   const estados = await consultar<{ estado: EstadoIdea; cantidad: number }>(sql`
     SELECT estado, count(*)::int AS cantidad
       FROM ideas
@@ -1266,7 +1341,7 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
   const canales = await consultar<{ canal: CanalCarga; cantidad: number }>(sql`
     SELECT canal, count(*)::int AS cantidad
       FROM ideas
-     WHERE edicion_id = ${edicionId}
+     WHERE edicion_id = ${edicionId} AND estado <> 'descartado'
      GROUP BY canal
   `);
 
@@ -1355,6 +1430,7 @@ export async function getEstadisticasPorDistrito(
              LIMIT 1) AS titulo_ganador
       FROM distritos d
       LEFT JOIN ideas i ON i.distrito_id = d.id AND i.edicion_id = ${edicionId}
+            AND i.estado <> 'descartado'
      GROUP BY d.id, d.numero, d.nombre
      ORDER BY d.numero
   `);
@@ -1395,7 +1471,8 @@ export async function getMatrizDistritoCategoria(
               FROM ideas i
              WHERE i.edicion_id = ${edicionId}
                AND i.distrito_id = d.id
-               AND i.categoria_id = c.id)::int AS ideas
+               AND i.categoria_id = c.id
+               AND i.estado <> 'descartado')::int AS ideas
       FROM distritos d
       CROSS JOIN categorias c
      ORDER BY d.numero, c.orden, c.slug
@@ -1427,12 +1504,14 @@ export async function getSerieVotos(edicionId: number): Promise<PuntoSerie[]> {
  * Ideas presentadas por dia. Se usa `fecha` (la de presentacion declarada) y
  * solo se cae en `created_at` si falta: en las ediciones migradas `created_at`
  * es el dia en que corrio el seed, no el dia en que el vecino presento la idea.
+ * Lo mismo con las que carga el equipo: `fecha` es el dia que dice el papel o
+ * la asamblea, no el dia en que se tipeo. Sin las descartadas.
  */
 export async function getSerieIdeas(edicionId: number): Promise<PuntoSerie[]> {
   const filas = await consultar<{ dia: string; cantidad: number }>(sql`
     SELECT (coalesce(fecha, created_at::date))::text AS dia, count(*)::int AS cantidad
       FROM ideas
-     WHERE edicion_id = ${edicionId}
+     WHERE edicion_id = ${edicionId} AND estado <> 'descartado'
      GROUP BY 1
      ORDER BY 1
   `);
@@ -2336,7 +2415,57 @@ export async function getTokensUsadosHoy(): Promise<number> {
 // ---------------------------------------------------------------------------
 // Ideas cargadas y corregidas desde el panel (Fase 2)
 // Alta desde el panel, correccion, descarte, ubicacion en la ficha.
+//
+// Las escrituras viven en src/app/admin/ideas/operaciones.ts (con su
+// transaccion y su fila de `revisiones`); aca solo lo que la ficha necesita
+// leer para ofrecerlas. Las cuentas que dejan afuera a las descartadas estan
+// cada una en su funcion, con NO_DESCARTADA.
 // ---------------------------------------------------------------------------
+
+export type CandidataIntegracion = {
+  id: number;
+  numero: number | null;
+  titulo: string;
+  distrito: number | null;
+};
+
+/**
+ * Las ideas en las que se puede integrar `ideaId`: las de su misma edicion que
+ * pueden ser la idea final. Quedan afuera ella misma, las descartadas y las que
+ * ya estan integradas en otra (`integrada_en_id` apunta siempre a la final, ver
+ * el esquema). Es la lista del selector; la operacion vuelve a validar todo
+ * adentro de su transaccion.
+ */
+export async function getCandidatasIntegracion(
+  edicionId: number,
+  ideaId: number,
+): Promise<CandidataIntegracion[]> {
+  const filas = await db
+    .select({
+      id: ideas.id,
+      numero: ideas.numero,
+      titulo: ideas.titulo,
+      distrito: distritos.numero,
+    })
+    .from(ideas)
+    .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(
+      and(
+        eq(ideas.edicionId, edicionId),
+        ne(ideas.id, ideaId),
+        isNull(ideas.integradaEnId),
+        NO_DESCARTADA,
+      ),
+    )
+    .orderBy(asc(distritos.numero), asc(ideas.numero), asc(ideas.id));
+
+  return filas.map((f) => ({
+    id: Number(f.id),
+    numero: f.numero === null ? null : Number(f.numero),
+    titulo: f.titulo,
+    distrito: f.distrito === null ? null : Number(f.distrito),
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Ediciones anteriores (Fase 2)

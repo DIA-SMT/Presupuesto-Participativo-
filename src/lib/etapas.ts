@@ -22,9 +22,18 @@
  *
  * Los motivos se muestran tal cual al equipo: van en voseo y dicen que hacer,
  * no solo que no se puede.
+ *
+ * Desde la Fase 2 viven aca tambien dos reglas sobre una idea que NO dependen
+ * de la etapa y valen en todas (ver `puedeCambiarIdea` y
+ * `puedeCambiarDeDistrito`): una idea descartada no se toca salvo para deshacer
+ * el descarte, y una idea con votos no se muda de distrito. Estan aca y no en
+ * cada accion porque este es el lugar al que todas las acciones le preguntan,
+ * dentro de su transaccion y con la fila de la idea bloqueada (`bloqueoPorEtapa`
+ * en src/app/admin/comun.ts). Puestas en una accion suelta, la regla valdria en
+ * esa y no en las otras.
  */
 import type { EstadoIdea, EtapaEdicion } from "@/db/queries";
-import { ETIQUETA_ETAPA, formatearNumero } from "@/lib/formato";
+import { ETIQUETA_ESTADO, ETIQUETA_ETAPA, formatearNumero } from "@/lib/formato";
 
 /**
  * Las etapas EN ORDEN: la posicion en esta lista es lo que define "avanzar" y
@@ -183,12 +192,23 @@ export function seVota(idea: IdeaEnJuego): boolean {
   return idea.estado === "factible" && idea.publicada;
 }
 
-/** Lo que el panel le puede hacer a una idea y que mueve su estado o su publicacion. */
+/**
+ * Lo que el panel le puede hacer a una idea: lo que mueve su estado o su
+ * publicacion, y la correccion de lo que dice, que no mueve ninguna de las dos
+ * cosas pero cambia lo que el vecino lee (y, si cambia el punto, en que
+ * distrito se vota).
+ */
 export type CambioDeIdea =
   | { accion: "evaluar"; estado: EstadoIdea }
   | { accion: "publicar" }
   | { accion: "despublicar" }
-  | { accion: "reabrir" };
+  | { accion: "reabrir" }
+  /** Titulo, textos, categoria, barrio, punto o integracion en otra idea. */
+  | { accion: "corregir" }
+  /** Prueba, spam o carga repetida: pasa a "descartado" y queda sin publicar. */
+  | { accion: "descartar" }
+  /** Deshace un descarte: vuelve a "pendiente", sin publicar. */
+  | { accion: "restaurar" };
 
 /** Como queda la idea despues del cambio, en lo que a la votacion importa. */
 function despuesDe(idea: IdeaEnJuego, cambio: CambioDeIdea): IdeaEnJuego {
@@ -201,6 +221,16 @@ function despuesDe(idea: IdeaEnJuego, cambio: CambioDeIdea): IdeaEnJuego {
       return { estado: idea.estado, publicada: false };
     case "reabrir":
       // reabrirRevision vuelve la idea a pendiente y no toca la publicacion.
+      return { estado: "pendiente", publicada: idea.publicada };
+    case "corregir":
+      // No toca ni el estado ni la publicacion: su regla va aparte, arriba de
+      // la comparacion del antes y el despues (ver puedeCambiarIdea).
+      return idea;
+    case "descartar":
+      return { estado: "descartado", publicada: false };
+    case "restaurar":
+      // La publicacion se deja como esta: una descartada quedo sin publicar,
+      // y deshacer el descarte no la publica. Eso lo decide el equipo despues.
       return { estado: "pendiente", publicada: idea.publicada };
   }
 }
@@ -220,7 +250,52 @@ function comoSeDice(cambio: CambioDeIdea, sale: boolean): string {
       return "la despublicás";
     case "reabrir":
       return "reabrís la revisión";
+    // Los tres de abajo nunca llegan a armar este motivo: corregir tiene su
+    // propia regla, y descartar y restaurar solo se aplican a ideas que no se
+    // votan ni antes ni despues. Estan para que el switch cubra todo.
+    case "corregir":
+      return "la corregís";
+    case "descartar":
+      return "la descartás";
+    case "restaurar":
+      return "deshacés el descarte";
   }
+}
+
+/**
+ * Las reglas de ESTADO: valen en cualquier etapa, y por eso se miran antes que
+ * la votacion. Devuelve el rechazo, o null si el estado no tiene nada que decir.
+ *
+ *  - Una descartada (prueba, spam, carga repetida) no es una propuesta: no se
+ *    evalua, no se publica, no se reabre ni se corrige. Su unica salida es
+ *    deshacer el descarte, que la devuelve a "pendiente" con su fila en el
+ *    historial. Si pudiera publicarse, un spam apareceria en el sitio con el
+ *    estado "Descartada" y entraria en las cuentas publicas, que solo miran
+ *    `publicada`.
+ *  - Solo se descarta lo que nadie evaluo todavia (borrador o pendiente). Una
+ *    idea evaluada ya tiene una decision que el vecino puede estar leyendo: si
+ *    igual hay que descartarla, primero se reabre su revision, con su motivo.
+ *  - Solo se deshace el descarte de una descartada.
+ */
+function porEstado(idea: IdeaEnJuego, cambio: CambioDeIdea): Veredicto | null {
+  if (cambio.accion === "restaurar") {
+    return idea.estado === "descartado"
+      ? null
+      : rechazo("Solo se puede deshacer el descarte de una idea descartada.");
+  }
+  if (idea.estado === "descartado") {
+    return rechazo(
+      "Esta idea está descartada: no se evalúa, no se publica ni se corrige. Si se descartó por error, deshacé el descarte y vuelve a “En evaluación”, sin publicar.",
+    );
+  }
+  if (cambio.accion === "descartar" && idea.estado !== "borrador" && idea.estado !== "pendiente") {
+    return rechazo(
+      `Solo se descarta una idea que nadie evaluó todavía, y esta ya está “${
+        ETIQUETA_ESTADO[idea.estado] ?? idea.estado
+      }”. Si igual hay que descartarla, reabrí la revisión primero (queda en el historial) y después descartala.`,
+    );
+  }
+  return null;
 }
 
 /**
@@ -241,19 +316,42 @@ function comoSeDice(cambio: CambioDeIdea, sale: boolean): string {
  * termine la votacion), corregir el texto de la devolucion de un proyecto sin
  * cambiarle el estado, o evaluar ideas que no estan publicadas.
  *
+ * Corregir una idea que se vota tampoco se puede en votacion, aunque no la saca
+ * ni la mete: el vecino la voto leyendo ese titulo y ese texto, y un cambio de
+ * punto puede mudarla de distrito, o sea de boleta. El conjunto que se vota
+ * queda fijo tambien en lo que dice. Una idea que no se vota si se corrige: no
+ * esta en ninguna boleta.
+ *
  * Fuera de la votacion no hay restriccion por etapa:
  *  - en "ideas" y "evaluacion" es el trabajo normal del equipo;
  *  - en "seguimiento" y "cerrada" la votacion termino y ningun vecino puede
  *    votar, asi que nadie pierde un voto. Que el proyecto mas votado resulte no
  *    factible despues de la votacion es un caso que el reglamento contempla, y
- *    el cambio queda en el historial de la idea.
+ *    el cambio queda en el historial de la idea. Corregir un error de tipeo en
+ *    un ganador, o los campos corridos de 2025, tambien: la fila de
+ *    `revisiones` guarda el antes y el despues. Lo que no se hace en ninguna
+ *    etapa es mudar de distrito una idea con votos (`puedeCambiarDeDistrito`).
+ *
+ * Antes que la etapa se miran las reglas de estado (`porEstado`), que valen
+ * siempre: una descartada no se toca salvo para deshacer el descarte.
  */
 export function puedeCambiarIdea(
   etapa: Etapa,
   idea: IdeaEnJuego,
   cambio: CambioDeIdea,
 ): Veredicto {
+  const segunEstado = porEstado(idea, cambio);
+  if (segunEstado) return segunEstado;
+
   if (etapa !== "votacion") return PERMITIDO;
+
+  if (cambio.accion === "corregir") {
+    return seVota(idea)
+      ? rechazo(
+          "La votación de esta edición está abierta y esta idea se está votando: quienes ya la votaron lo hicieron leyendo este título, este texto y en este distrito, así que no se corrige hasta que cierre la votación (etapa “Seguimiento de obras”). Queda como estaba cuando empezó.",
+        )
+      : PERMITIDO;
+  }
 
   const antes = seVota(idea);
   const despues = seVota(despuesDe(idea, cambio));
@@ -264,6 +362,79 @@ export function puedeCambiarIdea(
     antes
       ? `La votación de esta edición está abierta y esta idea se está votando: si ${como}, sale del ranking con sus votos y quienes la votaron no pueden volver a votar. Esperá a que cierre la votación (etapa “Seguimiento de obras”) para hacerlo.`
       : `La votación de esta edición está abierta: si ${como}, esta idea entra a competir con la votación ya empezada, y quienes ya votaron no pueden cambiar su voto. Esperá a que cierre la votación (etapa “Seguimiento de obras”) para hacerlo.`,
+  );
+}
+
+/**
+ * Si una correccion puede mudar una idea del distrito `desde` al `hasta`.
+ *
+ * No depende de la etapa: vale en todas, incluso despues de la votacion. La
+ * votacion es por distrito (cada vecino vota un proyecto del suyo, ver
+ * /api/votos) y el ranking tambien (getVotosPorIdea filtra por distrito). Si una
+ * idea con votos se muda, sus votos se mudan con ella y pasan a competir en el
+ * ranking de un distrito cuyos vecinos no los emitieron: en votacion le cambia
+ * la cuenta a dos distritos a la vez, y despues cambia quien gano. Un ganador
+ * menos todavia: es EL proyecto de su distrito, y el indice unico de la base no
+ * deja dos ganadores en el mismo.
+ *
+ * Una idea sin votos se muda libremente (con la confirmacion de la pantalla):
+ * es el arreglo normal de un punto mal marcado.
+ *
+ * `votos` es el mayor entre el contador de la idea y sus filas en `votos`, por
+ * lo mismo que `votosDeLaEdicion`: las ideas migradas de 2025 tienen sus votos
+ * solo en el contador, y tambien cuentan.
+ */
+export function puedeCambiarDeDistrito(
+  idea: { votos: number; ganador: boolean },
+  desde: number | null,
+  hasta: number,
+): Veredicto {
+  if (desde === null || desde === hasta) return PERMITIDO;
+  if (idea.ganador) {
+    return rechazo(
+      `Esta idea es el proyecto ganador del Distrito ${desde}: no puede pasar al Distrito ${hasta}. Si el punto está mal, marcá uno dentro del Distrito ${desde}.`,
+    );
+  }
+  if (idea.votos > 0) {
+    return rechazo(
+      `Esta idea tiene ${cantidad(idea.votos, "voto", "votos")} de vecinos del Distrito ${desde}: si pasa al Distrito ${hasta}, esos votos contarían en el ranking de otro distrito. Si el punto está mal, marcá uno dentro del Distrito ${desde}, o dejá la ubicación como está.`,
+    );
+  }
+  return PERMITIDO;
+}
+
+// ---------------------------------------------------------------------------
+// Ideas que carga el equipo desde el panel
+// ---------------------------------------------------------------------------
+
+/**
+ * Si el equipo puede cargar una idea (de una asamblea, de mesa de entradas, de
+ * un mail) en una edicion que esta en `etapa`.
+ *
+ *  - En "ideas", si: es la etapa de presentacion.
+ *  - En "evaluacion", tambien: una asamblea puede hacerse despues de que cierre
+ *    el formulario del sitio, y lo que llega por papel o mail tarda en pasar a
+ *    la carga. Esas ideas todavia se pueden evaluar y, si son factibles, entrar
+ *    a la votacion junto con las demas: nadie voto todavia.
+ *  - Desde "votacion", no. La boleta queda fija cuando empieza la votacion (ver
+ *    `puedeCambiarIdea`): una idea cargada en plena votacion no podria
+ *    publicarse como factible, asi que quedaria en la bandeja como una
+ *    propuesta sin ningun proceso por delante. En "seguimiento" y "cerrada" la
+ *    edicion ya voto. Lo que llega tarde se carga en la edicion siguiente.
+ *
+ * Es mas amplio que el formulario publico, que se cierra al terminar la etapa
+ * "ideas" (lo dice el reglamento para la presentacion del vecino): la carga del
+ * equipo es el camino de lo que se presento por otra via dentro de los plazos.
+ */
+export function puedeCargarIdea(etapa: Etapa): Veredicto {
+  if (etapa === "ideas" || etapa === "evaluacion") return PERMITIDO;
+  if (etapa === "votacion") {
+    return rechazo(
+      "La votación de esta edición está abierta: la boleta quedó fija cuando empezó, así que una idea nueva ya no puede entrar a competir. Lo que llegó tarde se carga en la edición siguiente.",
+    );
+  }
+  return rechazo(
+    `Esta edición ya votó (está en ${nombre(etapa)}): una idea nueva no tiene evaluación ni votación en la que entrar. Se carga en la edición siguiente, cuando esté activa (se activa desde “Etapa del proceso”).`,
   );
 }
 

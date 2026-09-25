@@ -14,8 +14,10 @@ import {
   esEtapa,
   ETAPAS,
   puedeActivarOtraEdicion,
+  puedeCambiarDeDistrito,
   puedeCambiarEtapa,
   puedeCambiarIdea,
+  puedeCargarIdea,
   puedeProclamar,
   seVota,
   votosDeLaEdicion,
@@ -273,6 +275,174 @@ test("en votacion el conjunto que se vota nunca cambia, pruebe lo que se pruebe"
       }
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Correccion, descarte y su marcha atras (Fase 2)
+// ---------------------------------------------------------------------------
+
+const DESCARTADA: IdeaEnJuego = { estado: "descartado", publicada: false };
+const PENDIENTE_SIN_PUBLICAR: IdeaEnJuego = { estado: "pendiente", publicada: false };
+
+/** Los cambios de la Fase 2, aparte: los de arriba se prueban sin ellos. */
+const CAMBIOS_DEL_PANEL: CambioDeIdea[] = [
+  { accion: "corregir" },
+  { accion: "descartar" },
+  { accion: "restaurar" },
+];
+
+test("en votacion una idea que se vota no se corrige: el vecino la voto leyendo ese texto", () => {
+  const motivo = rechazado(puedeCambiarIdea("votacion", VOTABLE, { accion: "corregir" }));
+  assert.match(motivo, /^La votación de esta edición está abierta y esta idea se está votando/);
+  assert.match(motivo, /leyendo este título, este texto y en este distrito/);
+  assert.match(motivo, /Seguimiento de obras/);
+});
+
+test("en votacion se corrige lo que no se vota, y fuera de la votacion se corrige todo", () => {
+  for (const idea of [PENDIENTE_PUBLICADA, FACTIBLE_SIN_PUBLICAR, NO_FACTIBLE]) {
+    permitido(puedeCambiarIdea("votacion", idea, { accion: "corregir" }), JSON.stringify(idea));
+  }
+  // Despues de la votacion se puede corregir hasta un ganador: un error de
+  // tipeo o los campos corridos de 2025. Queda en el historial.
+  const ganador: IdeaEnJuego = { estado: "ganador", publicada: true };
+  for (const etapa of ["ideas", "evaluacion", "seguimiento", "cerrada"] as const) {
+    permitido(puedeCambiarIdea(etapa, VOTABLE, { accion: "corregir" }), etapa);
+    permitido(puedeCambiarIdea(etapa, ganador, { accion: "corregir" }), etapa);
+  }
+});
+
+test("solo se descarta lo que nadie evaluo: borrador o pendiente, en cualquier etapa", () => {
+  for (const etapa of ETAPAS) {
+    permitido(puedeCambiarIdea(etapa, PENDIENTE_PUBLICADA, { accion: "descartar" }), etapa);
+    permitido(puedeCambiarIdea(etapa, PENDIENTE_SIN_PUBLICAR, { accion: "descartar" }), etapa);
+    permitido(
+      puedeCambiarIdea(etapa, { estado: "borrador", publicada: false }, { accion: "descartar" }),
+      etapa,
+    );
+    for (const estado of ["factible", "no_factible", "integrado", "ganador"] as const) {
+      const motivo = rechazado(
+        puedeCambiarIdea(etapa, { estado, publicada: true }, { accion: "descartar" }),
+        `${etapa}: ${estado}`,
+      );
+      assert.match(motivo, /Solo se descarta una idea que nadie evaluó todavía/);
+      assert.match(motivo, /reabrí la revisión primero/);
+    }
+  }
+});
+
+test("una descartada no se evalua, no se publica, no se reabre ni se corrige, en ninguna etapa", () => {
+  const todos = [...TODOS_LOS_CAMBIOS, { accion: "corregir" } as const, { accion: "descartar" } as const];
+  for (const etapa of ETAPAS) {
+    for (const cambio of todos) {
+      const motivo = rechazado(
+        puedeCambiarIdea(etapa, DESCARTADA, cambio),
+        `${etapa}: ${JSON.stringify(cambio)}`,
+      );
+      assert.match(motivo, /^Esta idea está descartada/);
+      assert.match(motivo, /deshacé el descarte/);
+    }
+  }
+});
+
+test("deshacer el descarte se puede siempre, y solo sobre una descartada", () => {
+  // Incluso con la votacion abierta: vuelve a pendiente y sin publicar, asi
+  // que no entra a ninguna boleta.
+  for (const etapa of ETAPAS) {
+    permitido(puedeCambiarIdea(etapa, DESCARTADA, { accion: "restaurar" }), etapa);
+    for (const idea of [VOTABLE, PENDIENTE_PUBLICADA, NO_FACTIBLE]) {
+      assert.match(
+        rechazado(puedeCambiarIdea(etapa, idea, { accion: "restaurar" })),
+        /Solo se puede deshacer el descarte de una idea descartada/,
+      );
+    }
+  }
+});
+
+test("con los cambios del panel, en votacion el conjunto que se vota tampoco cambia", () => {
+  // El mismo barrido de arriba, sumando la correccion, el descarte, su marcha
+  // atras y el estado descartado. Corregir no mueve el estado, pero si lo que
+  // se lee de una idea en la boleta: si la politica lo deja pasar, la idea no
+  // se estaba votando.
+  const estados = [
+    "borrador",
+    "pendiente",
+    "factible",
+    "no_factible",
+    "integrado",
+    "ganador",
+    "descartado",
+  ] as const;
+  for (const estado of estados) {
+    for (const publicada of [true, false]) {
+      const idea = { estado, publicada };
+      for (const cambio of [...TODOS_LOS_CAMBIOS, ...CAMBIOS_DEL_PANEL]) {
+        const veredicto = puedeCambiarIdea("votacion", idea, cambio);
+        if (!veredicto.permitido) continue;
+        if (cambio.accion === "corregir") {
+          assert.equal(seVota(idea), false, `se corrigio una idea que se vota: ${JSON.stringify(idea)}`);
+          continue;
+        }
+        const despues: IdeaEnJuego =
+          cambio.accion === "evaluar"
+            ? { estado: cambio.estado, publicada }
+            : cambio.accion === "publicar"
+              ? { estado, publicada: true }
+              : cambio.accion === "despublicar"
+                ? { estado, publicada: false }
+                : cambio.accion === "descartar"
+                  ? { estado: "descartado", publicada: false }
+                  : { estado: "pendiente", publicada };
+        assert.equal(
+          seVota(despues),
+          seVota(idea),
+          `${JSON.stringify(idea)} ${JSON.stringify(cambio)} cambio la votacion`,
+        );
+      }
+    }
+  }
+});
+
+test("una idea con votos no se muda de distrito, en ninguna etapa", () => {
+  const motivo = rechazado(puedeCambiarDeDistrito({ votos: 12, ganador: false }, 5, 1));
+  assert.match(motivo, /tiene 12 votos de vecinos del Distrito 5/);
+  assert.match(motivo, /contarían en el ranking de otro distrito/);
+  assert.match(rechazado(puedeCambiarDeDistrito({ votos: 1, ganador: false }, 5, 1)), /tiene 1 voto de/);
+
+  // Un ganador tampoco, aunque el contador estuviera en cero.
+  assert.match(
+    rechazado(puedeCambiarDeDistrito({ votos: 0, ganador: true }, 3, 4)),
+    /es el proyecto ganador del Distrito 3/,
+  );
+});
+
+test("sin votos una idea se muda de distrito; quedarse en el mismo no es mudarse", () => {
+  permitido(puedeCambiarDeDistrito({ votos: 0, ganador: false }, 5, 1));
+  permitido(puedeCambiarDeDistrito({ votos: 300, ganador: true }, 7, 7));
+  // Sin distrito asignado no hay votos de ningun distrito que proteger.
+  permitido(puedeCambiarDeDistrito({ votos: 0, ganador: false }, null, 2));
+});
+
+// ---------------------------------------------------------------------------
+// Carga desde el panel (Fase 2)
+// ---------------------------------------------------------------------------
+
+test("el equipo carga ideas en presentacion y en evaluacion", () => {
+  permitido(puedeCargarIdea("ideas"));
+  // Una asamblea tardia, o lo que llego por papel y se tipea despues.
+  permitido(puedeCargarIdea("evaluacion"));
+});
+
+test("desde la votacion no se cargan ideas: la boleta ya quedo fija", () => {
+  const votacion = rechazado(puedeCargarIdea("votacion"));
+  assert.match(votacion, /La votación de esta edición está abierta: la boleta quedó fija/);
+  assert.match(votacion, /edición siguiente/);
+
+  for (const etapa of ["seguimiento", "cerrada"] as const) {
+    const motivo = rechazado(puedeCargarIdea(etapa), etapa);
+    assert.match(motivo, /Esta edición ya votó/);
+    assert.match(motivo, /edición siguiente/);
+  }
+  assert.match(rechazado(puedeCargarIdea("seguimiento")), /Seguimiento de obras/);
 });
 
 // ---------------------------------------------------------------------------

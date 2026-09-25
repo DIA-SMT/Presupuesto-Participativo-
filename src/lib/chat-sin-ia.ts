@@ -185,6 +185,11 @@ export async function responderSinIA(
   if (posibleBarrio) {
     // Se buscan las palabras largas de la consulta dentro del barrio
     // normalizado (minusculas y sin tildes), sin extensiones de Postgres.
+    //
+    // Solo ideas publicadas y no descartadas, como `ubicar_barrio` en
+    // src/lib/chat-herramientas.ts. Esta consulta no filtraba ni una cosa ni la
+    // otra: el barrio de una idea sin publicar (o de un spam descartado) podia
+    // salir en la respuesta del chat, y para el sitio esas ideas no existen.
     const palabras = normalizar(posibleBarrio)
       .split(/\s+/)
       .filter((palabra) => palabra.length > 3);
@@ -199,6 +204,8 @@ export async function responderSinIA(
             FROM ideas i
             JOIN distritos d ON d.id = i.distrito_id
            WHERE i.edicion_id = ${edicion.id}
+             AND i.publicada
+             AND i.estado <> 'descartado'
              AND i.barrio IS NOT NULL
              AND (${sql.join(coincidencias, sql` OR `)})
            GROUP BY d.numero, i.barrio
