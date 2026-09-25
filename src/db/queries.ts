@@ -2364,6 +2364,77 @@ export async function getCuentaDeSesion(id: number): Promise<CuentaDeSesion | nu
   return fila ?? null;
 }
 
+/**
+ * Las cuentas para la pantalla de equipo. Es `listarAdmins()` mas
+ * `debeCambiarPassword`: quien administra tiene que ver quien todavia no cambio
+ * la provisoria que le entrego (puede que nunca haya llegado a ingresar).
+ *
+ * Por nombre y nada mas, activas y desactivadas juntas: si las activas fueran
+ * primero, la tarjeta que se acaba de desactivar saltaria al final de la lista
+ * con el mensaje del resultado adentro. Nunca devuelve `passwordHash`.
+ */
+export type CuentaEquipo = FilaAdmin & { debeCambiarPassword: boolean };
+
+export async function listarCuentasEquipo(): Promise<CuentaEquipo[]> {
+  return db
+    .select({
+      id: admins.id,
+      email: admins.email,
+      nombre: admins.nombre,
+      rol: admins.rol,
+      activo: admins.activo,
+      debeCambiarPassword: admins.debeCambiarPassword,
+      ultimoIngreso: admins.ultimoIngreso,
+      createdAt: admins.createdAt,
+    })
+    .from(admins)
+    .orderBy(asc(admins.nombre), asc(admins.id));
+}
+
+/**
+ * Sale del enum del esquema y no de una lista escrita a mano, por lo mismo que
+ * `EstadoIdea`: un valor nuevo en `accion_equipo` llega solo, y el compilador
+ * marca la etiqueta que falta en la pantalla.
+ */
+export type AccionEquipo = (typeof bitacoraEquipo.accion.enumValues)[number];
+
+/**
+ * Un movimiento de la bitacora del equipo. A diferencia de `getBitacoraEquipo()`
+ * trae los dos ids: con ellos la pantalla distingue a quien cambio SU contrasena
+ * de a quien se la restablecio otra persona, que en la tabla son la misma accion
+ * (`cambio_password`). Cualquiera de los dos puede ser null: la cuenta se borro
+ * (`set null`) o el cambio salio de la consola (scripts/crear-admin.ts).
+ */
+export type MovimientoEquipo = {
+  id: number;
+  adminId: number | null;
+  adminNombre: string;
+  objetivoId: number | null;
+  objetivoEmail: string;
+  accion: AccionEquipo;
+  rolAnterior: RolAdmin | null;
+  rolNuevo: RolAdmin | null;
+  createdAt: Date;
+};
+
+export async function listarBitacoraEquipo(limite = 100): Promise<MovimientoEquipo[]> {
+  return db
+    .select({
+      id: bitacoraEquipo.id,
+      adminId: bitacoraEquipo.adminId,
+      adminNombre: bitacoraEquipo.adminNombre,
+      objetivoId: bitacoraEquipo.objetivoId,
+      objetivoEmail: bitacoraEquipo.objetivoEmail,
+      accion: bitacoraEquipo.accion,
+      rolAnterior: bitacoraEquipo.rolAnterior,
+      rolNuevo: bitacoraEquipo.rolNuevo,
+      createdAt: bitacoraEquipo.createdAt,
+    })
+    .from(bitacoraEquipo)
+    .orderBy(desc(bitacoraEquipo.createdAt), desc(bitacoraEquipo.id))
+    .limit(limite);
+}
+
 // ---------------------------------------------------------------------------
 // Contenido editable (Fase 2)
 // Las de /admin/contenido: textos, preguntas frecuentes, novedades.
