@@ -402,8 +402,8 @@ archivo nuevo en `drizzle/`.
   contacto, no domicilio, así que hoy quien ingresa cae en la pantalla "Falta tu
   distrito" salvo que el padrón ya lo tenga cargado.
 - **Reglamento**: la página existe con las reglas confirmadas, pero el texto
-  oficial completo hay que conseguirlo y cargarlo en el texto `reglamento-cuerpo`,
-  hoy directamente en la base (la pantalla que lo editaba se borró).
+  oficial completo hay que conseguirlo. Se carga desde `/admin/contenido`,
+  solapa "Reglamento" (solo admin), con vista previa igual a `/reglamento`.
 - **Teselas del mapa**: cambiar OSM por un proveedor con términos adecuados
   antes de salir a producción (ver arriba).
 - **Contenido de ideas no ganadoras**: el relevamiento solo recuperó el texto

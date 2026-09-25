@@ -15,7 +15,10 @@
  * coincide con donde se lee de verdad, o si el seed carga una clave que el
  * catalogo no conoce. Si agregas un texto a una pagina, sumalo aca, y leelo con
  * la clave escrita literal (`textos["clave"]`): con una constante la prueba no
- * lo encuentra y el panel lo mostraria como un texto que nadie usa.
+ * lo encuentra y el panel lo mostraria como un texto que nadie usa. Al reves,
+ * la prueba lee el codigo como texto y tambien cuenta un `textos["clave"]`
+ * escrito en un comentario: para nombrar una clave en un comentario, escribila
+ * suelta, sin los corchetes.
  *
  * Es codigo puro, sin base ni React: lo usan el panel (para mostrar), las
  * acciones (para validar) y las pruebas.

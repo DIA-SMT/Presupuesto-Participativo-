@@ -75,10 +75,15 @@ test("toda clave que el sitio lee esta en el catalogo, con los archivos donde se
       entrada,
       `${[...archivos].join(", ")} lee textos["${clave}"] y el catalogo del panel no lo conoce: sumalo a src/app/admin/contenido/catalogo.ts`,
     );
+    // Falla tambien cuando un texto que ya existe empieza a leerse en otro
+    // archivo, o cuando un refactor lo muda: es a proposito, porque entonces el
+    // "donde" que el panel le muestra al equipo puede haber quedado viejo. El
+    // arreglo es copiar la lista de abajo en `archivos` y releer `donde`.
     assert.deepEqual(
       [...archivos].sort(),
       [...entrada.archivos].sort(),
-      `"${clave}": el catalogo dice que se lee en otros archivos`,
+      `"${clave}" se lee en ${[...archivos].sort().join(", ")} y el catalogo dice ${entrada.archivos.join(", ") || "ninguno"}: ` +
+        "actualizá `archivos` (y revisá `donde`) en src/app/admin/contenido/catalogo.ts",
     );
   }
 });
