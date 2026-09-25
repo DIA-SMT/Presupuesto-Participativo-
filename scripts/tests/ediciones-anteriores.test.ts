@@ -142,6 +142,13 @@ test("el sitemap tiene las fichas de las dos ediciones, cada una con su URL", as
   assert.ok(urls.includes("/proyectos/solo-en-2025?edicion=2025"));
   assert.ok(!urls.some((url) => url.includes("sin-publicar")), "nada sin publicar");
   assert.ok(!urls.includes("/proyectos/solo-en-2025"), "la de 2026 no esta publicada");
+
+  // Las vistas de la 2025 tambien, y no las de la 2027, que no tiene ideas.
+  for (const vista of ["/proyectos", "/distritos", "/distritos/5", "/transparencia"]) {
+    assert.ok(urls.includes(`${vista}?edicion=2025`), vista);
+  }
+  assert.ok(!urls.some((url) => url.includes("edicion=2027")));
+  assert.ok(!urls.some((url) => url.includes("edicion=2026")), "la activa va sin parametro");
 });
 
 // ---------------------------------------------------------------------------
