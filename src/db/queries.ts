@@ -2616,3 +2616,60 @@ export async function getUltimaEdicionTerminadaConGanadores(): Promise<EdicionCo
     }),
   };
 }
+
+export type BarrioDeclarado = {
+  /** Como lo escribio quien presento la idea: no es el nombre oficial. */
+  barrio: string;
+  distrito: number;
+  /** Ideas publicadas que lo nombran asi, sumando todas las ediciones. */
+  ideas: number;
+};
+
+/** `%` y `_` de lo que escribio la persona son letras, no comodines del LIKE. */
+function escaparComodines(texto: string): string {
+  return texto.replace(/[\\%_]/g, (caracter) => `\\${caracter}`);
+}
+
+/**
+ * Barrios escritos a mano en las ideas publicadas que contienen alguna de las
+ * palabras, con el distrito de cada idea (que sale del punto en el mapa).
+ *
+ * Es el RESPALDO de la capa oficial de barrios (src/lib/barrios.ts): sirve para
+ * nombres que la capa no tiene ("Parque 9 de Julio", "Casino"). Mira todas las
+ * ediciones porque en que distrito queda un barrio no depende de la edicion: con
+ * la 2026 recien abierta y sin ideas, buscar solo en la activa daba "no figura"
+ * para cualquier barrio.
+ *
+ * Solo publicadas. Reemplaza al SQL suelto que tenian las dos formas del chat,
+ * y la del buscador sin IA miraba tambien las sin publicar: un barrio y un
+ * distrito de una idea en moderacion ya son un dato de esa idea.
+ */
+export async function buscarBarriosEnIdeas(
+  palabras: string[],
+  limite = 8,
+): Promise<BarrioDeclarado[]> {
+  const patrones = palabras
+    .map((palabra) => normalizar(palabra))
+    .filter((palabra) => palabra.length >= 2)
+    .map((palabra) => like(ideas.barrioNormalizado, `%${escaparComodines(palabra)}%`));
+  if (!patrones.length) return [];
+
+  const filas = await db
+    .select({
+      distrito: distritos.numero,
+      barrio: ideas.barrio,
+      ideas: sql<number>`count(*)::int`,
+    })
+    .from(ideas)
+    .innerJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(and(eq(ideas.publicada, true), isNotNull(ideas.barrio), or(...patrones)))
+    .groupBy(distritos.numero, ideas.barrio)
+    .orderBy(desc(sql`count(*)`), asc(distritos.numero), asc(ideas.barrio))
+    .limit(limite);
+
+  return filas.map((f) => ({
+    barrio: String(f.barrio),
+    distrito: Number(f.distrito),
+    ideas: Number(f.ideas),
+  }));
+}
