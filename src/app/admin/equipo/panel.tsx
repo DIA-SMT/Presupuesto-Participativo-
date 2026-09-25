@@ -26,6 +26,29 @@ import { ETIQUETA_ROL, formatearNumero } from "@/lib/formato";
 import type { Resultado } from "../comun";
 import { activarAdmin, cambiarRolAdmin, crearAdmin, restablecerPasswordAdmin } from "./acciones";
 
+/*
+ * useActionState le pasa a la accion su resultado anterior como primer
+ * argumento, y con una accion del servidor ese argumento viaja en el pedido. En
+ * el alta y en el restablecimiento ese resultado trae la provisoria: el envio
+ * siguiente del mismo formulario se la mandaba de vuelta al servidor, que no la
+ * usa, y `next dev` la imprimia en la terminal al loguear la llamada (visto:
+ * `crearAdmin({..."passwordProvisoria":"..."}, {})`). Estas dos la cambian por
+ * null antes de que salga del navegador.
+ *
+ * Lo que se pierde es el envio sin JavaScript, que con una funcion del cliente
+ * de por medio no existe. Solo lo tenia el alta (las confirmaciones y "Ya la
+ * copié" ya necesitaban JavaScript), y por ese camino la provisoria volvia dos
+ * veces en el HTML: a la vista y en el campo oculto con el estado del
+ * formulario, que "Ya la copié" no borra.
+ */
+function crearSinArrastrar(_previo: Resultado | null, formulario: FormData) {
+  return crearAdmin(null, formulario);
+}
+
+function restablecerSinArrastrar(_previo: Resultado | null, formulario: FormData) {
+  return restablecerPasswordAdmin(null, formulario);
+}
+
 export type CuentaEnPantalla = {
   id: number;
   email: string;
@@ -287,7 +310,7 @@ function TarjetaCuenta({
   const [estadoRol, accionRol, guardandoRol] = useActionState(cambiarRolAdmin, null);
   const [estadoActivo, accionActivo, guardandoActivo] = useActionState(activarAdmin, null);
   const [estadoClave, accionClave, generandoClave] = useActionState(
-    restablecerPasswordAdmin,
+    restablecerSinArrastrar,
     null,
   );
 
@@ -558,7 +581,7 @@ function ContrasenaProvisoria({
 }
 
 function FormularioAlta() {
-  const [estado, accion, pendiente] = useActionState(crearAdmin, null);
+  const [estado, accion, pendiente] = useActionState(crearSinArrastrar, null);
   const [provisoriaOculta, setProvisoriaOculta] = useState<Resultado | null>(null);
 
   return (
