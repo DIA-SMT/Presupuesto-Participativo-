@@ -449,8 +449,9 @@ export async function generarInformeImpacto(
     };
   }
 
-  const [idea] = await db
+  const [leida] = await db
     .select({
+      estado: ideas.estado,
       titulo: ideas.titulo,
       barrio: ideas.barrio,
       distrito: distritos.numero,
@@ -464,7 +465,20 @@ export async function generarInformeImpacto(
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .where(eq(ideas.id, id))
     .limit(1);
-  if (!idea) return { ok: false, error: "La idea no existe." };
+  if (!leida) return { ok: false, error: "La idea no existe." };
+
+  // Una descartada (prueba, spam, carga repetida) no se evalua, y el informe es
+  // parte de la evaluacion: la ficha no lo ofrece, y la accion tampoco lo genera
+  // si le llega igual (una pestaña vieja). Cada informe es una llamada paga, y el
+  // texto de un spam no tiene nada que analizar.
+  const { estado, ...idea } = leida;
+  if (estado === "descartado") {
+    return {
+      ok: false,
+      error:
+        "Esta idea está descartada: no se evalúa, así que no lleva informe. Si se descartó por error, deshacé el descarte primero.",
+    };
+  }
 
   // Sin texto no hay informe posible. Es el caso de casi todas las ideas de
   // 2025: el relevamiento del sitio anterior solo recupero el de los ganadores.

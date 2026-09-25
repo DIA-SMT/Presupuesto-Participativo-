@@ -27,7 +27,8 @@ test.before(async () => {
     .insert(base.schema.admins)
     .values({ email: "ana@smt.gob.ar", nombre: "Ana Admin", passwordHash: "x", rol: "admin" })
     .returning({ id: base.schema.admins.id });
-  sesion = { adminId: admin.id, email: "ana@smt.gob.ar", nombre: "Ana Admin", rol: "admin" };
+  // version 0: la que tiene toda cuenta recien creada (admins.version_sesion).
+  sesion = { adminId: admin.id, email: "ana@smt.gob.ar", nombre: "Ana Admin", rol: "admin", version: 0 };
   // Despues de crear la base: src/db elige el driver al importarse.
   escritura = await import("../../src/app/admin/contenido/escritura");
   consultas = await import("../../src/db/queries");

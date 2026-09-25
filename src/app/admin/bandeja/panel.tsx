@@ -26,6 +26,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from "reac
 import { Chip, ChipEstado } from "@/components/ui";
 import type {
   AccionRevision,
+  CandidataIntegracion,
   DireccionOrden,
   EstadoIdea,
   FilaBandeja,
@@ -37,7 +38,12 @@ import type {
   RolAdmin,
 } from "@/db/queries";
 import { puedeCambiarIdea, puedeProclamar, type Etapa, type Veredicto } from "@/lib/etapas";
-import { ETIQUETA_ESTADO, formatearNumero, formatearPesos } from "@/lib/formato";
+import {
+  ETIQUETA_ESTADO,
+  formatearFechaCorta,
+  formatearNumero,
+  formatearPesos,
+} from "@/lib/formato";
 import {
   despublicarIdea,
   evaluarIdea,
@@ -46,6 +52,10 @@ import {
   publicarIdea,
   reabrirRevision,
 } from "../acciones";
+import UbicacionFicha from "../ideas/ficha-ubicacion";
+import BloqueCorreccion from "../ideas/formulario-correccion";
+import { BloqueDescarte, BloqueRestaurar } from "../ideas/formulario-descarte";
+import type { Limites } from "../ideas/limites";
 
 /** La bandeja es la pantalla principal del panel. */
 const RUTA = "/admin";
@@ -58,7 +68,12 @@ const MINIMO_MOTIVO = 10;
 /** Los cuatro estados que se pueden fijar evaluando: "ganador" se proclama. */
 const ESTADOS_EVALUACION: EstadoIdea[] = ["pendiente", "factible", "no_factible", "integrado"];
 
-/** Estados del filtro, en el orden en que se trabajan. */
+/**
+ * Estados del filtro, en el orden en que se trabajan. Las descartadas van al
+ * final y solo aparecen si se piden: sin filtro de estado la bandeja no las
+ * trae (ver `listarIdeasBandeja`), para que una prueba o un spam no se mezcle
+ * con el trabajo del equipo.
+ */
 const ESTADOS_FILTRO: EstadoIdea[] = [
   "pendiente",
   "factible",
@@ -66,7 +81,14 @@ const ESTADOS_FILTRO: EstadoIdea[] = [
   "integrado",
   "ganador",
   "borrador",
+  "descartado",
 ];
+
+/**
+ * Las solapas que solo se muestran si tienen algo (o si estan elegidas): casi
+ * nunca hay borradores, y las descartadas son la excepcion.
+ */
+const SOLAPAS_OCASIONALES: EstadoIdea[] = ["borrador", "descartado"];
 
 /**
  * Etiquetas de la fila de solapas. Son mas cortas y en plural que las de
@@ -338,6 +360,16 @@ function ventanaPaginas(pagina: number, paginas: number): (number | null)[] {
   return salida;
 }
 
+/** Lo que la ficha necesita para corregir la idea y mostrar donde queda. */
+export type ExtrasFicha = {
+  categorias: { slug: string; nombre: string }[];
+  /** Las ideas en las que se puede integrar la abierta. */
+  candidatas: CandidataIntegracion[];
+  /** En que distrito cae el punto guardado, segun la geometria oficial. */
+  distritoDelPunto: number | null;
+  limites: Limites;
+};
+
 export default function PanelBandeja({
   anio,
   etapa,
@@ -351,6 +383,7 @@ export default function PanelBandeja({
   ficha,
   historial,
   informe,
+  extras,
   rol,
   ahora,
 }: {
@@ -369,6 +402,8 @@ export default function PanelBandeja({
   historial: FilaRevision[];
   /** Informe de impacto de la idea abierta, si alguien ya lo generó. */
   informe: InformeImpacto | null;
+  /** Solo con una ficha abierta: lo de la ubicacion y la correccion. */
+  extras: ExtrasFicha | null;
   rol: RolAdmin;
   ahora: number;
 }) {
@@ -404,7 +439,23 @@ export default function PanelBandeja({
   return (
     <div>
       <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h1 className="text-2xl font-bold">Ideas · Edición {anio}</h1>
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+          <h1 className="text-2xl font-bold">Ideas · Edición {anio}</h1>
+          {/*
+            Lo que llega de una asamblea, por mail o en papel. Solo para quien
+            puede escribir; si la etapa no deja cargar, la pantalla lo explica
+            (y la accion igual lo rechaza).
+          */}
+          {!soloLectura && (
+            <Link
+              href="/admin/ideas/nueva"
+              className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white"
+              style={{ background: "var(--color-marca-700)" }}
+            >
+              Cargar una idea
+            </Link>
+          )}
+        </div>
         {/*
           "emitidos desde esta plataforma" y no "registrados por este sitio":
           esta cuenta mira la tabla `votos`, donde solo entran los votos que se
@@ -494,9 +545,16 @@ export default function PanelBandeja({
               activo={!vista.estado && !vista.sinDevolucion}
             />
           </li>
-          {/* "Borrador" solo se muestra si existe: casi nunca hay ideas asi. */}
+          {/*
+            "Borradores" y "Descartadas" solo se muestran si existen (o si
+            estan elegidas): casi nunca hay ideas asi. "Todas" no suma las
+            descartadas; la de "Descartadas" las cuenta aparte.
+          */}
           {ESTADOS_FILTRO.filter(
-            (estado) => estado !== "borrador" || resumen.porEstado.borrador > 0,
+            (estado) =>
+              !SOLAPAS_OCASIONALES.includes(estado) ||
+              resumen.porEstado[estado] > 0 ||
+              vista.estado === estado,
           ).map((estado) => (
             <li key={estado}>
               <SolapaFiltro
@@ -632,6 +690,21 @@ export default function PanelBandeja({
                   : `Mostrando ${formatearNumero(desde)}–${formatearNumero(hasta)} de ${formatearNumero(total)} ${
                       total === 1 ? "idea" : "ideas"
                     }`}
+              {/* Sin filtro de estado las descartadas no vienen: se avisa, para
+                  que una busqueda que no encuentra un spam no parezca un error. */}
+              {!filtros.pendiente && !vista.estado && resumen.porEstado.descartado > 0 && (
+                <>
+                  {" · "}
+                  <Link
+                    href={enlaceFiltro({ estado: "descartado", sinDevolucion: false })}
+                    className="underline"
+                  >
+                    {resumen.porEstado.descartado === 1
+                      ? "sin la descartada"
+                      : `sin las ${formatearNumero(resumen.porEstado.descartado)} descartadas`}
+                  </Link>
+                </>
+              )}
             </p>
             {vista.orden === "prioridad" ? (
               // La unica explicacion del orden en toda la pantalla. Antes lo
@@ -892,6 +965,7 @@ export default function PanelBandeja({
               etapa={etapa}
               historial={historial}
               informe={informe}
+              extras={extras}
               rol={rol}
               soloLectura={soloLectura}
             />
@@ -1006,6 +1080,7 @@ function Ficha({
   etapa,
   historial,
   informe,
+  extras,
   rol,
   soloLectura,
 }: {
@@ -1013,9 +1088,15 @@ function Ficha({
   etapa: Etapa;
   historial: FilaRevision[];
   informe: InformeImpacto | null;
+  extras: ExtrasFicha | null;
   rol: RolAdmin;
   soloLectura: boolean;
 }) {
+  const descartada = ficha.estado === "descartado";
+  // El historial viene del mas nuevo al mas viejo: el primer descarte es el
+  // vigente.
+  const descarte = historial.find((fila) => fila.accion === "descarte");
+
   return (
     <div className="superficie rounded-2xl p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1023,6 +1104,8 @@ function Ficha({
           <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
             {ficha.numero === null ? "Sin número asignado" : `Idea #${ficha.numero}`} ·{" "}
             {ETIQUETA_CANAL[ficha.canal]}
+            {/* De que asamblea o por que via: no es publico, el equipo si lo ve. */}
+            {ficha.canalDetalle && ` · ${ficha.canalDetalle}`}
           </p>
           <h2 className="mt-0.5 text-lg font-bold">{ficha.titulo}</h2>
         </div>
@@ -1052,11 +1135,37 @@ function Ficha({
         <DatoFicha etiqueta="Presupuesto cargado">
           {formatearPesos(ficha.presupuestoTotal)}
         </DatoFicha>
+        {/*
+          "Presentada" es la fecha que declara la idea (la del papel, si la
+          cargo el equipo) e "Ingresó" es cuando entro a este sistema: en una
+          carga del panel pueden estar a semanas de distancia.
+        */}
+        {ficha.fecha && (
+          <DatoFicha etiqueta="Presentada">{formatearFechaCorta(ficha.fecha)}</DatoFicha>
+        )}
         <DatoFicha etiqueta="Ingresó">{fechaHora.format(ficha.createdAt)}</DatoFicha>
+        {ficha.cargadoPor && <DatoFicha etiqueta="La cargó">{ficha.cargadoPor}</DatoFicha>}
         <DatoFicha etiqueta="Último cambio de estado">
           {ficha.estadoActualizadoEn ? fechaHora.format(ficha.estadoActualizadoEn) : "Nunca"}
         </DatoFicha>
         <DatoFicha etiqueta="Revisó">{ficha.revisadoPor ?? "Nadie todavía"}</DatoFicha>
+        {ficha.integradaEn && (
+          <DatoFicha etiqueta="Integrada en">
+            <Link
+              href={`/admin?idea=${ficha.integradaEn.id}#ficha`}
+              className="underline"
+              style={{ color: "var(--marca-texto)" }}
+            >
+              {ficha.integradaEn.numero === null ? "" : `#${ficha.integradaEn.numero} · `}
+              {ficha.integradaEn.titulo}
+            </Link>
+          </DatoFicha>
+        )}
+        {ficha.integradas > 0 && (
+          <DatoFicha etiqueta="Ideas integradas en esta">
+            {formatearNumero(ficha.integradas)}
+          </DatoFicha>
+        )}
       </dl>
 
       <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
@@ -1086,6 +1195,8 @@ function Ficha({
         </details>
       )}
 
+      <UbicacionFicha ficha={ficha} distritoDelPunto={extras?.distritoDelPunto ?? null} />
+
       {ficha.notasMigracion.length > 0 && (
         <details className="mt-3">
           <summary className="cursor-pointer text-sm font-medium">
@@ -1103,6 +1214,60 @@ function Ficha({
         </details>
       )}
 
+      {descartada ? (
+        // Una descartada no se evalua ni se publica (src/lib/etapas.ts): la
+        // ficha muestra por que se descarto y como deshacerlo, y nada mas.
+        <BloqueRestaurar
+          ficha={ficha}
+          etapa={etapa}
+          soloLectura={soloLectura}
+          motivoDescarte={
+            descarte
+              ? {
+                  nota: descarte.nota,
+                  quien: descarte.adminNombre,
+                  cuando: fechaHora.format(descarte.createdAt),
+                }
+              : null
+          }
+        />
+      ) : (
+        <FichaEnTrabajo
+          ficha={ficha}
+          etapa={etapa}
+          informe={informe}
+          extras={extras}
+          rol={rol}
+          soloLectura={soloLectura}
+        />
+      )}
+
+      <Historial historial={historial} />
+    </div>
+  );
+}
+
+/**
+ * La ficha de una idea que no esta descartada: su devolucion, el enlace publico,
+ * el informe y todos los formularios del equipo.
+ */
+function FichaEnTrabajo({
+  ficha,
+  etapa,
+  informe,
+  extras,
+  rol,
+  soloLectura,
+}: {
+  ficha: IdeaAdmin;
+  etapa: Etapa;
+  informe: InformeImpacto | null;
+  extras: ExtrasFicha | null;
+  rol: RolAdmin;
+  soloLectura: boolean;
+}) {
+  return (
+    <>
       <div className="mt-4 rounded-xl px-4 py-3" style={{ background: "var(--fondo-suave)" }}>
         <p className="text-xs font-medium">Devolución que se publica hoy</p>
         <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
@@ -1110,14 +1275,24 @@ function Ficha({
         </p>
       </div>
 
-      <a
-        href={`/proyectos/${ficha.slug}`}
-        className="mt-3 inline-block text-sm underline"
-        target="_blank"
-        rel="noreferrer"
-      >
-        Ver la ficha pública
-      </a>
+      {/*
+        La ficha publica existe solo si la idea esta publicada: getIdea la
+        filtra, y el enlace llevaba a un 404 justo mientras se evaluaba.
+      */}
+      {ficha.publicada ? (
+        <a
+          href={`/proyectos/${ficha.slug}`}
+          className="mt-3 inline-block text-sm underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Ver la ficha pública
+        </a>
+      ) : (
+        <p className="mt-3 text-xs" style={{ color: "var(--texto-suave)" }}>
+          Sin publicar: todavía no tiene ficha pública.
+        </p>
+      )}
 
       <BloqueInforme ficha={ficha} informe={informe} soloLectura={soloLectura} />
 
@@ -1149,11 +1324,21 @@ function Ficha({
           )}
 
           <FormularioReapertura ficha={ficha} rol={rol} etapa={etapa} />
+
+          {extras && (
+            <BloqueCorreccion
+              ficha={ficha}
+              etapa={etapa}
+              categorias={extras.categorias}
+              candidatas={extras.candidatas}
+              limites={extras.limites}
+            />
+          )}
+
+          <BloqueDescarte ficha={ficha} etapa={etapa} />
         </div>
       )}
-
-      <Historial historial={historial} />
-    </div>
+    </>
   );
 }
 
@@ -1483,7 +1668,12 @@ function Historial({ historial }: { historial: FilaRevision[] }) {
               <p className="mt-0.5 text-xs" style={{ color: "var(--texto-suave)" }}>
                 {fila.adminNombre} · {fechaHora.format(fila.createdAt)}
               </p>
-              {fila.nota && <p className="mt-1 text-sm">{fila.nota}</p>}
+              {/* pre-line: una correccion anota un cambio por renglon. */}
+              {fila.nota && (
+                <p className="mt-1 text-sm" style={{ whiteSpace: "pre-line" }}>
+                  {fila.nota}
+                </p>
+              )}
             </li>
           ))}
         </ol>
