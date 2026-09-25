@@ -46,6 +46,12 @@ export default function SeccionAviso({ aviso }: { aviso: TextoDelPanel }) {
   }
 
   const publicado = aviso.valor !== "";
+  // Cada formulario tiene su resultado, y el de la accion anterior no se borra
+  // solo: publicar y despues quitar dejaba a la vista "Publicado: ya se ve
+  // arriba de todas las páginas" junto a "Aviso quitado". Un "salió bien" se
+  // muestra mientras siga siendo cierto; un error, siempre.
+  const resultadoPublicar = publicado || !estado?.ok ? estado : null;
+  const resultadoQuitar = !publicado || !estadoQuitar?.ok ? estadoQuitar : null;
   const normalizado = normalizarValor(CLAVE_AVISO_URGENTE, borrador);
   const sucio = normalizado !== aviso.valor;
   const maximo = maximoDe(CLAVE_AVISO_URGENTE);
@@ -129,7 +135,10 @@ export default function SeccionAviso({ aviso }: { aviso: TextoDelPanel }) {
             </button>
           )}
           <Contador id="aviso-contador" largo={largo} maximo={maximo} />
-          <MensajeAccion resultado={estado} exito="Publicado: ya se ve arriba de todas las páginas." />
+          <MensajeAccion
+            resultado={resultadoPublicar}
+            exito="Publicado: ya se ve arriba de todas las páginas."
+          />
         </div>
       </form>
 
@@ -152,7 +161,10 @@ export default function SeccionAviso({ aviso }: { aviso: TextoDelPanel }) {
       )}
       {/* Fuera del formulario de arriba, que desaparece al quitar el aviso. */}
       <p className="mt-2">
-        <MensajeAccion resultado={estadoQuitar} exito="Aviso quitado: el sitio ya se ve sin banda." />
+        <MensajeAccion
+          resultado={resultadoQuitar}
+          exito="Aviso quitado: el sitio ya se ve sin banda."
+        />
       </p>
 
       <h3 className="mt-10 text-sm font-semibold">Vista previa</h3>

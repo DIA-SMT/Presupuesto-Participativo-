@@ -194,7 +194,14 @@ async function Solapa({
     case "aviso":
       return <SeccionAviso aviso={aviso} />;
     default:
-      return <SeccionTextos grupos={grupos} />;
+      // Sin los grupos que tienen solapa propia: SeccionTextos no los dibuja, y
+      // pasarlos igual mandaba al navegador el reglamento entero (hasta 200.000
+      // caracteres) en cada visita a esta solapa.
+      return (
+        <SeccionTextos
+          grupos={grupos.filter((grupo) => grupo.grupo !== "reglamento" && grupo.grupo !== "aviso")}
+        />
+      );
   }
 }
 

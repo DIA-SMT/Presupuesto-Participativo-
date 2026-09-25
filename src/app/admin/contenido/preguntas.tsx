@@ -50,6 +50,10 @@ export default function SeccionPreguntas({ preguntas }: { preguntas: FaqAdmin[] 
   // La fila de una pregunta borrada desaparece con su mensaje adentro: el
   // aviso de que se borro vive aca, en una region que no se va.
   const [borrada, setBorrada] = useState("");
+  // Y con la fila se va el boton "Sí, borrar", que tenia el foco: sin esto
+  // quedaba en el <body> y quien usa teclado o lector volvia al principio de
+  // la pagina. Pasa al titulo de la lista, que no se mueve.
+  const titulo = useRef<HTMLHeadingElement>(null);
 
   const publicadas = preguntas.filter((pregunta) => pregunta.publicada);
   const caracteresDelChat = publicadas.reduce(
@@ -60,7 +64,8 @@ export default function SeccionPreguntas({ preguntas }: { preguntas: FaqAdmin[] 
   return (
     <div className="grid gap-10 lg:grid-cols-[1.6fr_1fr] lg:items-start">
       <section aria-labelledby="titulo-preguntas">
-        <h2 id="titulo-preguntas" className="text-xl font-bold">
+        {/* tabIndex -1: recibe el foco al borrar, sin entrar en el orden del Tab. */}
+        <h2 id="titulo-preguntas" ref={titulo} tabIndex={-1} className="text-xl font-bold outline-none">
           Preguntas frecuentes
         </h2>
         <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
@@ -102,7 +107,10 @@ export default function SeccionPreguntas({ preguntas }: { preguntas: FaqAdmin[] 
                   pregunta={pregunta}
                   indice={indice}
                   total={preguntas.length}
-                  alBorrar={() => setBorrada(`Se borró la pregunta “${pregunta.pregunta}”.`)}
+                  alBorrar={() => {
+                    titulo.current?.focus();
+                    setBorrada(`Se borró la pregunta “${pregunta.pregunta}”.`);
+                  }}
                 />
               </li>
             ))}
@@ -273,6 +281,11 @@ function FilaPregunta({
 /**
  * Los dos campos de una pregunta, con su contador y sus avisos. Controlados:
  * un error al guardar no puede borrar lo escrito (ver FormularioTexto).
+ *
+ * La etiqueta va con htmlFor y NO envuelve el campo: envolviendolo, el nombre
+ * del campo para el lector de pantalla era todo el texto de adentro ("Pregunta
+ * 12 de 300 caracteres", y en la respuesta tambien la ayuda), cambiaba con cada
+ * tecla y repetia lo que ya lee aria-describedby.
  */
 function CamposPregunta({
   id,
@@ -293,9 +306,12 @@ function CamposPregunta({
 
   return (
     <>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Pregunta</span>
+      <div className="grid gap-1 text-sm">
+        <label htmlFor={`${id}-pregunta`} className="font-medium">
+          Pregunta
+        </label>
         <input
+          id={`${id}-pregunta`}
           name="pregunta"
           value={pregunta}
           onChange={(evento) => alCambiarPregunta(evento.target.value)}
@@ -305,10 +321,13 @@ function CamposPregunta({
           style={estiloCampo}
         />
         <Contador id={`${id}-contador-pregunta`} largo={largoPregunta} maximo={MAXIMO_PREGUNTA} />
-      </label>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Respuesta</span>
+      </div>
+      <div className="grid gap-1 text-sm">
+        <label htmlFor={`${id}-respuesta`} className="font-medium">
+          Respuesta
+        </label>
         <textarea
+          id={`${id}-respuesta`}
           name="respuesta"
           value={respuesta}
           onChange={(evento) => alCambiarRespuesta(evento.target.value)}
@@ -322,7 +341,7 @@ function CamposPregunta({
           cada lado: **así**.
         </span>
         <Contador id={`${id}-contador-respuesta`} largo={largoRespuesta} maximo={MAXIMO_RESPUESTA} />
-      </label>
+      </div>
       <AvisosFormato id={`${id}-avisos`} avisos={avisos} />
     </>
   );

@@ -159,7 +159,12 @@ function FilaNovedad({ novedad, seVe }: { novedad: NovedadAdmin; seVe: boolean }
 
 type Borrador = { titulo: string; fecha: string; copete: string; cuerpo: string };
 
-/** Los cuatro campos, controlados: un error al guardar no borra lo escrito. */
+/**
+ * Los cuatro campos, controlados: un error al guardar no borra lo escrito.
+ * Cada etiqueta va con htmlFor y no envuelve el campo, por lo mismo que en las
+ * preguntas (CamposPregunta): envolviendolo, el contador y la ayuda pasaban a
+ * ser parte del nombre del campo.
+ */
 function CamposNovedad({
   id,
   borrador,
@@ -171,9 +176,12 @@ function CamposNovedad({
 }) {
   return (
     <>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Título</span>
+      <div className="grid gap-1 text-sm">
+        <label htmlFor={`${id}-campo-titulo`} className="font-medium">
+          Título
+        </label>
         <input
+          id={`${id}-campo-titulo`}
           name="titulo"
           value={borrador.titulo}
           onChange={(evento) => alCambiar({ titulo: evento.target.value })}
@@ -187,10 +195,13 @@ function CamposNovedad({
           largo={largoDe(normalizarLinea(borrador.titulo))}
           maximo={MAXIMO_TITULO_NOVEDAD}
         />
-      </label>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Fecha</span>
+      </div>
+      <div className="grid gap-1 text-sm">
+        <label htmlFor={`${id}-campo-fecha`} className="font-medium">
+          Fecha
+        </label>
         <input
+          id={`${id}-campo-fecha`}
           name="fecha"
           type="date"
           value={borrador.fecha}
@@ -202,10 +213,13 @@ function CamposNovedad({
         <span id={`${id}-fecha`} className="text-xs" style={{ color: "var(--texto-suave)" }}>
           Se muestra arriba del título, y la portada ordena por esta fecha.
         </span>
-      </label>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Copete (opcional)</span>
+      </div>
+      <div className="grid gap-1 text-sm">
+        <label htmlFor={`${id}-campo-copete`} className="font-medium">
+          Copete (opcional)
+        </label>
         <input
+          id={`${id}-campo-copete`}
           name="copete"
           value={borrador.copete}
           onChange={(evento) => alCambiar({ copete: evento.target.value })}
@@ -215,10 +229,13 @@ function CamposNovedad({
           style={estiloCampo}
         />
         <Contador id={`${id}-copete`} largo={largoDe(normalizarLinea(borrador.copete))} maximo={MAXIMO_COPETE} />
-      </label>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Cuerpo (opcional, hoy no se muestra)</span>
+      </div>
+      <div className="grid gap-1 text-sm">
+        <label htmlFor={`${id}-campo-cuerpo`} className="font-medium">
+          Cuerpo (opcional, hoy no se muestra)
+        </label>
         <textarea
+          id={`${id}-campo-cuerpo`}
           name="cuerpo"
           value={borrador.cuerpo}
           onChange={(evento) => alCambiar({ cuerpo: evento.target.value })}
@@ -232,7 +249,7 @@ function CamposNovedad({
           largo={largoDe(normalizarBloque(borrador.cuerpo))}
           maximo={MAXIMO_CUERPO_NOVEDAD}
         />
-      </label>
+      </div>
     </>
   );
 }
