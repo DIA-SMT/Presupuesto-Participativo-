@@ -298,12 +298,20 @@ Explícito, para que nadie lo espere:
 
 ```
 OPENROUTER_API_KEY=          # la clave; sin ella todo degrada, nada rompe
-OPENROUTER_MODEL=            # formato proveedor/modelo
+OPENROUTER_MODELO=           # formato proveedor/modelo
 SITE_URL=                    # ya existe; OpenRouter la usa para atribución
 ```
 
 `ANTHROPIC_API_KEY`, `CHAT_MODEL` y `CHAT_EFFORT` quedan sin uso cuando termine
 la tanda 0.
+
+> **Nota (23/09/2026):** la tanda 0 terminó así. La variable del modelo quedó
+> como `OPENROUTER_MODELO` (no `OPENROUTER_MODEL`), con `OPENROUTER_MODELO_CHAT`,
+> `_ASISTENTE` e `_INFORME` opcionales por función; ver `src/lib/modelo.ts`. El
+> chat ya usa OpenRouter con el SDK de OpenAI y `@anthropic-ai/sdk` no está en
+> las dependencias. `/admin/consultas`, que nombran la tanda 0 y el guion de
+> abajo, se borró el 02/09 junto con otras pantallas del panel (ver la nota de
+> estado de `PLAN-BACKOFFICE.md`): el costo sigue en `chat_consultas`.
 
 ---
 

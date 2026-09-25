@@ -1,0 +1,55 @@
+# Verificacion de cada push y cada pull request: tipos, pruebas y lint.
+#
+# No necesita ningun secreto ni ninguna base: las pruebas que usan base levantan
+# una PGlite descartable con las migraciones reales (scripts/tests/apoyo-base.ts)
+# y ningun paso lee DATABASE_URL. Que siga asi: la CI no tiene por que conocer la
+# URL de produccion, y ningun script que escribe corre contra una base remota sin
+# --produccion (scripts/produccion.ts).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# Un push nuevo a la misma rama deja sin sentido la corrida anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      # `npm ci` y no `npm install`: instala exactamente el package-lock.json y
+      # falla si no coincide con package.json, que es lo que hay que detectar.
+      - run: npm ci
+
+      # Incluye `next typegen`: sin next-env.d.ts (esta en .gitignore) tsc no
+      # conoce los imports de imagenes y falla en un clon limpio.
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # NO BLOQUEA, a proposito y de forma transitoria. El lint no corria
+      # (`next lint` no existe en Next 16 y la config no cargaba), y al
+      # arreglarlo aparecieron errores previos en src/ que no son de este
+      # cambio. La mayoria son de react-hooks/rules-of-hooks: los hooks propios
+      # se llaman `usar...` y React solo reconoce como hook lo que empieza con
+      # `use`, asi que no los esta verificando. El paso queda marcado con error
+      # dentro del job, visible, pero sin frenar el merge.
+      #
+      # Hasta cuando: hasta que `npm run lint` salga sin errores en main. Ese dia
+      # se borra `continue-on-error` y el lint pasa a bloquear como los demas.
+      - run: npm run lint
+        continue-on-error: true

@@ -3,8 +3,14 @@
  *
  * Simula por defecto y no escribe nada. Para aplicar de verdad:
  *
- *     npx tsx scripts/aplicar-geografia.ts              (simula)
- *     npx tsx scripts/aplicar-geografia.ts --aplicar    (escribe)
+ *     npx tsx scripts/aplicar-geografia.ts                           (simula)
+ *     npx tsx scripts/aplicar-geografia.ts --aplicar --produccion    (escribe)
+ *
+ * `--produccion` es el candado de scripts/produccion.ts: sin el, `--aplicar` se
+ * niega a escribir en una base remota. La simulacion no lo necesita.
+ *
+ * Ojo: usa postgres.js directo sobre DATABASE_URL, no src/db, asi que no sirve
+ * con PGlite (sin DATABASE_URL intenta un Postgres en localhost:5432).
  *
  * Por que existe en lugar de correr el seed: el seed reconstruye la base desde
  * cero y en produccion hay 103 ideas cargadas, votos y decisiones del equipo.
@@ -30,6 +36,7 @@ import {
   parsearCoordenada,
   type ColeccionDistritos,
 } from "../src/lib/geo";
+import { destinoDeLaBase, exigirPermisoDeEscritura } from "./produccion";
 
 const APLICAR = process.argv.includes("--aplicar");
 const NOTA_DISTRITO = (antes: number, ahora: number) =>
@@ -45,7 +52,13 @@ async function main() {
     throw new Error(`distritos.geojson tiene ${geo.features.length} features y deberia tener 20.`);
   }
 
+  // Antes de conectar: aplicar contra una base remota exige --produccion.
+  const destino = APLICAR
+    ? (await exigirPermisoDeEscritura("npx tsx scripts/aplicar-geografia.ts --aplicar")).destino
+    : destinoDeLaBase(process.env.DATABASE_URL);
+
   const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
+  console.log(`Base: ${destino.descripcion}`);
   console.log(APLICAR ? "MODO: aplicando cambios\n" : "MODO: simulacion, no se escribe nada\n");
 
   // -------------------------------------------------------------------------
@@ -173,9 +186,14 @@ async function main() {
   console.log(
     APLICAR
       ? "\nAplicado. Conviene revisar /distritos y el mapa de la portada."
-      : "\nNada se escribio. Para aplicar: npx tsx scripts/aplicar-geografia.ts --aplicar",
+      : "\nNada se escribio. Para aplicar: npx tsx scripts/aplicar-geografia.ts --aplicar" +
+          (destino.tipo === "remota" ? " --produccion" : ""),
   );
   await sql.end();
 }
 
-void main();
+// Antes era `void main()`, y un error salia como traza de rechazo sin manejar.
+main().catch((e) => {
+  console.error("FALLO:", e?.message ?? e);
+  process.exit(1);
+});

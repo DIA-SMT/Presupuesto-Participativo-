@@ -34,15 +34,26 @@ desplegarse en **Vercel**.
 
 ## Cómo levantarlo (desarrollo)
 
-Requisitos: **Node 20+**. Nada más — sin Docker, sin Postgres instalado: en
-desarrollo la base es PGlite (Postgres embebido) y vive en `./data/pg`.
+Requisitos: **Node 20.9+** (la CI usa Node 24). Nada más — sin Docker, sin
+Postgres instalado: en desarrollo la base es **PGlite** (Postgres embebido) y
+vive en `./data/pg`, dentro de tu copia del repo.
 
 ```bash
 npm install
-copy .env.example .env.local   # completar SESSION_SECRET y ADMIN_*
-npm run setup                  # crea el esquema, migra la edición 2025 y la carga
+copy .env.example .env.local   # completar SESSION_SECRET y ADMIN_*; DATABASE_URL queda vacía
+npm run setup                  # crea el esquema, migra la edición 2025 y la carga en PGlite
 npm run dev                    # http://localhost:3000
 ```
+
+> **`.env.local` no lleva la URL de producción.** `DATABASE_URL` va vacía, y así
+> `npm run dev`, el seed y todos los scripts trabajan sobre PGlite. Hasta
+> septiembre de 2026 `.env.local` apuntaba a Supabase, y cualquier `npm run setup`
+> o `npm run seed` reescribía la base real: reactivaba la 2025, pisaba sus ideas,
+> borraba las preguntas frecuentes y el cronograma y le cambiaba la contraseña
+> al admin. Ahora los scripts se defienden solos (ver
+> [Tocar producción desde la terminal](#tocar-producción-desde-la-terminal)),
+> pero la regla sigue: la URL de Supabase se pega en la terminal para la corrida
+> que la necesita y no queda guardada en ningún archivo.
 
 > PGlite es de proceso único: **cerrar `npm run dev` antes de correr
 > `npm run seed`** (el seed lo detecta y avisa). Si la base queda inutilizable,
@@ -52,7 +63,7 @@ npm run dev                    # http://localhost:3000
 
 | Variable | Qué hace |
 |---|---|
-| `DATABASE_URL` | Vacío = PGlite local. Con la URL de Supabase = Postgres real |
+| `DATABASE_URL` | **Vacía en `.env.local`**: PGlite local. La URL de Supabase va solo en las variables de Vercel y, para un script puntual, en la terminal con `--produccion` |
 | `SESSION_SECRET` | Firma de sesiones y hash de DNI/IP. Mínimo 32 caracteres |
 | `OPENROUTER_API_KEY` | Clave del modelo, compartida por el chat, el asistente de carga y el informe de impacto. **Sin ella nada rompe**: el chat cae al buscador determinístico y las funciones de IA quedan desactivadas |
 | `OPENROUTER_MODELO` | Modelo con la forma `proveedor/modelo` (por defecto `anthropic/claude-sonnet-5`). Se puede afinar por función con `OPENROUTER_MODELO_CHAT`, `_ASISTENTE` e `_INFORME` |
@@ -61,7 +72,7 @@ npm run dev                    # http://localhost:3000
 | `CIDITUC_APP` | Clave con la que la app está registrada en el Derivador (por defecto `presupuesto-participativo`) |
 | `CIDITUC_INGRESO_HABILITADO` | `true` enciende el botón de ingreso. Se enciende **después** de que el Derivador despliegue la entrada de esta app |
 | `CIDITUC_CA_PEM` | Cadena de Sectigo (intermedio + raíz) para hablar con `estadisticas.smt.gob.ar:5000`. Ver más abajo |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario inicial del backoffice, creado por el seed |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario del backoffice que el seed crea en tu PGlite. En producción las cuentas se crean con `npm run crear-admin` |
 | `SITE_URL` | URL pública del sitio en producción |
 
 La etapa del proceso (ideas → evaluación → votación → seguimiento) **no** se
@@ -73,18 +84,75 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
    **Transaction pooler** (Settings → Database → Connection string, puerto
    `6543`). No hace falta habilitar ninguna extensión: el sitio no usa PostGIS
    ni unaccent (la geografía se resuelve en la aplicación).
-2. **Cargar la base**: en la máquina local, poner esa URL en `DATABASE_URL` de
-   `.env.local` y correr `npm run setup`. Eso crea el esquema y migra la
-   edición 2025 directamente en Supabase.
+2. **Cargar la base** — solo si el proyecto de Supabase es **nuevo y está
+   vacío**: la primera carga se describe al final de la sección siguiente. La
+   base que ya está en uso no se vuelve a cargar nunca: se le aplican las
+   migraciones nuevas y nada más.
 3. **Vercel**: importar el repo y configurar las variables de entorno del
-   proyecto: `DATABASE_URL` (la misma de Supabase), `SESSION_SECRET`,
+   proyecto: `DATABASE_URL` (la del Transaction pooler), `SESSION_SECRET`,
    `OPENROUTER_API_KEY`, `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
    hasta tener CIDITUC), `SITE_URL`, `CIDITUC_CA_PEM` y, cuando el Derivador
    tenga desplegada la entrada de esta app, `CIDITUC_INGRESO_HABILITADO=true`.
+   Vercel es el único lugar donde la URL de producción queda guardada.
 4. El mismo código detecta la URL: con Supabase usa node-postgres (`Pool` de
    `pg`, una consulta por conexión, que es lo que tolera el pooler en modo
    transacción); sin URL usa PGlite. No hay ramas de código distintas entre
    desarrollo y producción.
+
+### Tocar producción desde la terminal
+
+Los scripts que escriben en la base **se niegan a correr contra una base
+remota** salvo que se les pase `--produccion`: `db:migrate`, `seed`,
+`crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`,
+`aplicar-geografia --aplicar` y `ver-ideas-web --borrar … --confirmar`. Con el
+flag, antes de empezar muestran el host (sin usuario ni contraseña) y esperan
+5 segundos, para poder cancelar con Ctrl+C si no era la base que se creía. Y al
+revés: `--produccion` contra una base local también se rechaza, para que nadie
+crea que purgó o migró producción cuando lo hizo en PGlite. "Remota" es
+cualquier host que no sea `localhost`, `127.0.0.1` o `::1`. Una `DATABASE_URL`
+que no se entiende (otro esquema, o una contraseña con `#`, `/`, `:` o `%` sin
+codificar) no deja escribir ni con el flag. El candado está en
+`scripts/produccion.ts`, con sus pruebas.
+
+La URL se pone solo para esa corrida, nunca en `.env.local` (se copia del botón
+*Connect* de Supabase o de las variables de Vercel):
+
+```powershell
+# PowerShell
+$env:DATABASE_URL = "postgresql://postgres.<ref>:<clave>@aws-0-sa-east-1.pooler.supabase.com:6543/postgres"
+npm run db:migrate -- --produccion
+Remove-Item Env:DATABASE_URL
+```
+
+```bash
+# Git Bash: la variable vive solo durante ese comando
+DATABASE_URL="postgresql://postgres.<ref>:<clave>@aws-0-sa-east-1.pooler.supabase.com:6543/postgres" \
+  npm run db:migrate -- --produccion
+```
+
+El `--` antes del flag es lo que hace que npm se lo pase al script. Sin él npm se
+lo queda, el script no lo recibe y lo rechaza (avisando por qué).
+
+| Qué se hace en producción | Cómo |
+|---|---|
+| Aplicar las migraciones nuevas | `npm run db:migrate -- --produccion` (ver [Cambios de esquema](#cambios-de-esquema-siempre-por-migraciones)) |
+| Dar de alta una cuenta del panel | `npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" moderador --produccion` |
+| Purgar los contactos de una edición cerrada | `npm run purgar-contactos` (solo muestra) y después `npm run purgar-contactos -- --confirmar --produccion` |
+| Cambiar la etapa del proceso | Desde `/admin/ediciones`. `scripts/cambiar-etapa.ts` es para pruebas locales (también deja rastro en la bitácora) |
+| Borrar una idea cargada en una demostración | `npx tsx scripts/ver-ideas-web.ts --borrar <número>` (muestra cuál) y después con `--confirmar --produccion` |
+
+**`npm run setup` y `npm run seed` no se corren contra Supabase.** `setup` se
+niega siempre ante una base remota, sin flag que lo habilite. `seed` con
+`--produccion` solo corre si la base está **vacía** (sin ninguna edición):
+existe para la primera carga de un proyecto nuevo, nunca para "poner al día" la
+base que está en uso. Esa primera carga, con la URL del proyecto nuevo en la
+terminal y `ADMIN_EMAIL` / `ADMIN_PASSWORD` para la primera cuenta, es
+`npm run db:migrate -- --produccion`, `npm run etl` y
+`npm run seed -- --produccion`.
+
+Si el pooler en modo transacción (puerto `6543`) rechaza el DDL de una
+migración, se migra por el Session pooler (puerto `5432`) — `db:migrate` lo
+sugiere en el mensaje de error. La aplicación sigue usando el `6543`.
 
 ### Ingreso con CIDITUC
 
@@ -230,13 +298,23 @@ campo `notasMigracion` de cada idea, visible en la ficha pública):
 | Comando | Qué hace |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm run setup` | `db:migrate` + `etl` + `seed` en un paso (idempotente) |
+| `npm run setup` | Solo desarrollo: comprueba que la base sea local y corre `db:migrate` + `etl` + `seed` |
 | `npm run db:generate` | Genera la migración SQL a partir de `src/db/schema.ts` |
 | `npm run db:migrate` | Aplica las migraciones pendientes de `drizzle/` |
-| `npm run etl` | Regenera el dataset limpio y el reporte de limpieza |
-| `npm run seed` | Carga/actualiza la base |
-| `npm test` | Pruebas de normalización y point-in-polygon |
-| `npm run typecheck` | TypeScript sin emitir |
+| `npm run etl` | Regenera el dataset limpio y el reporte de limpieza (no toca la base) |
+| `npm run seed` | Carga la edición 2025 en la base de desarrollo. Pisa contenido: no es para producción |
+| `npm run crear-admin` | Crea o actualiza **una** cuenta del panel, con fila en la bitácora del equipo |
+| `npm run purgar-contactos` | Borra el contacto de los autores de las ediciones cerradas; sin `--confirmar` solo muestra |
+| `npm test` | Pruebas (normalización, geografía, reglas de votación y de revisión, candado de producción). Las que usan base levantan una PGlite descartable |
+| `npm run typecheck` | Genera los tipos de Next (`next typegen`) y corre TypeScript sin emitir |
+| `npm run lint` | ESLint con la configuración de Next (`eslint .`) |
+
+Los que escriben en la base piden `--produccion` para correr contra una base
+remota: ver [Tocar producción desde la terminal](#tocar-producción-desde-la-terminal).
+
+Cada push y cada pull request corre `typecheck`, `test` y `lint` en GitHub
+Actions (`.github/workflows/ci.yml`), con Node 24 y sin ningún secreto. El lint
+todavía no bloquea el merge (ver Pendientes).
 
 ### Cambios de esquema: siempre por migraciones
 
@@ -245,6 +323,12 @@ por migración versionada**: editar el esquema, correr `npm run db:generate`
 (crea el SQL en `drizzle/` con un nombre descriptivo), revisar ese SQL, y
 aplicarlo con `npm run db:migrate`. La migración se commitea junto con el
 cambio del esquema.
+
+Eso la aplica en tu PGlite. A producción llega después, con la URL de Supabase
+en la terminal solo para esa corrida: `npm run db:migrate -- --produccion` (ver
+[Tocar producción desde la terminal](#tocar-producción-desde-la-terminal)). Es
+el único script que se corre contra Supabase como parte del trabajo de todos
+los días.
 
 No usar `drizzle-kit push` (por eso no hay script para eso): `push` empuja el
 esquema sin dejar registro, y la base de producción lleva la cuenta de qué
@@ -272,3 +356,8 @@ archivo nuevo en `drizzle/`.
   votos. Si el municipio conserva los textos, se cargan por el admin.
 - **7 ideas con distrito dudoso**: listadas en `data/reporte-limpieza.md`,
   requieren confirmación del equipo.
+- **Lint con errores previos**: `npm run lint` volvió a correr (antes usaba
+  `next lint`, que Next 16 eliminó), y encontró errores que ya estaban en `src/`.
+  La mayoría son de `react-hooks/rules-of-hooks`: los hooks propios se llaman
+  `usar…` y las herramientas de React solo reconocen como hook lo que empieza con
+  `use`. Mientras no se resuelvan, el paso de lint de la CI no bloquea.
