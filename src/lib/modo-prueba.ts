@@ -36,10 +36,14 @@ export function modoPruebaPorEntorno(): boolean {
 /**
  * Si esta persona puede cargar una idea aunque la etapa este cerrada.
  *
- * El `.catch` no es decoracion: `getSesionAdmin()` tira si falta SESSION_SECRET
- * o es corto, y esto se llama desde la pagina publica de carga. Sin el, una
- * variable mal puesta tiraria la pagina entera en lugar de dejarla cerrada,
- * que es el estado seguro.
+ * El `.catch` no es decoracion: `getSesionAdmin()` valida la sesion contra la
+ * base, asi que tira si la base no contesta, y esto se llama desde la pagina
+ * publica de carga y desde las rutas de /api/ideas. Sin el, una base caida
+ * tiraria la pagina entera en lugar de dejarla cerrada, que es el estado
+ * seguro. Tambien se traga la redireccion de una cuenta con la contrasena
+ * provisoria sin cambiar: esa sesion no abre la carga fuera de etapa. Una
+ * sesion cortada (baja, cambio de rol o de contrasena) tampoco, porque para
+ * `getSesionAdmin` es lo mismo que no tener cookie.
  */
 export async function puedeCargarFueraDeEtapa(): Promise<boolean> {
   if (modoPruebaPorEntorno()) return true;
