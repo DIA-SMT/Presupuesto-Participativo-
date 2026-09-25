@@ -147,6 +147,22 @@ test("el aviso urgente: quitarlo sin haberlo publicado no escribe; publicarlo y 
   assert.equal(fila.valorNuevo, "(vacío)");
 });
 
+test("un reglamento largo se guarda entero, y en la bitacora queda recortado con su largo", async () => {
+  // La bitacora audita QUE cambio, no guarda versiones: un reglamento de cien
+  // mil caracteres no puede entrar dos veces (antes y despues) en cada fila.
+  const articulos = Array.from({ length: 3000 }, (_, i) => `Artículo ${i + 1}. Texto del artículo.`);
+  const reglamento = articulos.join("\n");
+  assert.equal(cambio(await escritura.escribirTexto(sesion, { clave: "reglamento-cuerpo", valor: reglamento })), true);
+  assert.equal(await valorDe("reglamento-cuerpo"), reglamento, "la tabla guarda el texto entero");
+
+  const fila = await ultimaFila();
+  assert.equal(fila.entidadEtiqueta, "reglamento-cuerpo");
+  assert.ok((fila.valorNuevo ?? "").length < 500, `el DESPUES mide ${fila.valorNuevo?.length}`);
+  assert.match(fila.valorNuevo ?? "", new RegExp(`recortado: ${[...reglamento].length} caracteres en total`));
+  // El ANTES era el reglamento corto de la primera prueba: entra entero.
+  assert.equal(fila.valorAnterior, "Artículo 1. Objeto.\n\nArtículo 2. Alcance.");
+});
+
 // ---------------------------------------------------------------------------
 // Preguntas frecuentes
 // ---------------------------------------------------------------------------
