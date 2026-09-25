@@ -37,7 +37,8 @@
  * reenvia el host publico.
  *
  * Donde se usa: POST /api/votos, POST /api/ideas y el login de prueba
- * (POST /api/auth/ingresar).
+ * (POST /api/auth/ingresar), con JSON; y POST /api/auth/salir, que es un
+ * formulario comun y por eso pide solo el origen.
  */
 
 /** El host de una URL, o null si no se puede leer. */
@@ -92,8 +93,14 @@ export function esJson(request: Request): boolean {
  *
  *     const rechazo = exigirMismoOrigen(request);
  *     if (rechazo) return rechazo;
+ *
+ * Con `{ json: false }` mira solo el origen, para un formulario HTML comun
+ * como el de "Salir".
  */
-export function exigirMismoOrigen(request: Request): Response | null {
+export function exigirMismoOrigen(
+  request: Request,
+  opciones: { json?: boolean } = {},
+): Response | null {
   if (!mismoOrigen(request)) {
     return Response.json(
       {
@@ -103,7 +110,7 @@ export function exigirMismoOrigen(request: Request): Response | null {
       { status: 403 },
     );
   }
-  if (!esJson(request)) {
+  if ((opciones.json ?? true) && !esJson(request)) {
     return Response.json(
       { error: "El pedido tiene que llegar en formato JSON, como lo manda el sitio." },
       { status: 403 },

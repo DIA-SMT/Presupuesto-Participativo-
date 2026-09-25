@@ -71,6 +71,15 @@ export async function getSesionVotante(): Promise<SesionVotante | null> {
   return leer<SesionVotante>(token, "votante");
 }
 
+/**
+ * Cierra la sesion del votante. La llaman el boton "Salir" del panel de
+ * votacion (POST /api/auth/salir) y la emision del voto: una vez registrado, la
+ * sesion ya no sirve para nada, y en una tablet de asamblea quedaria abierta
+ * para la persona que sigue en la fila.
+ *
+ * Solo cierra NUESTRA sesion. Si CIDITUC mantiene la suya en ese navegador,
+ * eso es de CIDITUC y desde aca no se puede cerrar.
+ */
 export async function cerrarSesionVotante() {
   (await cookies()).delete(borradoCookie(COOKIE_VOTANTE));
 }

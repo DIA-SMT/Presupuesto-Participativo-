@@ -146,6 +146,23 @@ test("application/json con charset pasa; urlencoded y multipart no", () => {
   assert.equal(con("multipart/form-data; boundary=x"), false);
 });
 
+test("el formulario de Salir pide solo el origen, no JSON", () => {
+  conEntorno({ SITE_URL: undefined }, () => {
+    const formulario = pedido(`${SITIO}/api/auth/salir`, {
+      origin: SITIO,
+      "content-type": "application/x-www-form-urlencoded",
+    });
+    assert.equal(exigirMismoOrigen(formulario, { json: false }), null);
+    assert.equal(exigirMismoOrigen(formulario)?.status, 403);
+
+    const ajeno = pedido(`${SITIO}/api/auth/salir`, {
+      origin: "https://tramites.smt.gob.ar",
+      "content-type": "application/x-www-form-urlencoded",
+    });
+    assert.equal(exigirMismoOrigen(ajeno, { json: false })?.status, 403);
+  });
+});
+
 // --- Cookies ----------------------------------------------------------------
 
 test("en produccion las cookies llevan __Host- y los atributos que el prefijo exige", () => {

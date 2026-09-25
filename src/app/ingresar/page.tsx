@@ -43,7 +43,7 @@ const MENSAJE_ERROR_INGRESO: Record<string, string> = {
 };
 
 type Props = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; salida?: string }>;
 };
 
 /**
@@ -59,8 +59,16 @@ type Props = {
  * decirle eso a la vuelta es hacerle perder el tiempo.
  */
 export default async function IngresarVecino({ searchParams }: Props) {
-  const { error } = await searchParams;
+  const { error, salida } = await searchParams;
   const mensajeError = error ? MENSAJE_ERROR_INGRESO[error] : undefined;
+  /*
+   * Vuelta del boton "Salir" del panel de votacion (POST /api/auth/salir). El
+   * cartel confirma que la sesion se cerro, que es lo que necesita ver quien
+   * deja la tablet de una asamblea para la persona que sigue. Menciona CIDITUC
+   * porque "Salir" cierra SOLO la sesion de este sitio: si CIDITUC recuerda la
+   * cuenta en ese navegador, eso no lo podemos cerrar desde aca.
+   */
+  const salio = salida === "1";
   const edicion = await getEdicionActiva();
   const abierta = edicion?.etapa === "votacion";
 
@@ -92,6 +100,16 @@ export default async function IngresarVecino({ searchParams }: Props) {
           <span aria-hidden="true">←</span>
           Volver al inicio
         </Link>
+
+        {salio && !mensajeError && (
+          <div className="mt-4">
+            <Aviso>
+              <strong>Cerraste tu sesión.</strong> Si usaste una computadora o una tablet
+              compartida y la página de CIDITUC te dejó la cuenta abierta, cerrala también allá
+              antes de pasarle el equipo a otra persona.
+            </Aviso>
+          </div>
+        )}
 
         {mensajeError && (
           <div className="mt-4">
