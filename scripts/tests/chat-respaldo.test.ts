@@ -136,11 +136,20 @@ function respuestaDelModelo(texto: string, entrada = 100, salida = 20): Response
   ]);
 }
 
-async function preguntar(mensajes: Array<{ rol: string; texto: string; firma?: string }>) {
+/**
+ * Lo que manda el widget: un POST del mismo sitio lleva siempre `Origin` (lo
+ * exige el estandar Fetch), y las dos rutas lo piden (src/lib/origen.ts).
+ */
+const MISMO_SITIO = { "content-type": "application/json", origin: "http://localhost" };
+
+async function preguntar(
+  mensajes: Array<{ rol: string; texto: string; firma?: string }>,
+  cabeceras: Record<string, string> = MISMO_SITIO,
+) {
   return chat.POST(
     new Request("http://localhost/api/chat", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: cabeceras,
       body: JSON.stringify({ mensajes }),
     }),
   );
@@ -496,11 +505,11 @@ const PROPUESTA = {
   solucion: "Poner luminarias LED en todo el perímetro de la plaza y en los senderos.",
 };
 
-async function pedirAyuda() {
+async function pedirAyuda(cabeceras: Record<string, string> = MISMO_SITIO) {
   return asistente.POST(
     new Request("http://localhost/api/ideas/asistente", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: cabeceras,
       body: JSON.stringify(PROPUESTA),
     }),
   );
@@ -565,4 +574,22 @@ test("en la etapa de ideas atiende, y con el tope pasado avisa que no esta dispo
   } finally {
     delete process.env.CHAT_TOPE_TOKENS_DIA;
   }
+});
+
+test("el chat y el asistente no atienden pedidos que no salieron del sitio", async () => {
+  // Con clave: si el pedido pasara, el chat llamaria al proveedor.
+  process.env.OPENROUTER_API_KEY = "clave-de-prueba";
+  const ajeno = { "content-type": "application/json", origin: "https://otro.smt.gob.ar" };
+  const sinOrigen = { "content-type": "application/json" };
+
+  for (const cabeceras of [ajeno, sinOrigen]) {
+    const delChat = await conProveedor(sinLlamadas, () => preguntar(PREGUNTA, cabeceras));
+    assert.equal(delChat.resultado.status, 403);
+    assert.equal(delChat.llamadas.length, 0);
+
+    const delAsistente = await conProveedor(sinLlamadas, () => pedirAyuda(cabeceras));
+    assert.equal(delAsistente.resultado.status, 403);
+    assert.equal(delAsistente.llamadas.length, 0);
+  }
+  delete process.env.OPENROUTER_API_KEY;
 });

@@ -84,6 +84,7 @@ export default function ErrorGlobal({
               >
                 Reintentar
               </button>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a proposito: ver el comentario de arriba sobre <Link> */}
               <a
                 href="/"
                 className="rounded-xl px-5 py-3 text-sm font-semibold hover:brightness-95"
