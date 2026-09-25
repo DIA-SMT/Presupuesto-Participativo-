@@ -12,7 +12,9 @@
  *   - el informe de impacto      (src/app/admin/acciones.ts)
  *
  * Sin OPENROUTER_API_KEY ninguna rompe: cada una degrada como pueda. Esa es la
- * regla del proyecto desde que existe el chat.
+ * regla del proyecto desde que existe el chat. Lo mismo vale cuando la clave
+ * esta pero el proveedor no contesta (sin credito, modelo inexistente, caido) o
+ * cuando se paso el tope diario de gasto (CHAT_TOPE_TOKENS_DIA, mas abajo).
  */
 import OpenAI from "openai";
 
@@ -132,6 +134,154 @@ export function mensajeDeError(causa: unknown, alternativa: string): string {
     return "El asistente tardó demasiado en responder. Probá de nuevo.";
   }
   return alternativa;
+}
+
+/**
+ * Que fallo, en una etiqueta corta para el registro (`chat_consultas`) y el
+ * log. No es un texto para la persona: para eso esta `mensajeDeError`.
+ *
+ * Se distingue lo que el equipo resuelve de maneras distintas: `proveedor-402`
+ * es cargar credito en OpenRouter, `proveedor-404` es un nombre de modelo mal
+ * escrito en el entorno, `proveedor-5xx` y `timeout` son el proveedor caido y
+ * se arreglan solos. El codigo sale de `status` cuando la falla llega como
+ * respuesta HTTP, y de `code` cuando llega a mitad del stream: OpenRouter manda
+ * ahi un trozo `{"error": {"code": 402, ...}}` con el HTTP ya en 200, y el SDK
+ * lo tira como APIError sin status.
+ */
+export function motivoDeFalla(causa: unknown): string {
+  // El orden importa: las tres primeras son subclases de APIError.
+  if (causa instanceof OpenAI.APIConnectionTimeoutError) return "timeout";
+  if (causa instanceof OpenAI.APIUserAbortError) return "cancelada";
+  if (causa instanceof OpenAI.APIConnectionError) return "conexion";
+  if (causa instanceof OpenAI.APIError) {
+    const codigo = String(causa.status ?? causa.code ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .slice(0, 40);
+    return codigo ? `proveedor-${codigo}` : "proveedor";
+  }
+  return "interno";
+}
+
+/**
+ * Recorre un stream del SDK y lo corta si pasan `ms` sin que llegue un trozo.
+ *
+ * El `timeout` del SDK no cubre esto: se apaga cuando llegan las cabeceras, y
+ * el cuerpo de un stream puede tardar lo que quiera. Con OpenRouter las
+ * cabeceras llegan casi enseguida (manda un 200 y despues comentarios SSE de
+ * "procesando", que el SDK no entrega como trozos), asi que un modelo colgado
+ * dejaba la funcion esperando hasta que la plataforma la mataba, sin respuesta
+ * del buscador ni registro. Ahora esa espera termina en un
+ * `APIConnectionTimeoutError`, que `motivoDeFalla` anota como `timeout`.
+ *
+ * El reloj se para mientras quien consume procesa el trozo: lo que se mide es
+ * al proveedor, no a las herramientas. Para cortar se aborta el controlador
+ * del stream; el SDK termina ese stream en silencio, por eso el error se tira
+ * aca. Si el stream termina por otra senal (la persona se fue), no se tira
+ * nada: eso lo decide quien llama.
+ */
+export async function* cortarSiSeCalla<T>(
+  stream: AsyncIterable<T> & { controller: AbortController },
+  ms: number,
+): AsyncGenerator<T> {
+  let callado = false;
+  let reloj: ReturnType<typeof setTimeout> | undefined;
+  const armar = () => {
+    reloj = setTimeout(() => {
+      callado = true;
+      stream.controller.abort();
+    }, ms);
+  };
+
+  armar();
+  try {
+    for await (const trozo of stream) {
+      clearTimeout(reloj);
+      yield trozo;
+      armar();
+    }
+  } finally {
+    clearTimeout(reloj);
+  }
+  if (callado) {
+    throw new OpenAI.APIConnectionTimeoutError({
+      message: `El proveedor dejó de mandar datos durante ${Math.round(ms / 1000)} s.`,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tope diario de gasto
+// ---------------------------------------------------------------------------
+
+/**
+ * El tope que fija CHAT_TOPE_TOKENS_DIA: tokens por dia calendario de Tucuman,
+ * sumando entrada y salida de las tres funciones (chat, asistente e informe),
+ * que registran su consumo en la misma tabla. `null` es "sin tope", que es lo
+ * que pasa sin la variable: el comportamiento de siempre.
+ *
+ * Acepta los separadores de miles que se escriben a mano ("2.000.000",
+ * "2_000_000"): en Argentina el punto es separador de miles, y leer "2.000.000"
+ * como 2 apagaria la IA a la primera consulta.
+ *
+ * Un valor que no se entiende ("2M", "-5", "mucho") NO se toma como "sin tope".
+ * Quien puso la variable queria un tope, y el error seguro es el que no gasta:
+ * queda en cero, la IA se apaga y el chat sigue con el buscador. `invalido`
+ * existe para poder decirlo en el log, porque un tope en cero a proposito
+ * (CHAT_TOPE_TOKENS_DIA=0 apaga la IA sin sacar la clave) es valido.
+ */
+export type TopeDiario = { tokens: number; invalido: boolean } | null;
+
+export function leerTopeDiario(valor: string | undefined): TopeDiario {
+  const texto = valor?.trim();
+  if (!texto) return null;
+  const digitos = /^\d{1,3}([._ ]\d{3})+$/.test(texto) ? texto.replace(/[._ ]/g, "") : texto;
+  if (!/^\d+$/.test(digitos)) return { tokens: 0, invalido: true };
+  const tokens = Number(digitos);
+  return Number.isSafeInteger(tokens)
+    ? { tokens, invalido: false }
+    : { tokens: 0, invalido: true };
+}
+
+/** Con el tope justo alcanzado ya no se llama: la proxima consulta lo pasaria. */
+export function topeAlcanzado(usados: number, tope: number): boolean {
+  return usados >= tope;
+}
+
+let avisoTopeInvalido = false;
+
+/**
+ * Si hoy ya no hay que llamar al modelo. Quien llama pasa la lectura del gasto
+ * (`getTokensUsadosHoy` de src/db/queries.ts) en lugar de importarla aca: este
+ * modulo no toca la base, asi se puede probar sin una.
+ *
+ * Es un tope blando, y a proposito: el consumo de una consulta se registra
+ * cuando termina, asi que las que estan en curso al cruzar el tope todavia
+ * suman. Se pasa por lo que gasten esas, no por un dia entero.
+ *
+ * Si la lectura falla, cuenta como agotado. El tope es un freno de gasto y los
+ * frenos fallan cerrados: el costo de equivocarse es que la persona recibe la
+ * respuesta del buscador.
+ */
+export async function gastoDelDiaAgotado(
+  leerUsadosHoy: () => Promise<number>,
+  valor: string | undefined = process.env.CHAT_TOPE_TOKENS_DIA,
+): Promise<boolean> {
+  const tope = leerTopeDiario(valor);
+  if (!tope) return false;
+  if (tope.invalido && !avisoTopeInvalido) {
+    avisoTopeInvalido = true;
+    console.error(
+      `[modelo] CHAT_TOPE_TOKENS_DIA="${valor}" no es un entero: la IA queda apagada hasta corregirlo.`,
+    );
+  }
+  if (tope.tokens === 0) return true;
+  try {
+    return topeAlcanzado(await leerUsadosHoy(), tope.tokens);
+  } catch (causa) {
+    console.error("[modelo] no se pudo leer el gasto del dia; se toma como agotado", causa);
+    return true;
+  }
 }
 
 export { OpenAI };

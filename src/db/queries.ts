@@ -2308,3 +2308,37 @@ export async function getPreguntasRepetidasChat(
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Gasto del modelo de lenguaje
+// ---------------------------------------------------------------------------
+
+/**
+ * Tokens gastados HOY, sumando las tres funciones que usan el modelo: el chat,
+ * el asistente de carga y el informe de impacto. Las tres registran su consumo
+ * en `chat_consultas` (columna `origen`, migracion 0005), asi que aca NO va el
+ * filtro `soloDelChat()`: el tope de CHAT_TOPE_TOKENS_DIA es de plata, y la
+ * plata sale de la misma cuenta del proveedor sin importar quien la gaste.
+ *
+ * Entrada mas salida. La lectura de cache (`cache_lectura`) no se suma aparte:
+ * en la API compatible con OpenAI ya viene incluida en `tokens_entrada`. Se
+ * cuenta a precio lleno, que es pasarse para el lado seguro. Tambien cuentan
+ * las filas con `ok = false`: una consulta que fallo a mitad de camino gasto
+ * lo que llego a gastar.
+ *
+ * El dia es el calendario de TUCUMAN, por lo mismo que `getUsoChatPorDia`: la
+ * sesion de Supabase esta en UTC y un `now()::date` cortaria el dia a las 21:00
+ * locales. La medianoche local se calcula una vez y se compara `created_at`
+ * contra ella, en lugar de convertir cada fila: asi la consulta puede usar el
+ * indice por fecha (`chat_consultas_fecha_idx`) y leer solo las filas de hoy.
+ */
+export async function getTokensUsadosHoy(): Promise<number> {
+  const [fila] = await consultar<{ tokens: string | number | null }>(sql`
+    SELECT coalesce(sum(coalesce(tokens_entrada, 0) + coalesce(tokens_salida, 0)), 0)::bigint AS tokens
+      FROM chat_consultas
+     WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Argentina/Tucuman')
+                          AT TIME ZONE 'America/Argentina/Tucuman')
+  `);
+  // bigint llega como texto con node-postgres: se convierte aca y no en quien llama.
+  return Number(fila?.tokens ?? 0);
+}
+

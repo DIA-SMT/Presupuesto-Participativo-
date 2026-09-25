@@ -55,7 +55,12 @@ export async function responderSinIA(
 
   const pideGanador = /\bgan|mas votad|ganador|elegid/.test(q);
   const pideTotales = /\bcuant|total|estadistic|resumen|cuanta|votos en total/.test(q);
-  const pideParticipar = /\bcomo (puedo )?(participo|participar)|presentar|cargar (mi )?idea|votar|empadron|cidituc/.test(
+  // "presentar" y "votar" van como palabra entera. Como prefijo agarraban
+  // "presentaron" y "votaron": "¿Cuántas ideas se presentaron?", que es una de
+  // las sugerencias del propio widget, se contestaba con "Hay dos formas de
+  // participar" en lugar de con los totales. Y "presento" no estaba, asi que
+  // otra de las sugerencias, "¿Cómo presento una idea?", no encontraba nada.
+  const pideParticipar = /\bcomo (puedo )?(participo|participar)|\bpresent(o|ar|arla|arlo)\b|cargar (mi |una )?idea|\bvotar\b|empadron|cidituc/.test(
     q,
   );
 

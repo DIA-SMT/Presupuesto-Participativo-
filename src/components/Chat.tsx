@@ -16,16 +16,47 @@
  * pantallas angostas y con prefers-reduced-motion.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { rutaInterna } from "@/lib/chat-enlaces";
+import { historialParaEnviar } from "@/lib/chat-historial";
 import { usarArrastre } from "./usar-arrastre";
 
 type Referencia = { titulo: string; url: string };
+
+/** Quien escribio una respuesta. Lo dice el evento `fin` del servidor. */
+type Modo = "ia" | "buscador";
 
 type Mensaje = {
   rol: "usuario" | "asistente";
   texto: string;
   referencias?: Referencia[];
   error?: boolean;
+  /** Decide que dice el pie del panel. Ver `PIE`. */
+  modo?: Modo;
+  /**
+   * La firma que el servidor le puso a la respuesta (src/lib/chat-firma.ts).
+   * Sin ella la respuesta no viaja como contexto de la pregunta siguiente.
+   */
+  firma?: string;
 };
+
+/**
+ * El pie del panel, segun quien contesto la ultima respuesta.
+ *
+ * Decia "generadas con inteligencia artificial" siempre, tambien cuando
+ * respondia el buscador (sin clave, con el tope del dia pasado o con el
+ * proveedor caido): el aviso que tiene que estar a la vista al decidir si
+ * creerle a una respuesta decia algo falso sobre esa respuesta. Antes de la
+ * primera respuesta no se sabe quien va a contestar, y el pie lo dice asi.
+ */
+const PIE: Record<Modo | "sin-respuestas", string> = {
+  ia: "Respuestas generadas con inteligencia artificial sobre los datos publicados. Pueden tener errores y no son una respuesta oficial del municipio.",
+  buscador:
+    "Respuestas del buscador del sitio, armadas con los datos publicados y sin inteligencia artificial. No son una respuesta oficial del municipio.",
+  "sin-respuestas":
+    "Las respuestas salen de los datos publicados y pueden estar generadas con inteligencia artificial: pueden tener errores y no son una respuesta oficial del municipio.",
+};
+
+const SIN_RESPUESTA = "No llegó ninguna respuesta. Probá de nuevo.";
 
 const SUGERENCIAS = [
   "¿Qué ganó en mi distrito?",
@@ -58,10 +89,12 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
   const arrastre = usarArrastre({ clave: CLAVE_POSICION, abierto });
 
   // Recupera la conversacion al volver a abrir el sitio en la misma pestaña.
+  // Lo guardado se filtra: una version anterior del widget dejaba globos vacios
+  // y el servidor rechazaba la conversacion entera por uno de ellos.
   useEffect(() => {
     try {
       const guardado = sessionStorage.getItem(CLAVE_SESION);
-      if (guardado) setMensajes(JSON.parse(guardado) as Mensaje[]);
+      if (guardado) setMensajes(leerGuardados(JSON.parse(guardado)));
     } catch {
       // sessionStorage puede estar bloqueado: no es critico.
     }
@@ -69,8 +102,11 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
 
   useEffect(() => {
     try {
-      if (mensajes.length) {
-        sessionStorage.setItem(CLAVE_SESION, JSON.stringify(mensajes.slice(-12)));
+      // El globo vacio de una respuesta en curso no se guarda: si la pestaña se
+      // cierra antes de que llegue, quedaria vacio para siempre.
+      const guardables = mensajes.filter((m) => m.texto.trim());
+      if (guardables.length) {
+        sessionStorage.setItem(CLAVE_SESION, JSON.stringify(guardables.slice(-12)));
       }
     } catch {
       /* sin persistencia */
@@ -113,9 +149,9 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controlador.signal,
-        body: JSON.stringify({
-          mensajes: historial.slice(-8).map((m) => ({ rol: m.rol, texto: m.texto })),
-        }),
+        // Sin vacios, sin avisos de error y sin respuestas que el servidor no
+        // firmo: el mismo criterio con el que el servidor recorta.
+        body: JSON.stringify({ mensajes: historialParaEnviar(historial) }),
       });
 
       if (!respuesta.ok) {
@@ -155,6 +191,20 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
             setMensajes((previos) =>
               reemplazarUltimo(previos, (m) => ({ ...m, referencias: evento.items })),
             );
+          } else if (evento.tipo === "descartar") {
+            // El proveedor fallo a mitad de la respuesta: lo que sigue es la del
+            // buscador, entera, y reemplaza a lo que se venia mostrando.
+            setMensajes((previos) =>
+              reemplazarUltimo(previos, (m) => ({ ...m, texto: "", referencias: undefined })),
+            );
+          } else if (evento.tipo === "fin") {
+            setMensajes((previos) =>
+              reemplazarUltimo(previos, (m) => ({
+                ...m,
+                modo: evento.modo === "buscador" ? "buscador" : "ia",
+                firma: typeof evento.firma === "string" ? evento.firma : undefined,
+              })),
+            );
           } else if (evento.tipo === "error") {
             setMensajes((previos) =>
               reemplazarUltimo(previos, (m) => ({
@@ -166,8 +216,27 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
           }
         }
       }
+
+      // Un stream que termina sin texto ni error dejaba el globo vacio. Ahora
+      // dice que no llego nada, y como aviso de error no viaja como contexto.
+      setMensajes((previos) =>
+        reemplazarUltimo(previos, (m) =>
+          m.texto.trim() ? m : { ...m, texto: SIN_RESPUESTA, error: true },
+        ),
+      );
     } catch (causa) {
-      if (causa instanceof DOMException && causa.name === "AbortError") return;
+      if (causa instanceof DOMException && causa.name === "AbortError") {
+        // Si la corto una consulta nueva, el ultimo globo es el de la nueva.
+        if (abortar.current !== controlador) return;
+        // Se corto a proposito: el globo que quedo esperando no tiene que quedar.
+        setMensajes((previos) => {
+          const ultimo = previos.at(-1);
+          return ultimo?.rol === "asistente" && !ultimo.texto.trim()
+            ? previos.slice(0, -1)
+            : previos;
+        });
+        return;
+      }
       setMensajes((previos) =>
         reemplazarUltimo(previos, (m) => ({
           ...m,
@@ -314,9 +383,9 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
                 ) : cargando && indice === mensajes.length - 1 ? (
                   <Escribiendo herramienta={herramienta} />
                 ) : null}
-                {mensaje.referencias?.length ? (
+                {referenciasInternas(mensaje.referencias).length ? (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {mensaje.referencias.map((referencia) => (
+                    {referenciasInternas(mensaje.referencias).map((referencia) => (
                       <a
                         key={referencia.url}
                         href={referencia.url}
@@ -384,13 +453,13 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
               una respuesta. El enlace apunta al bloque de IA del aviso legal
               (#aviso-ia: la ventana del pie escucha ese hash, se abre y
               scrollea hasta el bloque) y cierra el panel del chat, que si no
-              queda abajo de la ventana. */}
+              queda abajo de la ventana. El texto depende de quien contesto la
+              ultima respuesta (ver PIE). */}
           <p
             className="px-4 pb-3 text-center text-[0.6875rem] leading-snug"
             style={{ color: "var(--texto-suave)" }}
           >
-            Respuestas generadas con inteligencia artificial sobre los datos publicados. Pueden
-            tener errores y no son una respuesta oficial del municipio.{" "}
+            {PIE[modoDelPie(mensajes)]}{" "}
             <a
               href="#aviso-ia"
               onClick={() => setAbierto(false)}
@@ -416,6 +485,56 @@ function reemplazarUltimo(
   const copia = [...mensajes];
   copia[copia.length - 1] = transformar(copia[copia.length - 1]);
   return copia;
+}
+
+/**
+ * Lo que se recupera de sessionStorage, validado mensaje por mensaje. Es texto
+ * que cualquier script de la pagina o una version vieja del widget pudo
+ * escribir: lo que no tiene la forma esperada, o no tiene texto, no entra.
+ */
+function leerGuardados(crudo: unknown): Mensaje[] {
+  if (!Array.isArray(crudo)) return [];
+  const mensajes: Mensaje[] = [];
+  for (const item of crudo as unknown[]) {
+    if (!item || typeof item !== "object") continue;
+    const m = item as Record<string, unknown>;
+    if ((m.rol !== "usuario" && m.rol !== "asistente") || typeof m.texto !== "string") continue;
+    if (!m.texto.trim()) continue;
+    mensajes.push({
+      rol: m.rol,
+      texto: m.texto,
+      error: m.error === true || undefined,
+      modo: m.modo === "ia" || m.modo === "buscador" ? m.modo : undefined,
+      firma: typeof m.firma === "string" ? m.firma : undefined,
+      referencias: Array.isArray(m.referencias)
+        ? (m.referencias as unknown[]).filter(
+            (r): r is Referencia =>
+              Boolean(r) &&
+              typeof (r as Referencia).titulo === "string" &&
+              typeof (r as Referencia).url === "string",
+          )
+        : undefined,
+    });
+  }
+  return mensajes;
+}
+
+/** Quien contesto la ultima respuesta que lo dijo. Los avisos de error no lo dicen. */
+function modoDelPie(mensajes: Mensaje[]): Modo | "sin-respuestas" {
+  for (let i = mensajes.length - 1; i >= 0; i -= 1) {
+    const modo = mensajes[i].modo;
+    if (mensajes[i].rol === "asistente" && modo) return modo;
+  }
+  return "sin-respuestas";
+}
+
+/**
+ * Las referencias vienen de las herramientas del servidor, no del texto del
+ * modelo, pero pasan por sessionStorage: se les aplica el mismo filtro que a
+ * los enlaces de la respuesta.
+ */
+function referenciasInternas(referencias: Referencia[] | undefined): Referencia[] {
+  return (referencias ?? []).filter((r) => rutaInterna(r.url) !== null);
 }
 
 function Burbuja({
@@ -516,7 +635,12 @@ function renderizar(texto: string): ReactNode {
   return bloques;
 }
 
-/** Negritas y enlaces. Solo se permiten rutas internas del sitio. */
+/**
+ * Negritas y enlaces. Solo se permiten rutas internas del sitio, y el patron no
+ * alcanza para decidirlo: "//otro.com" tambien empieza con "/" y el navegador
+ * lo abre en otro dominio. Lo decide `rutaInterna` (src/lib/chat-enlaces.ts);
+ * un enlace que no pasa queda como su texto, sin la url.
+ */
 function enLinea(texto: string): ReactNode[] {
   const partes: ReactNode[] = [];
   const patron = /\*\*([^*]+)\*\*|\[([^\]]+)\]\((\/[^)\s]*)\)|(https?:\/\/\S+)/g;
@@ -530,15 +654,20 @@ function enLinea(texto: string): ReactNode[] {
     if (coincidencia[1]) {
       partes.push(<strong key={partes.length}>{coincidencia[1]}</strong>);
     } else if (coincidencia[2] && coincidencia[3]) {
+      const destino = rutaInterna(coincidencia[3]);
       partes.push(
-        <a
-          key={partes.length}
-          href={coincidencia[3]}
-          className="font-medium underline"
-          style={{ color: "var(--marca-texto)" }}
-        >
-          {coincidencia[2]}
-        </a>,
+        destino ? (
+          <a
+            key={partes.length}
+            href={destino}
+            className="font-medium underline"
+            style={{ color: "var(--marca-texto)" }}
+          >
+            {coincidencia[2]}
+          </a>
+        ) : (
+          coincidencia[2]
+        ),
       );
     } else if (coincidencia[4]) {
       // Una url externa se muestra como texto: el asistente no deberia
