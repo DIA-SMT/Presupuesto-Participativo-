@@ -4,6 +4,7 @@ import "./globals.css";
 import AccesoPanel from "@/components/AccesoPanel";
 import BotonTema from "@/components/BotonTema";
 import AvisoLegal from "@/components/AvisoLegal";
+import AvisoUrgente from "@/components/AvisoUrgente";
 import Chat from "@/components/Chat";
 import VentanaAvisoLegal from "@/components/VentanaAvisoLegal";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
@@ -153,6 +154,7 @@ export default async function RootLayout({
         <a href="#contenido" className="salto-contenido">
           Saltar al contenido
         </a>
+        <AvisoUrgente texto={textos["aviso-urgente"]} />
 
         <header
           className="sticky top-0 z-30 backdrop-blur"
