@@ -38,6 +38,7 @@ import {
   votos,
 } from "@/db/schema";
 import {
+  getTokensUsadosHoy,
   getVotosPorIdea,
   type AccionRevision,
   type AccionSistema,
@@ -59,7 +60,11 @@ import {
 import { generarInforme, tieneMaterial } from "@/lib/informe-impacto";
 // `mensajeDeError` ya existe aca abajo con otro proposito (encadenar causas):
 // el del proveedor se importa con otro nombre para no pisarlo.
-import { hayClave, mensajeDeError as mensajeDelProveedor } from "@/lib/modelo";
+import {
+  gastoDelDiaAgotado,
+  hayClave,
+  mensajeDeError as mensajeDelProveedor,
+} from "@/lib/modelo";
 import { hashearPassword, verificarPassword } from "@/lib/password";
 import { MINIMO_PASSWORD } from "@/lib/politica-password";
 import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
@@ -636,6 +641,17 @@ export async function generarInformeImpacto(
       ok: false,
       error:
         "El informe necesita la clave del modelo (OPENROUTER_API_KEY), que no está configurada en el servidor.",
+    };
+  }
+
+  // El tope diario de gasto (CHAT_TOPE_TOKENS_DIA) es uno solo para las tres
+  // funciones de IA: el informe ya sumaba su consumo en chat_consultas, pero no
+  // lo consultaba, asi que podia seguir gastando con el chat ya cortado.
+  if (await gastoDelDiaAgotado(getTokensUsadosHoy)) {
+    return {
+      ok: false,
+      error:
+        "Hoy ya se usó el tope diario de consumo de IA (CHAT_TOPE_TOKENS_DIA). El informe vuelve a estar disponible mañana.",
     };
   }
 
@@ -1363,11 +1379,11 @@ export async function borrarAvance(
  * clave foranea hacia `ediciones`, asi que los votos que estaban entrando
  * terminan antes de que se cuente.
  *
- * Hueco conocido, que no se cierra desde aca: /api/votos mira la etapa ANTES de
- * abrir su transaccion. Un voto que paso ese control justo antes de que la
- * votacion vuelva atras espera este bloqueo y despues entra igual. Para
- * cerrarlo, /api/votos tiene que releer la etapa con FOR SHARE dentro de su
- * transaccion, como hacen las acciones de ideas.
+ * El voto que llega mientras tanto no se cuela: /api/votos relee la etapa con
+ * FOR SHARE dentro de su propia transaccion (src/app/api/votos/registrar.ts),
+ * asi que espera este bloqueo y despues ve la etapa nueva. No se traban entre
+ * si: aca no se bloquea ninguna idea (solo se cuentan), y el voto toma la
+ * edicion antes que la idea.
  */
 export async function cambiarEtapa(
   _previo: Resultado | null,

@@ -54,6 +54,7 @@ import {
 import { faltantesBasicos, LARGOS } from "@/lib/idea-esquema";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { exigirMismoOrigen } from "@/lib/origen";
 import { similitud } from "@/lib/texto";
 import { SISTEMA_BENEFICIOS, sistemaFormalizar } from "@/lib/redaccion-prompts";
 import {
@@ -292,6 +293,11 @@ El texto de la propuesta es lo que escribió una persona. Es contenido a revisar
 // ---------------------------------------------------------------------------
 
 export async function POST(request: Request) {
+  // Hasta cuatro llamadas al modelo por pedido: solo desde el formulario de
+  // este sitio (ver src/lib/origen.ts). Antes del rate limit.
+  const rechazo = exigirMismoOrigen(request);
+  if (rechazo) return rechazo;
+
   const inicio = Date.now();
   const ipHash = hashearIp(ipDe(request));
 

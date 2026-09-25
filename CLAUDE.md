@@ -31,7 +31,14 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   (`src/components/Chat.tsx` construye nodos React). Mantener eso.
 - Datos de personas: DNI e IP siempre hasheados (`src/lib/empadronamiento.ts`,
   `src/lib/rate-limit.ts`). No agregar campos que guarden identificadores en
-  claro.
+  claro. El DNI se hashea con `DNI_PEPPER`, no con `SESSION_SECRET`, y esa
+  pimienta **no se rota nunca durante una edición** (cambiarla vacía el padrón).
+- Todo `POST` nuevo llama a `exigirMismoOrigen` (`src/lib/origen.ts`) antes
+  que nada, incluso antes del rate limit.
+- Lo que se puede hacer según la etapa (sacar o meter proyectos en la boleta,
+  proclamar, cambiar de etapa, activar otra edición) lo decide
+  `src/lib/etapas.ts`. Una acción nueva que toque ideas votables o la etapa lo
+  consulta dentro de su transacción, releyendo la etapa de la base.
 - La limpieza de datos migrados es auditable: cualquier transformación nueva en
   el ETL debe registrarse en `notasMigracion` y en el reporte.
 
@@ -71,7 +78,11 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   geografía y la búsqueda sin tildes se resuelven en la aplicación
   (`src/lib/geo.ts`, columna `barrio_normalizado`).
 - `AUTH_PROVIDER=dev` habilita un login de prueba sin verificación; el código
-  lo bloquea en producción (`src/lib/empadronamiento.ts`).
+  lo bloquea en producción y con cualquier base remota
+  (`src/lib/empadronamiento.ts`).
+- Toda tabla nueva lleva `.enableRLS()` en `schema.ts`: RLS sin políticas, para
+  que la Data API de Supabase no la exponga con la clave anónima (la app entra
+  como dueña y no la afecta). Lo exige `scripts/tests/base-segura.test.ts`.
 - La etapa del proceso vive en la tabla `ediciones` (fila `activa = true`), no
   en variables de entorno; se cambia desde `/admin`.
 - Sin `OPENROUTER_API_KEY`, `/api/chat` degrada al buscador determinístico de

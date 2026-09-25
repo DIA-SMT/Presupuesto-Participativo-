@@ -42,6 +42,7 @@ import { responderSinIA } from "@/lib/chat-sin-ia";
 import { firmaValida, firmarRespuesta } from "@/lib/chat-firma";
 import { recortarHistorial } from "@/lib/chat-historial";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { exigirMismoOrigen } from "@/lib/origen";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 import { claveDePregunta } from "@/lib/texto";
 import { clasificarConsulta } from "@/lib/chat-temas";
@@ -228,6 +229,12 @@ ${faq.map((f) => `P: ${f.pregunta}\nR: ${f.respuesta}`).join("\n\n")}
 // ---------------------------------------------------------------------------
 
 export async function POST(request: Request) {
+  // El chat no usa sesion, pero cada consulta puede llamar a un modelo pago:
+  // que solo lo pueda usar el widget de este sitio, no una pagina ajena que
+  // lo tome de proxy gratis. Antes del rate limit, como en /api/votos.
+  const rechazo = exigirMismoOrigen(request);
+  if (rechazo) return rechazo;
+
   const inicio = Date.now();
   const ipHash = hashearIp(ipDe(request));
 

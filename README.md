@@ -64,16 +64,21 @@ npm run dev                    # http://localhost:3000
 | Variable | Qué hace |
 |---|---|
 | `DATABASE_URL` | **Vacía en `.env.local`**: PGlite local. La URL de Supabase va solo en las variables de Vercel y, para un script puntual, en la terminal con `--produccion` |
-| `SESSION_SECRET` | Firma de sesiones y hash de DNI/IP. Mínimo 32 caracteres |
+| `SESSION_SECRET` | Firma de sesiones, de los códigos de seguimiento de ideas y de las respuestas del chat. Mínimo 32 caracteres. **Ya no hashea el DNI**: eso es `DNI_PEPPER` |
+| `DNI_PEPPER` | Pimienta del hash del DNI del padrón. Obligatoria en producción y con base remota (en local hay una fija de desarrollo). **No se rota nunca durante una edición**: cambiarla equivale a vaciar el padrón |
+| `IP_PEPPER` | Opcional: pimienta del hash de la IP. Sin ella se deriva de `DNI_PEPPER` |
+| `DATABASE_CA_PEM` | Raíz de Supabase (`prod-ca-2021.crt`) para **verificar** el TLS de la base. Sin ella la conexión va cifrada pero sin verificar. Cómo obtenerla y la huella, en `.env.example` |
 | `OPENROUTER_API_KEY` | Clave del modelo, compartida por el chat, el asistente de carga y el informe de impacto. **Sin ella nada rompe**: el chat cae al buscador determinístico y las funciones de IA quedan desactivadas |
 | `OPENROUTER_MODELO` | Modelo con la forma `proveedor/modelo` (por defecto `anthropic/claude-sonnet-5`). Se puede afinar por función con `OPENROUTER_MODELO_CHAT`, `_ASISTENTE` e `_INFORME` |
 | `CHAT_RATE_LIMIT` | Consultas por IP por hora (por defecto 30) |
-| `AUTH_PROVIDER` | `dev` (login de prueba, solo desarrollo) o `cidituc` (la ciudadanía digital real) |
+| `CHAT_TOPE_TOKENS_DIA` | Tope diario de tokens de IA entre chat, asistente e informe. Pasado, el chat contesta con el buscador y el resto no se ofrece. Vacío: sin tope |
+| `AUTH_PROVIDER` | `dev` (login de prueba) o `cidituc` (la ciudadanía digital real). `dev` queda bloqueado en producción **y con cualquier base remota** |
 | `CIDITUC_APP` | Clave con la que la app está registrada en el Derivador (por defecto `presupuesto-participativo`) |
 | `CIDITUC_INGRESO_HABILITADO` | `true` enciende el botón de ingreso. Se enciende **después** de que el Derivador despliegue la entrada de esta app |
 | `CIDITUC_CA_PEM` | Cadena de Sectigo (intermedio + raíz) para hablar con `estadisticas.smt.gob.ar:5000`. Ver más abajo |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario del backoffice que el seed crea en tu PGlite. En producción las cuentas se crean con `npm run crear-admin` |
 | `SITE_URL` | URL pública del sitio en producción |
+| `MODO_PRUEBA_IDEAS` | `1` abre el alta de ideas fuera de etapa para cualquiera. Solo para demostraciones locales: **nunca en producción** |
 
 La etapa del proceso (ideas → evaluación → votación → seguimiento) **no** se
 configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
@@ -90,7 +95,8 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
    migraciones nuevas y nada más.
 3. **Vercel**: importar el repo y configurar las variables de entorno del
    proyecto: `DATABASE_URL` (la del Transaction pooler), `SESSION_SECRET`,
-   `OPENROUTER_API_KEY`, `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
+   `DNI_PEPPER`, `DATABASE_CA_PEM`, `OPENROUTER_API_KEY`, `CHAT_TOPE_TOKENS_DIA`,
+   `AUTH_PROVIDER=cidituc` (o dejar la votación cerrada
    hasta tener CIDITUC), `SITE_URL`, `CIDITUC_CA_PEM` y, cuando el Derivador
    tenga desplegada la entrada de esta app, `CIDITUC_INGRESO_HABILITADO=true`.
    Vercel es el único lugar donde la URL de producción queda guardada.
@@ -98,6 +104,33 @@ configura por entorno: vive en la tabla `ediciones` y se cambia desde `/admin`.
    `pg`, una consulta por conexión, que es lo que tolera el pooler en modo
    transacción); sin URL usa PGlite. No hay ramas de código distintas entre
    desarrollo y producción.
+
+### Primer deploy con la Fase 1 (en este orden)
+
+La base de producción ya tiene datos, y tres cambios de la Fase 1 dependen de
+que el entorno esté preparado ANTES de desplegar:
+
+1. **`DNI_PEPPER` con exactamente el valor actual de `SESSION_SECRET`**, en
+   Production (y en Preview si comparte la base). Hasta ahora el DNI se hasheaba
+   con `SESSION_SECRET`: con el mismo valor los hashes quedan idénticos y el
+   padrón se conserva (hay una prueba de eso). Sin `DNI_PEPPER`, votar falla con
+   "sin-padron"; con otro valor, cada persona pasa a ser un votante nuevo. Si
+   `SESSION_SECRET` está marcada como *Sensitive* en Vercel no se puede leer:
+   resolverlo antes de desplegar. Recién después se puede rotar `SESSION_SECRET`.
+2. **`DATABASE_CA_PEM`** con la raíz de Supabase (confirmar la huella que
+   figura en `.env.example`), probándola primero en un deploy de Preview: con la
+   CA como único almacén, un certificado equivocado deja al sitio sin base.
+3. **Antes de `npm run db:migrate -- --produccion`**, las dos consultas de
+   solo lectura que están en el encabezado de `drizzle/0010_habilitar_rls.sql`
+   (quién es dueño de cada tabla: la app tiene que serlo para que RLS no la
+   afecte) y de `drizzle/0011_votante_unico_por_cuenta.sql` (cuentas de
+   CIDITUC repetidas en el padrón). El runner aplica todas las migraciones
+   pendientes en una sola transacción: si una falla, no queda ninguna.
+
+Efectos de una sola vez, esperados: se cierran las sesiones abiertas (las
+cookies pasan a llamarse `__Host-…`), los contadores de límite por IP arrancan
+de cero (cambió la pimienta de la IP) y las respuestas del chat guardadas en el
+navegador dejan de viajar como contexto (ahora van firmadas).
 
 ### Tocar producción desde la terminal
 
@@ -246,16 +279,38 @@ proyecto Landing Elecop (Dirección de IA).
   `estadisticas`) que llaman exactamente a las mismas consultas que las
   páginas. Si un dato no está cargado, la herramienta lo dice y el asistente
   lo repite en lugar de inventarlo. La clave de API nunca llega al navegador.
-  Sin clave configurada, el endpoint responde con un buscador determinístico
-  (`src/lib/chat-sin-ia.ts`). Cada consulta queda registrada (pregunta,
+  Sin clave configurada, con el tope diario pasado o si el proveedor falla (sin
+  crédito, modelo mal escrito, caído, colgado a mitad de la respuesta), el
+  endpoint responde con un buscador determinístico (`src/lib/chat-sin-ia.ts`). Cada consulta queda registrada (pregunta,
   herramientas usadas, tokens, latencia, IP hasheada) en `chat_consultas`. El
   panel **no** tiene pantalla para leer esa tabla: la tenía (`/admin/consultas`)
   y se borró porque mostraba sobre todo las llamadas del asistente de carga, con
   el JSON crudo de cada propuesta. Para consultarla hay que ir a la base.
 - **Votación**: sesión JWT en cookie httpOnly; un voto por persona garantizado
   por restricción UNIQUE en la base (no solo por lógica de aplicación); el DNI
-  se guarda hasheado con pepper, nunca en claro. El proveedor `dev` permite
-  probar el flujo completo sin CIDITUC y queda bloqueado en producción.
+  se guarda hasheado con `DNI_PEPPER`, nunca en claro. La boleta sale en orden
+  alfabético (y los listados también, mientras se vota): por votos, el que va
+  ganando aparecía primero. El voto relee la etapa y la idea dentro de su
+  transacción (`src/app/api/votos/registrar.ts`) y cierra la sesión apenas se
+  registra. El proveedor `dev` permite probar el flujo completo sin CIDITUC y
+  queda bloqueado en producción y con cualquier base remota.
+- **Reglas por etapa** (`src/lib/etapas.ts`, con pruebas): durante la votación
+  no se sacan ni se meten proyectos en la boleta, se proclama solo cuando la
+  votación terminó y no se activa otra edición con una votación abierta. Las
+  aplican las acciones del panel, que releen la etapa de la base con la fila
+  bloqueada.
+- **Base segura**: con base remota la conexión va siempre por TLS y los
+  parámetros `ssl` de la URL se ignoran (`src/db/index.ts`). Todas las tablas
+  tienen RLS habilitado sin políticas, para que la Data API de Supabase no las
+  exponga con la clave anónima; la app entra como dueña y no la afecta. **Toda
+  tabla nueva lleva `.enableRLS()` en `schema.ts`**: lo exige
+  `scripts/tests/base-segura.test.ts`.
+- **Seguridad HTTP**: los POST exigen `Origin` del propio sitio y
+  `Content-Type: application/json` (`src/lib/origen.ts`; `gob.ar` está en la
+  Public Suffix List, así que cualquier `*.smt.gob.ar` cuenta como el mismo
+  sitio para la cookie). Encabezados de seguridad para todo el sitio en
+  `next.config.ts`, y cookies con prefijo `__Host-` en producción
+  (`src/lib/cookies.ts`).
 - **Rate limiting** por IP hasheada sobre una tabla de la base (sin Redis).
 
 ## Datos y migración de la edición 2025
@@ -356,6 +411,17 @@ archivo nuevo en `drizzle/`.
   votos. Si el municipio conserva los textos, se cargan por el admin.
 - **7 ideas con distrito dudoso**: listadas en `data/reporte-limpieza.md`,
   requieren confirmación del equipo.
+- **Aviso por mail**: la casilla "quiero dejar mi correo" del formulario está
+  apagada (`AVISO_POR_MAIL_HABILITADO` en `src/lib/aviso-por-mail.ts`) porque
+  no existe el envío de mails; la API tampoco guarda el correo mientras tanto.
+  `/privacidad` todavía describe esa casilla: lo revisa Legales junto con el
+  resto de la página.
+- **Resultados parciales**: `/api/proyectos` y las herramientas del chat siguen
+  devolviendo los votos de cada idea durante la votación. Mostrar u ocultar los
+  parciales es una decisión del programa que falta tomar, y con ella se decide
+  también su orden: la boleta, los listados y la ficha ya ordenan
+  alfabéticamente mientras se vota, pero el chat y los datos abiertos todavía
+  ordenan por votos.
 - **Lint con errores previos**: `npm run lint` volvió a correr (antes usaba
   `next lint`, que Next 16 eliminó), y encontró errores que ya estaban en `src/`.
   La mayoría son de `react-hooks/rules-of-hooks`: los hooks propios se llaman
