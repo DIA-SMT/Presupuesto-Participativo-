@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import {
   direccionBandeja,
+  distritoDeCoordenada,
+  getCandidatasIntegracion,
+  getCategorias,
   getDistritos,
   getEdicionActiva,
   getIdeaAdmin,
@@ -14,7 +17,8 @@ import {
   type PaginaBandeja,
 } from "@/db/queries";
 import { getSesionAdmin } from "@/lib/sesion";
-import PanelBandeja from "./bandeja/panel";
+import PanelBandeja, { type ExtrasFicha } from "./bandeja/panel";
+import { limitesDeLaIdea } from "./ideas/limites";
 
 /**
  * Pantalla principal del panel: la bandeja de revision, el listado de trabajo
@@ -33,7 +37,11 @@ import PanelBandeja from "./bandeja/panel";
  * /admin/ediciones.
  */
 
-/** Estados que se pueden pedir por querystring. Se valida contra esta lista. */
+/**
+ * Estados que se pueden pedir por querystring. Se valida contra esta lista.
+ * "descartado" es la unica forma de ver las descartadas: sin estado, la bandeja
+ * no las trae.
+ */
 const ESTADOS: EstadoIdea[] = [
   "pendiente",
   "factible",
@@ -41,6 +49,7 @@ const ESTADOS: EstadoIdea[] = [
   "integrado",
   "ganador",
   "borrador",
+  "descartado",
 ];
 
 /** Filas por pagina. Una edicion trae ~100 ideas: 25 entran sin scroll eterno. */
@@ -125,6 +134,27 @@ export default async function AdminIdeas({ searchParams }: Props) {
   const historial = ficha ? await getRevisiones(ficha.id) : [];
   const informe = ficha ? await getInformeImpacto(ficha.id) : null;
 
+  // Lo que la ficha necesita para mostrar donde queda la idea y para
+  // corregirla. Solo con una ficha abierta: sin ella no hay nada que mostrar.
+  // El distrito del punto se calcula aca, en el servidor, con la geometria
+  // oficial: el navegador no la tiene cargada hasta que dibuja el mapa.
+  let extras: ExtrasFicha | null = null;
+  if (ficha) {
+    const [categorias, candidatas, distritoDelPunto] = await Promise.all([
+      getCategorias(),
+      getCandidatasIntegracion(edicion.id, ficha.id),
+      ficha.lat === null || ficha.lon === null
+        ? Promise.resolve(null)
+        : distritoDeCoordenada(ficha.lat, ficha.lon),
+    ]);
+    extras = {
+      categorias: categorias.map((categoria) => ({ slug: categoria.slug, nombre: categoria.nombre })),
+      candidatas,
+      distritoDelPunto,
+      limites: limitesDeLaIdea(),
+    };
+  }
+
   return (
     <PanelBandeja
       anio={edicion.anio}
@@ -148,6 +178,7 @@ export default async function AdminIdeas({ searchParams }: Props) {
       ficha={ficha}
       historial={historial}
       informe={informe}
+      extras={extras}
       rol={sesion.rol}
       ahora={Date.now()}
     />

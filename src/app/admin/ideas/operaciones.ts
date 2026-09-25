@@ -508,6 +508,13 @@ export async function aplicarCorreccion(
       if (integradaEn === datos.id) {
         return { ok: false, error: "Una idea no se puede integrar en sí misma." };
       }
+      // FOR KEY SHARE sobre la idea destino: espera a quien la este
+      // descartando o integrando en otra (las dos toman su fila FOR UPDATE) y
+      // despues lee como quedo. Sin el bloqueo, un descarte que confirma entre
+      // esta lectura y el UPDATE dejaba esta idea integrada en una descartada.
+      // Dos personas integrando A en B y B en A en el mismo instante se
+      // esperan en cruz: Postgres corta una con un error, la accion lo muestra
+      // como "no se pudo guardar" y al reintentar la regla de abajo la frena.
       const [destino] = await tx
         .select({
           edicionId: ideas.edicionId,
@@ -517,7 +524,7 @@ export async function aplicarCorreccion(
         })
         .from(ideas)
         .where(eq(ideas.id, integradaEn))
-        .limit(1);
+        .for("key share", { of: ideas });
       if (!destino || destino.edicionId !== actual.edicionId) {
         return {
           ok: false,

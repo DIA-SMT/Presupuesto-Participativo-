@@ -169,6 +169,13 @@ async function cargar(cambios: Record<string, string> = {}) {
 // Carga
 // ---------------------------------------------------------------------------
 
+test("el dia de hoy es el de Tucuman, no el de UTC", () => {
+  // 23:30 del 25 en Tucuman son las 02:30 del 26 en UTC: toISOString() daba
+  // el dia siguiente, y el tope de la fecha dejaba cargar "manana".
+  assert.equal(operaciones.hoyEnTucuman(new Date("2026-09-26T02:30:00Z")), "2026-09-25");
+  assert.equal(operaciones.hoyEnTucuman(new Date("2026-09-26T03:30:00Z")), "2026-09-26");
+});
+
 test("el panel carga una idea igual que el formulario, con su canal, su fecha y su fila de alta", async () => {
   const idea = await cargar();
 
@@ -594,6 +601,19 @@ test("la integracion apunta a una idea final de la misma edicion", async () => {
     (await historialDe(repetida.id)).at(-1)!.nota ?? "",
     new RegExp(`Integrada en: ninguna → #${principal.numero} “Plaza nueva en el barrio norte”`),
   );
+
+  // La ficha de la bandeja nombra la principal y cuenta las integradas.
+  const fichaRepetida = await consultas.getIdeaAdmin(repetida.id);
+  assert.deepEqual(fichaRepetida?.integradaEn, {
+    id: principal.id,
+    numero: principal.numero,
+    titulo: "Plaza nueva en el barrio norte",
+  });
+  assert.equal(fichaRepetida?.integradas, 0);
+  assert.equal(fichaRepetida?.canalDetalle, "Asamblea del distrito 1, 12/09/2026");
+  const fichaPrincipal = await consultas.getIdeaAdmin(principal.id);
+  assert.equal(fichaPrincipal?.integradaEn, null);
+  assert.equal(fichaPrincipal?.integradas, 1);
 
   // En una que ya esta integrada en otra, no: se apunta a la final.
   const enCadena = await operaciones.aplicarCorreccion(
