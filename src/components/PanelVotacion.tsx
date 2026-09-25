@@ -4,6 +4,9 @@
  * Panel de votacion: eleccion del proyecto del propio distrito y confirmacion
  * del voto. Solo se dibuja con sesion de votante: sin ella, /votar manda a
  * /ingresar, que es donde se entra con CIDITUC (o con el login de prueba).
+ *
+ * Los proyectos llegan en orden alfabetico (lo pide /votar a listarIdeas) y
+ * aca no se reordenan: cualquier otro orden le da ventaja a alguien.
  */
 import { useState } from "react";
 import { colorCategoria } from "@/lib/formato";
@@ -100,7 +103,7 @@ export default function PanelVotacion({
       <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
         {sesion.nombre ? `Hola, ${sesion.nombre}. ` : ""}Estás empadronado en el{" "}
         <strong>Distrito {sesion.distrito}</strong>. Estos son los proyectos factibles de tu
-        distrito; elegí uno.
+        distrito, en orden alfabético; elegí uno.
       </p>
 
       {proyectos.length === 0 ? (

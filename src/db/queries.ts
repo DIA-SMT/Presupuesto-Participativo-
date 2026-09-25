@@ -357,7 +357,15 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
   }));
 }
 
-export async function getDistrito(numero: number, edicionId: number) {
+/**
+ * El distrito con sus ideas. `orden` pasa derecho a `listarIdeas`: la pagina
+ * del distrito pide "alfabetico" mientras se vota (ver `ordenDeIdeasPara`).
+ */
+export async function getDistrito(
+  numero: number,
+  edicionId: number,
+  opciones: { orden?: OrdenIdeas } = {},
+) {
   const [distrito] = await db
     .select({
       numero: distritos.numero,
@@ -371,7 +379,7 @@ export async function getDistrito(numero: number, edicionId: number) {
     .limit(1);
   if (!distrito) return null;
 
-  const lista = await listarIdeas({ edicionId, distrito: numero });
+  const lista = await listarIdeas({ edicionId, distrito: numero, orden: opciones.orden });
   return {
     numero: distrito.numero,
     nombre: distrito.nombre,
@@ -400,6 +408,20 @@ export async function distritoDeCoordenada(
 // Ideas
 // ---------------------------------------------------------------------------
 
+/**
+ * En que orden sale una lista de ideas.
+ *
+ *  - "votos" (el de siempre): ganadoras primero y despues las mas votadas. Es
+ *    el orden de un resultado, y fuera de la votacion es el que sirve.
+ *  - "alfabetico": por titulo, sin mirar los votos. Es el de la boleta.
+ *
+ * Mientras se vota, ordenar por votos hace dos daños: el que va ganando en
+ * cada distrito aparece primero —y el primer lugar de una boleta suma votos
+ * por estar ahi, no por el proyecto— y el orden mismo publica el ranking en
+ * vivo, aunque la pagina no muestre un solo numero.
+ */
+export type OrdenIdeas = "votos" | "alfabetico";
+
 export type FiltroIdeas = {
   edicionId: number;
   distrito?: number;
@@ -409,7 +431,42 @@ export type FiltroIdeas = {
   soloGanadores?: boolean;
   limite?: number;
   incluirNoPublicadas?: boolean;
+  /** Por defecto "votos", para no cambiarle el orden a nadie que no lo pida. */
+  orden?: OrdenIdeas;
 };
+
+/**
+ * El orden de las listas publicas de ideas segun la etapa: alfabetico mientras
+ * se vota, por votos el resto del tiempo. Lo usan /proyectos y
+ * /distritos/[numero]; la boleta de /votar va en alfabetico SIEMPRE, sin pasar
+ * por aca, porque ahi el orden neutral no depende de nada.
+ */
+export function ordenDeIdeasPara(etapa: EtapaEdicion): OrdenIdeas {
+  return etapa === "votacion" ? "alfabetico" : "votos";
+}
+
+/**
+ * Comparacion de titulos en castellano.
+ *
+ * No se ordena en SQL: el orden de Postgres depende de la collation con la que
+ * se creo la base (PGlite en desarrollo, Supabase en produccion) y el sitio no
+ * usa extensiones, asi que "Árbol" podia caer despues de "Zanja" en una y no en
+ * la otra. `Intl.Collator` con "es" da el orden de un diccionario: sin
+ * distinguir mayusculas ni tildes, la ñ despues de la n, "Plaza 2" antes que
+ * "Plaza 10", y sin tropezar con comillas o signos al principio del titulo.
+ */
+const COLACION_TITULOS = new Intl.Collator("es-AR", {
+  sensitivity: "base",
+  numeric: true,
+  ignorePunctuation: true,
+});
+
+/** Titulo, y si empatan, distrito e id: el mismo orden en cada carga. */
+function compararAlfabetico(a: IdeaVista, b: IdeaVista): number {
+  return (
+    COLACION_TITULOS.compare(a.titulo, b.titulo) || a.distrito - b.distrito || a.id - b.id
+  );
+}
 
 export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
   const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
@@ -433,6 +490,8 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
     if (busqueda) condiciones.push(busqueda);
   }
 
+  const alfabetico = filtro.orden === "alfabetico";
+
   const consulta = db
     .select(camposIdea)
     .from(ideas)
@@ -440,10 +499,25 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(and(...condiciones))
-    .orderBy(desc(ideas.ganador), desc(ideas.votos), asc(distritos.numero), asc(ideas.titulo));
+    .orderBy(
+      ...(alfabetico
+        ? // El orden de verdad lo pone `compararAlfabetico`, abajo.
+          [asc(ideas.id)]
+        : [desc(ideas.ganador), desc(ideas.votos), asc(distritos.numero), asc(ideas.titulo)]),
+    );
 
-  const filas = await (filtro.limite ? consulta.limit(filtro.limite) : consulta);
-  return filas.map((f) => aVista(f as Record<string, unknown>));
+  if (!alfabetico) {
+    const filas = await (filtro.limite ? consulta.limit(filtro.limite) : consulta);
+    return filas.map((f) => aVista(f as Record<string, unknown>));
+  }
+
+  // En alfabetico el tope se aplica DESPUES de ordenar: con un LIMIT en SQL
+  // saldrian las primeras N por id, no las primeras N por titulo. Son las
+  // ideas de una edicion, cientos a lo sumo.
+  const ordenadas = (await consulta)
+    .map((f) => aVista(f as Record<string, unknown>))
+    .sort(compararAlfabetico);
+  return filtro.limite ? ordenadas.slice(0, filtro.limite) : ordenadas;
 }
 
 export async function getIdea(

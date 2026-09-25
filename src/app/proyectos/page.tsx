@@ -8,6 +8,7 @@ import {
   getEdicionActiva,
   getTextos,
   listarIdeas,
+  ordenDeIdeasPara,
   type EstadoIdea,
 } from "@/db/queries";
 import { ETIQUETA_ESTADO, colorCategoria, formatearNumero } from "@/lib/formato";
@@ -57,6 +58,9 @@ export default async function Proyectos({ searchParams }: Props) {
       estado,
       texto: filtros.q,
       soloGanadores: filtros.ganadores === "1",
+      // Mientras se vota, alfabetico: ordenado por votos, el listado mostraba
+      // quien va ganando en cada distrito aunque no dijera un solo numero.
+      orden: ordenDeIdeasPara(edicion.etapa),
     }),
   ]);
 
