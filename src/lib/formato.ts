@@ -7,6 +7,8 @@ export const ETIQUETA_ESTADO: Record<string, string> = {
   no_factible: "No factible",
   integrado: "Integrada con otra idea",
   ganador: "Proyecto ganador",
+  // Solo lo ve el panel: una idea descartada queda despublicada.
+  descartado: "Descartada",
 };
 
 export const DESCRIPCION_ESTADO: Record<string, string> = {

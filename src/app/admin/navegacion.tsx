@@ -53,6 +53,11 @@ const ENLACES: Enlace[] = [
   { href: "/admin/tablero", texto: "Tablero" },
   { href: "/admin/migue", texto: "Migue" },
   { href: "/admin/ediciones", texto: "Etapa del proceso", soloAdmin: true },
+  // Volvieron en la Fase 2 (se habian sacado en 98d0f8d): sin ellas, dar de alta
+  // a un evaluador o cargar el reglamento se hacia por consola contra
+  // produccion. Solo admin, como la etapa: no son tareas de todos los dias.
+  { href: "/admin/contenido", texto: "Contenido", soloAdmin: true },
+  { href: "/admin/equipo", texto: "Equipo", soloAdmin: true },
 ];
 
 /**

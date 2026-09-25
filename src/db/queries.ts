@@ -43,6 +43,10 @@ import {
   revisiones,
   textos,
   votantes,
+  accionRevision,
+  accionSistema,
+  entidadSistema,
+  estadoIdea,
 } from "./schema";
 
 /**
@@ -52,13 +56,13 @@ import {
  */
 export type CanalCarga = "web" | "asamblea" | "municipio" | "migracion";
 
-export type EstadoIdea =
-  | "borrador"
-  | "pendiente"
-  | "factible"
-  | "no_factible"
-  | "integrado"
-  | "ganador";
+/**
+ * Salen del enum del esquema, no de una lista escrita a mano: con la lista, la
+ * migracion 0012 (que sumo "descartado") dejo el tipo desincronizado de la
+ * base. Asi, un valor nuevo en schema.ts llega solo, y el compilador marca
+ * cada Record<EstadoIdea, ...> que no lo contempla.
+ */
+export type EstadoIdea = (typeof estadoIdea.enumValues)[number];
 
 export type IdeaVista = {
   id: number;
@@ -1088,16 +1092,8 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
   };
 }
 
-export type AccionRevision =
-  | "evaluacion"
-  | "publicacion"
-  | "despublicacion"
-  | "proclamacion"
-  | "reapertura"
-  /** Cambio del presupuesto asignado al proyecto (migracion 0003). */
-  | "presupuesto"
-  /** Se pidio un informe de impacto para la idea (migracion 0006). */
-  | "informe";
+/** Del enum del esquema, como EstadoIdea: ahi estan comentados los valores. */
+export type AccionRevision = (typeof accionRevision.enumValues)[number];
 
 export type FilaRevision = {
   id: number;
@@ -1201,6 +1197,7 @@ export async function getResumenBandeja(edicionId: number): Promise<ResumenBande
     no_factible: 0,
     integrado: 0,
     ganador: 0,
+    descartado: 0,
   };
   let total = 0;
   for (const fila of filas) {
@@ -1286,6 +1283,7 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
     no_factible: 0,
     integrado: 0,
     ganador: 0,
+    descartado: 0,
   };
   for (const fila of estados) porEstado[fila.estado] = Number(fila.cantidad);
 
@@ -1802,29 +1800,12 @@ export async function getBitacoraEquipo(limite = 100): Promise<FilaBitacora[]> {
  * que llega por querystring se busca aca (ver `accionSistemaValida`) y nunca se
  * interpola dentro del tag `sql`. Mismo orden que el enum `accion_sistema`.
  */
-export const ACCIONES_SISTEMA = [
-  "cambio_etapa",
-  "edicion_creada",
-  "edicion_editada",
-  "edicion_activada",
-  "hito_guardado",
-  "hito_borrado",
-  "texto_guardado",
-  "novedad_creada",
-  "avance_creado",
-  "avance_borrado",
-] as const;
+export const ACCIONES_SISTEMA = accionSistema.enumValues;
 
 export type AccionSistema = (typeof ACCIONES_SISTEMA)[number];
 
 /** Sobre que se actuo. Lista blanca, igual que `ACCIONES_SISTEMA`. */
-export const ENTIDADES_SISTEMA = [
-  "edicion",
-  "hito",
-  "texto",
-  "novedad",
-  "avance",
-] as const;
+export const ENTIDADES_SISTEMA = entidadSistema.enumValues;
 
 export type EntidadSistema = (typeof ENTIDADES_SISTEMA)[number];
 
@@ -2342,3 +2323,22 @@ export async function getTokensUsadosHoy(): Promise<number> {
   return Number(fila?.tokens ?? 0);
 }
 
+// ---------------------------------------------------------------------------
+// Equipo del panel (Fase 2)
+// Las consultas de /admin/equipo: cuentas, roles, su bitacora.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Contenido editable (Fase 2)
+// Las de /admin/contenido: textos, preguntas frecuentes, novedades.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Ideas cargadas y corregidas desde el panel (Fase 2)
+// Alta desde el panel, correccion, descarte, ubicacion en la ficha.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Ediciones anteriores (Fase 2)
+// Que una edicion pasada siga navegable con otra activa.
+// ---------------------------------------------------------------------------

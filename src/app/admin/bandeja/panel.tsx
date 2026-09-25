@@ -82,6 +82,7 @@ const ETIQUETA_SOLAPA: Record<EstadoIdea, string> = {
   integrado: "Integradas",
   ganador: "Ganadoras",
   borrador: "Borradores",
+  descartado: "Descartadas",
 };
 
 const ETIQUETA_ACCION: Record<AccionRevision, string> = {
@@ -92,6 +93,9 @@ const ETIQUETA_ACCION: Record<AccionRevision, string> = {
   reapertura: "Reapertura",
   presupuesto: "Presupuesto",
   informe: "Informe de impacto",
+  alta: "Carga desde el panel",
+  correccion: "Corrección",
+  descarte: "Descarte",
 };
 
 const ETIQUETA_CANAL: Record<IdeaAdmin["canal"], string> = {

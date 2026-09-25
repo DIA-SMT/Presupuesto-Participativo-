@@ -67,6 +67,12 @@ export const estadoIdea = pgEnum("estado_idea", [
   "no_factible",
   "integrado",
   "ganador",
+  /**
+   * Prueba, spam o carga repetida por error: no es una propuesta y no se
+   * evalua. Queda despublicada y fuera de las cuentas, pero no se borra: el
+   * descarte tiene motivo y deja fila en `revisiones`. Valor agregado en 0012.
+   */
+  "descartado",
 ]);
 
 export const estadoPresupuesto = pgEnum("estado_presupuesto", [
@@ -125,6 +131,13 @@ export const accionRevision = pgEnum("accion_revision", [
   // historial de la idea aunque no cambie nada: es plata publica y conviene
   // saber que hubo un analisis automatico de por medio. Valor agregado en 0006.
   "informe",
+  // Valores agregados en 0012, con la carga y la correccion desde el panel:
+  // `alta` es una idea que cargo el equipo (asamblea, oficina, mail);
+  // `correccion` un cambio de texto, categoria, ubicacion o integracion, con el
+  // antes y el despues; `descarte` el paso a "descartado", con su motivo.
+  "alta",
+  "correccion",
+  "descarte",
 ]);
 
 /** Cambios sobre las cuentas del backoffice (tabla `bitacora_equipo`). */
@@ -152,6 +165,10 @@ export const accionSistema = pgEnum("accion_sistema", [
   "novedad_creada",
   "avance_creado",
   "avance_borrado",
+  // Valores agregados en 0012, con la pantalla de contenido.
+  "novedad_editada",
+  "faq_guardada",
+  "faq_borrada",
 ]);
 
 /**
@@ -165,6 +182,8 @@ export const entidadSistema = pgEnum("entidad_sistema", [
   "texto",
   "novedad",
   "avance",
+  // Agregado en 0012: las preguntas frecuentes se editan desde el panel.
+  "faq",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -285,6 +304,12 @@ export const ideas = pgTable(
     montoFinalizado: numeric("monto_finalizado", { precision: 14, scale: 2 }),
 
     canal: canalCarga("canal").notNull().default("web"),
+    /**
+     * De donde vino, cuando no fue el formulario web: "Asamblea del distrito 7,
+     * 12/10/2026", "Mesa de entradas", "Mail al programa". Lo escribe el equipo
+     * al cargarla desde el panel; no es publico. Agregado en 0012.
+     */
+    canalDetalle: text("canal_detalle"),
     autorNombre: text("autor_nombre"),
     /**
      * Contacto del autor. Se guarda SOLO si la persona marco la casilla de
@@ -538,6 +563,15 @@ export const admins = pgTable("admins", {
    * panel obliga a cambiarla antes de dejar hacer cualquier otra cosa.
    */
   debeCambiarPassword: boolean("debe_cambiar_password").notNull().default(false),
+  /**
+   * Version de las sesiones de la cuenta. Va dentro del JWT y cada pedido del
+   * panel la compara con la de la base: subirla corta TODAS las sesiones
+   * abiertas de esa persona. Se sube al desactivar la cuenta, al cambiarle el
+   * rol y al cambiar la contrasena (la propia o una provisoria). Sin esto, una
+   * cuenta dada de baja seguia leyendo el panel hasta que vencia la cookie
+   * (12 h). Agregada en 0012.
+   */
+  versionSesion: integer("version_sesion").notNull().default(0),
   ultimoIngreso: timestamp("ultimo_ingreso", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
