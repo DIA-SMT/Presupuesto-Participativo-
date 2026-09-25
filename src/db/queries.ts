@@ -678,12 +678,19 @@ export async function getTextos(): Promise<Record<string, string>> {
   return Object.fromEntries(filas.map((f) => [f.clave, f.valor]));
 }
 
+/**
+ * Las preguntas frecuentes PUBLICADAS, en su orden. Es lo que muestra
+ * /acerca-de y lo que el chat recibe entero en cada consulta
+ * (src/app/api/chat/route.ts): una pregunta despublicada desde el panel no la
+ * ve ninguno de los dos. El id desempata: dos preguntas con el mismo orden
+ * salian en cualquier orden, y distinto entre la pagina y el chat.
+ */
 export async function getFaq() {
   return db
     .select({ id: faq.id, pregunta: faq.pregunta, respuesta: faq.respuesta })
     .from(faq)
     .where(eq(faq.publicada, true))
-    .orderBy(asc(faq.orden));
+    .orderBy(asc(faq.orden), asc(faq.id));
 }
 
 export async function getHitos(edicionId: number) {
@@ -702,6 +709,11 @@ export async function getHitos(edicionId: number) {
     .orderBy(asc(hitos.orden));
 }
 
+/**
+ * Las ultimas novedades publicadas, por fecha. El id desempata entre dos de la
+ * misma fecha (dos asambleas el mismo dia): sin eso cual entraba en la portada
+ * lo decidia la base, y el panel no podia decir cual se estaba viendo.
+ */
 export async function getNovedades(limite = 4) {
   return db
     .select({
@@ -715,7 +727,7 @@ export async function getNovedades(limite = 4) {
     })
     .from(novedades)
     .where(eq(novedades.publicada, true))
-    .orderBy(desc(novedades.fecha))
+    .orderBy(desc(novedades.fecha), desc(novedades.id))
     .limit(limite);
 }
 
@@ -2376,7 +2388,97 @@ export async function listarBitacoraEquipo(limite = 100): Promise<MovimientoEqui
 // ---------------------------------------------------------------------------
 // Contenido editable (Fase 2)
 // Las de /admin/contenido: textos, preguntas frecuentes, novedades.
+//
+// A diferencia de getTextos, getFaq y getNovedades (las del sitio publico, mas
+// arriba), estas traen TODO: las preguntas y las novedades sin publicar
+// tambien, porque el panel es donde se publican. Ninguna pagina publica ni el
+// chat las usan. No hay datos de personas en estas tablas; lo unico de alguien
+// que se guarda es quien hizo cada cambio, y eso esta en `bitacora_sistema`.
 // ---------------------------------------------------------------------------
+
+export type TextoAdmin = {
+  clave: string;
+  valor: string;
+  /** La descripcion cargada en la base, si alguien la cargo. */
+  descripcion: string | null;
+  actualizado: Date;
+};
+
+/** Todos los textos de la tabla, con su descripcion y cuando se guardaron. */
+export async function listarTextosAdmin(): Promise<TextoAdmin[]> {
+  return db
+    .select({
+      clave: textos.clave,
+      valor: textos.valor,
+      descripcion: textos.descripcion,
+      actualizado: textos.updatedAt,
+    })
+    .from(textos)
+    .orderBy(asc(textos.clave));
+}
+
+export type FaqAdmin = {
+  id: number;
+  orden: number;
+  pregunta: string;
+  respuesta: string;
+  publicada: boolean;
+};
+
+/**
+ * Las preguntas frecuentes, publicadas o no, en el orden en que se muestran:
+ * el mismo criterio que `getFaq` (orden y despues id), asi la posicion que ve el
+ * panel es la que tiene en /acerca-de.
+ */
+export async function listarFaqAdmin(): Promise<FaqAdmin[]> {
+  const filas = await db
+    .select({
+      id: faq.id,
+      orden: faq.orden,
+      pregunta: faq.pregunta,
+      respuesta: faq.respuesta,
+      publicada: faq.publicada,
+    })
+    .from(faq)
+    .orderBy(asc(faq.orden), asc(faq.id));
+  return filas.map((f) => ({ ...f, id: Number(f.id), orden: Number(f.orden) }));
+}
+
+export type NovedadAdmin = {
+  id: number;
+  titulo: string;
+  slug: string;
+  copete: string | null;
+  cuerpo: string;
+  /** "YYYY-MM-DD". */
+  fecha: string;
+  publicada: boolean;
+};
+
+/** Todas las novedades, publicadas o no, en el orden de la portada. */
+export async function listarNovedadesAdmin(): Promise<NovedadAdmin[]> {
+  const filas = await db
+    .select({
+      id: novedades.id,
+      titulo: novedades.titulo,
+      slug: novedades.slug,
+      copete: novedades.copete,
+      cuerpo: novedades.cuerpo,
+      fecha: novedades.fecha,
+      publicada: novedades.publicada,
+    })
+    .from(novedades)
+    .orderBy(desc(novedades.fecha), desc(novedades.id));
+  return filas.map((f) => ({ ...f, id: Number(f.id) }));
+}
+
+/**
+ * Cuantas novedades muestra la portada: src/app/page.tsx pide
+ * `getNovedades(3)`. El panel lo usa para marcar cuales se estan viendo, y la
+ * prueba del catalogo (scripts/tests/contenido-catalogo.test.ts) falla si la
+ * portada cambia el numero y este no.
+ */
+export const NOVEDADES_EN_PORTADA = 3;
 
 // ---------------------------------------------------------------------------
 // Ideas cargadas y corregidas desde el panel (Fase 2)
