@@ -2034,6 +2034,14 @@ export type SeguimientoIdea = {
  * a ver el estado de su propia idea aunque el equipo todavia no la haya
  * publicado. El acceso ya esta protegido por el codigo de seguimiento
  * (src/lib/avisos.ts), que quien llama valida con el `id` que devuelve esto.
+ *
+ * Las descartadas SI quedan afuera (ver NO_DESCARTADA): una prueba, un spam o
+ * una carga repetida no es una idea que siga ningun proceso. Con el numero y el
+ * codigo, la pantalla mostraba la pastilla "Descartada" junto a "el equipo esta
+ * trabajando sobre tu propuesta" y "cuando termine de evaluarla la vas a poder
+ * leer aca", que para una descartada es falso. Sin fila, responde lo mismo que
+ * a un codigo que no corresponde; si se descarto por error, el equipo lo
+ * deshace desde el panel y el mismo codigo vuelve a andar.
  */
 export async function getSeguimientoIdea(
   edicionId: number,
@@ -2054,7 +2062,7 @@ export async function getSeguimientoIdea(
     })
     .from(ideas)
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
-    .where(and(eq(ideas.edicionId, edicionId), eq(ideas.numero, numero)))
+    .where(and(eq(ideas.edicionId, edicionId), eq(ideas.numero, numero), NO_DESCARTADA))
     .limit(1);
 
   if (!fila) return null;

@@ -880,3 +880,30 @@ test("una descartada no aparece en nada publico, aunque alguien la publicara a m
   `);
   assert.equal(distritosPublicos.find((d) => d.numero === 1)?.ideas, Number(enD1.total));
 });
+
+test("el seguimiento publico no muestra una descartada, y vuelve a mostrarla si se deshace", async () => {
+  // /ideas/seguimiento es la unica consulta publica que ve ideas sin publicar:
+  // con el numero y el codigo, una descartada salia con la pastilla
+  // "Descartada" y la promesa de una devolucion que no va a llegar.
+  const idea = await cargar({ titulo: "Carga repetida que alguien sigue" });
+  const antes = await consultas.getSeguimientoIdea(edicionId, idea.numero);
+  assert.equal(antes?.id, idea.id, "recien cargada, se sigue con su numero");
+
+  const descarte = await operaciones.aplicarDescarte(
+    { id: String(idea.id), motivo: "Carga repetida de la idea anterior." },
+    sesion,
+  );
+  assert.ok(descarte.ok, descarte.ok ? "" : descarte.error);
+  assert.equal(
+    await consultas.getSeguimientoIdea(edicionId, idea.numero),
+    null,
+    "descartada, responde como un codigo que no corresponde",
+  );
+
+  const restaurada = await operaciones.aplicarRestauracion(
+    { id: String(idea.id), motivo: "No era repetida: era otra plaza." },
+    sesion,
+  );
+  assert.ok(restaurada.ok, restaurada.ok ? "" : restaurada.error);
+  assert.equal((await consultas.getSeguimientoIdea(edicionId, idea.numero))?.id, idea.id);
+});
