@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  cortarSiSeCalla,
   gastoDelDiaAgotado,
   leerTopeDiario,
   motivoDeFalla,
@@ -121,4 +122,107 @@ test("timeout, conexion y cancelacion tienen etiqueta propia", () => {
 test("lo que no es del proveedor es interno", () => {
   assert.equal(motivoDeFalla(new Error("bug")), "interno");
   assert.equal(motivoDeFalla("texto"), "interno");
+});
+
+// ---------------------------------------------------------------------------
+// Proveedor que se queda callado a mitad del stream
+// ---------------------------------------------------------------------------
+
+/**
+ * Un stream como el del SDK: entrega los trozos con las pausas dadas y, si se
+ * aborta su controlador, termina en silencio, que es lo que hace el SDK.
+ */
+function streamConPausas(pausas: number[]) {
+  const controller = new AbortController();
+  async function* trozos() {
+    for (const [i, pausa] of pausas.entries()) {
+      const abortado = await new Promise<boolean>((listo) => {
+        const reloj = setTimeout(() => listo(false), pausa);
+        controller.signal.addEventListener("abort", () => {
+          clearTimeout(reloj);
+          listo(true);
+        });
+      });
+      if (abortado) return;
+      yield i;
+    }
+  }
+  return { controller, [Symbol.asyncIterator]: trozos };
+}
+
+test("un stream que se calla mas de la cuenta se corta como timeout", async () => {
+  const recibidos: number[] = [];
+  const stream = streamConPausas([0, 5, 10_000]);
+  await assert.rejects(
+    (async () => {
+      for await (const trozo of cortarSiSeCalla(stream, 50)) recibidos.push(trozo);
+    })(),
+    (causa: unknown) => motivoDeFalla(causa) === "timeout",
+  );
+  assert.deepEqual(recibidos, [0, 1], "lo que llego antes de callarse se entrego");
+  assert.equal(stream.controller.signal.aborted, true, "la llamada al proveedor se corto");
+});
+
+test("un stream con pausas cortas llega entero, y el tiempo de quien consume no cuenta", async () => {
+  const recibidos: number[] = [];
+  const stream = streamConPausas([10, 10, 10]);
+  for await (const trozo of cortarSiSeCalla(stream, 50)) {
+    recibidos.push(trozo);
+    // Procesar un trozo (las herramientas) tarda mas que la pausa permitida.
+    await new Promise((listo) => setTimeout(listo, 80));
+  }
+  assert.deepEqual(recibidos, [0, 1, 2]);
+  assert.equal(stream.controller.signal.aborted, false);
+});
+
+test("un stream cortado desde afuera (la persona se fue) termina sin error", async () => {
+  const stream = streamConPausas([0, 10_000]);
+  const recibidos: number[] = [];
+  setTimeout(() => stream.controller.abort(), 20);
+  for await (const trozo of cortarSiSeCalla(stream, 5_000)) recibidos.push(trozo);
+  assert.deepEqual(recibidos, [0]);
+});
+
+test("con el SDK de verdad: 200, un trozo y silencio termina en timeout", async () => {
+  // El proveedor contesta las cabeceras y un trozo, y despues no manda nada.
+  // Asi se ve un modelo colgado detras de OpenRouter: el timeout del SDK ya no
+  // corre, porque las cabeceras llegaron.
+  const cliente = new OpenAI({
+    apiKey: "clave-de-prueba",
+    baseURL: "http://proveedor.invalid/v1",
+    fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
+      const cuerpo = new ReadableStream<Uint8Array>({
+        start(controlador) {
+          const trozo = {
+            id: "x",
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "m",
+            choices: [{ index: 0, delta: { content: "Hola" }, finish_reason: null }],
+          };
+          controlador.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(trozo)}\n\n`));
+          init?.signal?.addEventListener("abort", () =>
+            controlador.error(new DOMException("cortada", "AbortError")),
+          );
+        },
+      });
+      return new Response(cuerpo, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch,
+  });
+
+  const stream = await cliente.chat.completions.create({
+    model: "m",
+    messages: [{ role: "user", content: "hola" }],
+    stream: true,
+  });
+  let texto = "";
+  await assert.rejects(
+    (async () => {
+      for await (const trozo of cortarSiSeCalla(stream, 50)) {
+        texto += trozo.choices[0]?.delta?.content ?? "";
+      }
+    })(),
+    (causa: unknown) => motivoDeFalla(causa) === "timeout",
+  );
+  assert.equal(texto, "Hola");
 });

@@ -47,6 +47,7 @@ import { claveDePregunta } from "@/lib/texto";
 import { clasificarConsulta } from "@/lib/chat-temas";
 import {
   CONSUMO_VACIO,
+  cortarSiSeCalla,
   crearCliente,
   gastoDelDiaAgotado,
   hayClave,
@@ -78,14 +79,26 @@ const MAX_VUELTAS = 4;
 const MAX_TOKENS = 2048;
 
 /**
- * Espera hasta el primer byte de cada llamada, y reintentos. El SDK viene con
- * 60 s y dos reintentos: con el proveedor colgado eran tres minutos mirando
- * "Pensando…" antes de enterarse. Ahora, en el peor caso, algo mas de un minuto
- * y despues contesta el buscador. Es solo el primer byte: una respuesta que ya
- * empezo a llegar no se corta por esto.
+ * Espera hasta las cabeceras de cada llamada, y reintentos. El SDK viene con
+ * 60 s y dos reintentos: con el proveedor sin contestar eran tres minutos
+ * mirando "Pensando…" antes de enterarse. Ahora, en el peor caso, algo mas de
+ * un minuto y despues contesta el buscador.
+ *
+ * Eso solo cubre al proveedor que no contesta. El que contesta el 200 y
+ * despues se queda callado (OpenRouter manda las cabeceras enseguida) lo corta
+ * PAUSA_MAXIMA_MS: el tiempo sin trozos nuevos del stream (ver
+ * `cortarSiSeCalla` en src/lib/modelo.ts). Una respuesta que viene llegando no
+ * se corta por ninguno de los dos.
  */
 const TIMEOUT_MS = 30_000;
 const REINTENTOS = 1;
+const PAUSA_MAXIMA_MS = 30_000;
+
+/**
+ * El modelo uso las MAX_VUELTAS pidiendo herramientas y nunca contesto. Se
+ * trata como una falla mas: responde el buscador (ver el catch del handler).
+ */
+class VueltasAgotadas extends Error {}
 
 const esquema = z.object({
   mensajes: z
@@ -131,7 +144,10 @@ const MARCA = {
   buscador: "buscador-local",
   /** ...porque se paso el tope diario de gasto. */
   tope: "tope-diario",
-  /** ...porque fallo el proveedor. El motivo sale de `motivoDeFalla`. */
+  /**
+   * ...porque fallo el proveedor (el motivo sale de `motivoDeFalla`) o porque el
+   * modelo agoto las vueltas sin contestar (`vueltas`).
+   */
   falla: (motivo: string) => `falla:${motivo}`,
   /** La persona se fue antes de que terminara la respuesta. */
   cancelada: "cancelada",
@@ -348,7 +364,7 @@ export async function POST(request: Request) {
         // delta trae un pedazo del JSON de argumentos. Se rearman por indice.
         const parciales = new Map<number, LlamadaParcial>();
 
-        for await (const trozo of stream) {
+        for await (const trozo of cortarSiSeCalla(stream, PAUSA_MAXIMA_MS)) {
           if (trozo.usage) consumo = sumarConsumo(consumo, trozo.usage);
 
           const eleccion = trozo.choices?.[0];
@@ -446,15 +462,10 @@ export async function POST(request: Request) {
         return;
       }
 
-      // Se agotaron las vueltas sin respuesta final: antes terminaba en
-      // silencio y la persona se quedaba mirando una respuesta a medias.
-      if (!cerroSolo) {
-        canal.enviar({
-          tipo: "error",
-          mensaje:
-            "No pude terminar de armar la respuesta. Probá preguntando de otra manera.",
-        });
-      }
+      // Se agotaron las vueltas sin respuesta final. Primero terminaba en
+      // silencio, despues con un aviso de error; ahora es una falla mas del
+      // modelo y contesta el buscador, con el motivo `vueltas` en el registro.
+      if (!cerroSolo) throw new VueltasAgotadas();
 
       const unicas = [
         ...new Map(referencias.map((r) => [r.url, r])).values(),
@@ -475,7 +486,7 @@ export async function POST(request: Request) {
         consumo,
         ms: Date.now() - inicio,
         ipHash,
-        ok: cerroSolo,
+        ok: true,
       });
     } catch (causa) {
       if (canal.cancelado()) {
@@ -487,7 +498,7 @@ export async function POST(request: Request) {
       // el modelo alcanzo a escribir se descarta, porque una respuesta cortada
       // a la mitad y otra entera abajo se leen como una sola que no tiene
       // sentido. El detalle tecnico va al log; el motivo corto, al registro.
-      const motivo = motivoDeFalla(causa);
+      const motivo = causa instanceof VueltasAgotadas ? "vueltas" : motivoDeFalla(causa);
       console.error(
         `[chat] fallo el proveedor (${motivo}); responde el buscador.` +
           (usadas.length ? ` Herramientas que alcanzo a usar: ${usadas.join(", ")}.` : ""),

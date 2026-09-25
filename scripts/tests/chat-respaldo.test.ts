@@ -280,6 +280,40 @@ test("si el proveedor falla a mitad de la respuesta, lo mostrado se descarta", a
   assert.deepEqual((await ultimaConsulta()).herramientas, ["buscador-local", "falla:proveedor-402"]);
 });
 
+test("si el modelo agota las vueltas pidiendo herramientas, contesta el buscador", async () => {
+  process.env.OPENROUTER_API_KEY = "clave-de-prueba";
+  // Un modelo que se cicla: en cada vuelta escribe algo y pide otra herramienta.
+  const { resultado, llamadas } = await conProveedor(
+    (_llamada, numero) =>
+      stream([
+        trozo({ role: "assistant", content: `Vuelta ${numero}. ` }),
+        trozo({
+          tool_calls: [
+            {
+              index: 0,
+              id: `llamada-${numero}`,
+              type: "function",
+              function: { name: "estadisticas", arguments: "{}" },
+            },
+          ],
+        }),
+        trozo({}, "tool_calls"),
+        uso(10, 5),
+      ]),
+    () => preguntar(PREGUNTA),
+  );
+  const eventos = await eventosDe(resultado);
+
+  assert.equal(llamadas.length, 4, "MAX_VUELTAS");
+  assert.ok(!eventos.some((e) => e.tipo === "error"), "no tiene que ver un aviso de error");
+  assert.ok(!textoMostrado(eventos).includes("Vuelta"), "lo del modelo no queda");
+  assert.ok(textoMostrado(eventos).includes("ideas presentadas"));
+  assert.equal(eventos.at(-1)?.modo, "buscador");
+  const fila = await ultimaConsulta();
+  assert.deepEqual(fila.herramientas, ["buscador-local", "falla:vueltas"]);
+  assert.equal(fila.tokens_entrada, 40, "lo gastado en las cuatro vueltas cuenta para el tope");
+});
+
 // ---------------------------------------------------------------------------
 // El modelo responde: firma y recorte
 // ---------------------------------------------------------------------------

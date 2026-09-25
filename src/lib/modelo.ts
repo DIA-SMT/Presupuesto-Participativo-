@@ -163,6 +163,53 @@ export function motivoDeFalla(causa: unknown): string {
   return "interno";
 }
 
+/**
+ * Recorre un stream del SDK y lo corta si pasan `ms` sin que llegue un trozo.
+ *
+ * El `timeout` del SDK no cubre esto: se apaga cuando llegan las cabeceras, y
+ * el cuerpo de un stream puede tardar lo que quiera. Con OpenRouter las
+ * cabeceras llegan casi enseguida (manda un 200 y despues comentarios SSE de
+ * "procesando", que el SDK no entrega como trozos), asi que un modelo colgado
+ * dejaba la funcion esperando hasta que la plataforma la mataba, sin respuesta
+ * del buscador ni registro. Ahora esa espera termina en un
+ * `APIConnectionTimeoutError`, que `motivoDeFalla` anota como `timeout`.
+ *
+ * El reloj se para mientras quien consume procesa el trozo: lo que se mide es
+ * al proveedor, no a las herramientas. Para cortar se aborta el controlador
+ * del stream; el SDK termina ese stream en silencio, por eso el error se tira
+ * aca. Si el stream termina por otra senal (la persona se fue), no se tira
+ * nada: eso lo decide quien llama.
+ */
+export async function* cortarSiSeCalla<T>(
+  stream: AsyncIterable<T> & { controller: AbortController },
+  ms: number,
+): AsyncGenerator<T> {
+  let callado = false;
+  let reloj: ReturnType<typeof setTimeout> | undefined;
+  const armar = () => {
+    reloj = setTimeout(() => {
+      callado = true;
+      stream.controller.abort();
+    }, ms);
+  };
+
+  armar();
+  try {
+    for await (const trozo of stream) {
+      clearTimeout(reloj);
+      yield trozo;
+      armar();
+    }
+  } finally {
+    clearTimeout(reloj);
+  }
+  if (callado) {
+    throw new OpenAI.APIConnectionTimeoutError({
+      message: `El proveedor dejó de mandar datos durante ${Math.round(ms / 1000)} s.`,
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tope diario de gasto
 // ---------------------------------------------------------------------------
