@@ -18,6 +18,7 @@ import {
   puedeCambiarEtapa,
   puedeCambiarIdea,
   puedeCargarIdea,
+  puedeDescartarse,
   puedeProclamar,
   seVota,
   votosDeLaEdicion,
@@ -420,6 +421,38 @@ test("sin votos una idea se muda de distrito; quedarse en el mismo no es mudarse
   permitido(puedeCambiarDeDistrito({ votos: 300, ganador: true }, 7, 7));
   // Sin distrito asignado no hay votos de ningun distrito que proteger.
   permitido(puedeCambiarDeDistrito({ votos: 0, ganador: false }, null, 2));
+});
+
+test("una idea con votos no se descarta: sus votos dejarian de contar", () => {
+  // Una pendiente con votos es una idea votada cuya revision se reabrio despues
+  // de la votacion: por su estado, puedeCambiarIdea la deja descartar.
+  const motivo = rechazado(puedeDescartarse({ votos: 7, integradaEn: null, integradas: 0 }));
+  assert.match(motivo, /^Esta idea tiene 7 votos: no es una prueba ni un spam/);
+  assert.match(motivo, /evaluala con su devolución/);
+  assert.match(
+    rechazado(puedeDescartarse({ votos: 1, integradaEn: null, integradas: 0 })),
+    /tiene 1 voto:/,
+  );
+});
+
+test("una idea metida en una integracion no se descarta, para ningun lado", () => {
+  assert.match(
+    rechazado(puedeDescartarse({ votos: 0, integradaEn: { numero: 12 }, integradas: 0 })),
+    /^Esta idea está integrada en la idea #12: antes de descartarla, sacale la integración/,
+  );
+  assert.match(
+    rechazado(puedeDescartarse({ votos: 0, integradaEn: { numero: null }, integradas: 0 })),
+    /^Esta idea está integrada en la idea: /,
+  );
+  assert.match(
+    rechazado(puedeDescartarse({ votos: 0, integradaEn: null, integradas: 1 })),
+    /^Hay una idea integrada en esta/,
+  );
+  assert.match(
+    rechazado(puedeDescartarse({ votos: 0, integradaEn: null, integradas: 3 })),
+    /^Hay 3 ideas integradas en esta/,
+  );
+  permitido(puedeDescartarse({ votos: 0, integradaEn: null, integradas: 0 }));
 });
 
 // ---------------------------------------------------------------------------

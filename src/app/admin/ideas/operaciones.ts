@@ -29,7 +29,12 @@ import { categorias, distritos, ideas, revisiones, votos } from "@/db/schema";
 import { getEdicionActiva } from "@/db/queries";
 import { crearIdea } from "@/lib/alta-idea";
 import { codigoSeguimiento } from "@/lib/avisos";
-import { puedeCambiarDeDistrito, puedeCambiarIdea, puedeCargarIdea } from "@/lib/etapas";
+import {
+  puedeCambiarDeDistrito,
+  puedeCambiarIdea,
+  puedeCargarIdea,
+  puedeDescartarse,
+} from "@/lib/etapas";
 import { formatearFechaCorta } from "@/lib/formato";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import { contenidoIdea, LARGOS, MINIMOS } from "@/lib/idea-esquema";
@@ -661,7 +666,8 @@ const esquemaMotivo = z.object({
  * las cuentas, publicas y del panel (ver src/db/queries.ts).
  *
  * Solo desde borrador o pendiente (`puedeCambiarIdea`): una idea evaluada ya
- * tiene una decision que el vecino puede estar leyendo.
+ * tiene una decision que el vecino puede estar leyendo. Y solo si no tiene
+ * votos ni esta metida en una integracion, para ningun lado (`puedeDescartarse`).
  */
 export async function aplicarDescarte(
   crudo: Record<string, unknown>,
@@ -682,19 +688,36 @@ export async function aplicarDescarte(
     const veredicto = puedeCambiarIdea(vigente.etapa, vigente, { accion: "descartar" });
     if (!veredicto.permitido) return { ok: false, error: veredicto.motivo };
 
-    // Si otras ideas se integraron en esta, descartarla las dejaria apuntando a
-    // una idea que no existe para nadie.
+    // Lo que la idea tiene y no la deja descartar (`puedeDescartarse`): votos,
+    // una integracion en otra, otras integradas en ella. Se lee con la fila ya
+    // bloqueada: un voto (FOR NO KEY UPDATE sobre la idea) o una correccion
+    // (FOR UPDATE) no se cuelan entre esta lectura y el UPDATE.
+    const [propia] = await tx
+      .select({ votos: ideas.votos, integradaEnId: ideas.integradaEnId })
+      .from(ideas)
+      .where(eq(ideas.id, id));
+    const [emitidos] = await tx
+      .select({ total: count() })
+      .from(votos)
+      .where(eq(votos.ideaId, id));
+    let integradaEn: { numero: number | null } | null = null;
+    if (propia && propia.integradaEnId !== null) {
+      const [final] = await tx
+        .select({ numero: ideas.numero })
+        .from(ideas)
+        .where(eq(ideas.id, propia.integradaEnId));
+      integradaEn = { numero: final?.numero ?? null };
+    }
     const [integradas] = await tx
       .select({ total: count() })
       .from(ideas)
       .where(eq(ideas.integradaEnId, id));
-    const cuantas = Number(integradas?.total ?? 0);
-    if (cuantas > 0) {
-      return {
-        ok: false,
-        error: `${cuantas === 1 ? "Hay una idea integrada" : `Hay ${cuantas} ideas integradas`} en esta: antes de descartarla, sacales la integración desde su ficha.`,
-      };
-    }
+    const porLoQueTiene = puedeDescartarse({
+      votos: Math.max(Number(propia?.votos ?? 0), Number(emitidos?.total ?? 0)),
+      integradaEn,
+      integradas: Number(integradas?.total ?? 0),
+    });
+    if (!porLoQueTiene.permitido) return { ok: false, error: porLoQueTiene.motivo };
 
     const ahora = new Date();
     await tx

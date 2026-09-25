@@ -750,6 +750,62 @@ test("una idea con otras integradas no se descarta: quedarian apuntando a la nad
   if (!descarte.ok) assert.match(descarte.error, /Hay una idea integrada en esta/);
 });
 
+test("una idea integrada en otra no se descarta hasta que se le saca la integracion", async () => {
+  // Descartada, seguiria contada entre las integradas de la final (que asi no
+  // se podria descartar ni integrar en otra), y una descartada no se corrige.
+  const principal = await cargar({ titulo: "Final que reune dos veredas" });
+  const repetida = await cargar({ titulo: "Veredas repetidas en la final" });
+  const integrar = await operaciones.aplicarCorreccion(
+    await correccion(repetida.id, { integradaEn: String(principal.id) }),
+    sesion,
+  );
+  assert.ok(integrar.ok, integrar.ok ? "" : integrar.error);
+
+  const descarte = await operaciones.aplicarDescarte(
+    { id: String(repetida.id), motivo: "Carga repetida de la final." },
+    sesion,
+  );
+  assert.equal(descarte.ok, false);
+  if (!descarte.ok) {
+    assert.match(descarte.error, new RegExp(`integrada en la idea #${principal.numero}`));
+  }
+  assert.equal((await filaDe(repetida.id)).estado, "pendiente");
+
+  const suelta = await operaciones.aplicarCorreccion(
+    await correccion(repetida.id, { integradaEn: "" }),
+    sesion,
+  );
+  assert.ok(suelta.ok, suelta.ok ? "" : suelta.error);
+  const ahora = await operaciones.aplicarDescarte(
+    { id: String(repetida.id), motivo: "Carga repetida de la final." },
+    sesion,
+  );
+  assert.ok(ahora.ok, ahora.ok ? "" : ahora.error);
+});
+
+test("una idea con votos no se descarta, aunque este pendiente", async () => {
+  // Es una idea votada cuya revision se reabrio despues de la votacion: por su
+  // estado se podria descartar, pero sus votos saldrian de todas las cuentas.
+  const votada = await crearIdea(base, {
+    edicionId,
+    distrito: 1,
+    titulo: "Proyecto votado y reabierto",
+    slug: "proyecto-votado-y-reabierto",
+    estado: "pendiente",
+    publicada: false,
+    votos: 5,
+  });
+  const descarte = await operaciones.aplicarDescarte(
+    { id: String(votada), motivo: "Spam que alguien reabrió." },
+    sesion,
+  );
+  assert.equal(descarte.ok, false);
+  if (!descarte.ok) assert.match(descarte.error, /tiene 5 votos: no es una prueba ni un spam/);
+  const fila = await filaDe(votada);
+  assert.equal(fila.estado, "pendiente");
+  assert.equal(fila.votos, 5);
+});
+
 test("la accion de publicar rebota una descartada: la politica la frena con la fila bloqueada", async () => {
   const idea = await cargar({ titulo: "Spam que alguien quiere publicar" });
   await operaciones.aplicarDescarte({ id: String(idea.id), motivo: "Spam: no es una propuesta." }, sesion);

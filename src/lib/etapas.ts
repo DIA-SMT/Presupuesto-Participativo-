@@ -403,6 +403,53 @@ export function puedeCambiarDeDistrito(
   return PERMITIDO;
 }
 
+/**
+ * Si una idea se puede descartar por lo que tiene, mas alla de su estado y de la
+ * etapa (eso lo dice `puedeCambiarIdea`: solo borrador o pendiente). Vale en
+ * todas las etapas, y la usan la accion (con la fila bloqueada) y la ficha (para
+ * decirlo antes de que alguien escriba el motivo).
+ *
+ *  - Con votos, no. Una pendiente puede tenerlos: es una idea votada cuya
+ *    revision se reabrio despues de la votacion. No es una prueba ni un spam, y
+ *    descartarla sacaria sus votos de todas las cuentas (las descartadas no
+ *    cuentan en ninguna) mientras sus filas siguen en `votos`. Si no tiene que
+ *    seguir, se evalua, con su devolucion.
+ *  - Integrada en otra, no: quedaria contada entre las integradas de la final,
+ *    que asi no se podria descartar ni integrar en otra, y una descartada no se
+ *    corrige, asi que la integracion no se le podria sacar sin deshacer antes el
+ *    descarte.
+ *  - Con otras integradas en ella, tampoco: quedarian apuntando a una idea que
+ *    no existe para nadie.
+ *
+ * `votos` es el mayor entre el contador y las filas de `votos`, como en
+ * `puedeCambiarDeDistrito`.
+ */
+export function puedeDescartarse(idea: {
+  votos: number;
+  /** La idea final en la que esta integrada, si lo esta. */
+  integradaEn: { numero: number | null } | null;
+  /** Cuantas ideas se integraron en esta. */
+  integradas: number;
+}): Veredicto {
+  if (idea.votos > 0) {
+    return rechazo(
+      `Esta idea tiene ${cantidad(idea.votos, "voto", "votos")}: no es una prueba ni un spam, la votaron vecinos, y descartada sus votos dejarían de contar. Si no tiene que seguir, evaluala con su devolución.`,
+    );
+  }
+  if (idea.integradaEn) {
+    const numero = idea.integradaEn.numero === null ? "" : ` #${idea.integradaEn.numero}`;
+    return rechazo(
+      `Esta idea está integrada en la idea${numero}: antes de descartarla, sacale la integración desde “Corregir la idea”.`,
+    );
+  }
+  if (idea.integradas > 0) {
+    return rechazo(
+      `${idea.integradas === 1 ? "Hay una idea integrada" : `Hay ${formatearNumero(idea.integradas)} ideas integradas`} en esta: antes de descartarla, sacales la integración desde su ficha.`,
+    );
+  }
+  return PERMITIDO;
+}
+
 // ---------------------------------------------------------------------------
 // Ideas que carga el equipo desde el panel
 // ---------------------------------------------------------------------------
