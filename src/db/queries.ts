@@ -1716,71 +1716,9 @@ export type FilaAdmin = {
   createdAt: Date;
 };
 
-/** Cuentas del backoffice. El `passwordHash` no sale nunca de la base. */
-export async function listarAdmins(): Promise<FilaAdmin[]> {
-  return db
-    .select({
-      id: admins.id,
-      email: admins.email,
-      nombre: admins.nombre,
-      rol: admins.rol,
-      activo: admins.activo,
-      ultimoIngreso: admins.ultimoIngreso,
-      createdAt: admins.createdAt,
-    })
-    .from(admins)
-    .orderBy(asc(admins.nombre));
-}
-
-/**
- * Una sola cuenta por id, para la cabecera del panel.
- *
- * Existe para no traer la tabla entera con `listarAdmins()` en cada render de
- * cada pantalla de /admin solo para mostrar el nombre de quien entro. Nunca
- * devuelve `passwordHash`.
- */
-export async function getAdminPorId(id: number): Promise<FilaAdmin | null> {
-  const [fila] = await db
-    .select({
-      id: admins.id,
-      email: admins.email,
-      nombre: admins.nombre,
-      rol: admins.rol,
-      activo: admins.activo,
-      ultimoIngreso: admins.ultimoIngreso,
-      createdAt: admins.createdAt,
-    })
-    .from(admins)
-    .where(eq(admins.id, id))
-    .limit(1);
-  return fila ?? null;
-}
-
-export type FilaBitacora = {
-  id: number;
-  adminNombre: string;
-  objetivoEmail: string;
-  accion: "alta" | "cambio_rol" | "desactivacion" | "reactivacion" | "cambio_password";
-  rolAnterior: RolAdmin | null;
-  rolNuevo: RolAdmin | null;
-  createdAt: Date;
-};
-
-export async function getBitacoraEquipo(limite = 100): Promise<FilaBitacora[]> {
-  return db
-    .select({
-      id: bitacoraEquipo.id,
-      adminNombre: bitacoraEquipo.adminNombre,
-      objetivoEmail: bitacoraEquipo.objetivoEmail,
-      accion: bitacoraEquipo.accion,
-      rolAnterior: bitacoraEquipo.rolAnterior,
-      rolNuevo: bitacoraEquipo.rolNuevo,
-      createdAt: bitacoraEquipo.createdAt,
-    })
-    .from(bitacoraEquipo)
-    .orderBy(desc(bitacoraEquipo.createdAt), desc(bitacoraEquipo.id))
-    .limit(limite);
-}
+// Las consultas de cuentas y de la bitacora del equipo viven con las de
+// /admin/equipo, mas abajo (`getCuentaDeSesion`, `listarCuentasEquipo`,
+// `listarBitacoraEquipo`).
 
 // ---------------------------------------------------------------------------
 // Bitacora del sistema y del contenido publico
@@ -2327,6 +2265,113 @@ export async function getTokensUsadosHoy(): Promise<number> {
 // Equipo del panel (Fase 2)
 // Las consultas de /admin/equipo: cuentas, roles, su bitacora.
 // ---------------------------------------------------------------------------
+
+/**
+ * Lo que la validacion de la sesion del panel necesita de la cuenta: si esta
+ * activa, que version de sesiones tiene, si le falta cambiar la contrasena
+ * provisoria, y el nombre y el rol que muestra la cabecera.
+ *
+ * Es la consulta que corre en CADA pedido del panel (ver `validarTokenAdmin` en
+ * src/lib/sesion.ts), asi que es una sola fila por clave primaria y nada mas.
+ * Nunca trae `passwordHash`: esta fila termina en la cabecera y en las paginas.
+ */
+export type CuentaDeSesion = {
+  id: number;
+  email: string;
+  nombre: string;
+  rol: RolAdmin;
+  activo: boolean;
+  versionSesion: number;
+  debeCambiarPassword: boolean;
+};
+
+export async function getCuentaDeSesion(id: number): Promise<CuentaDeSesion | null> {
+  const [fila] = await db
+    .select({
+      id: admins.id,
+      email: admins.email,
+      nombre: admins.nombre,
+      rol: admins.rol,
+      activo: admins.activo,
+      versionSesion: admins.versionSesion,
+      debeCambiarPassword: admins.debeCambiarPassword,
+    })
+    .from(admins)
+    .where(eq(admins.id, id))
+    .limit(1);
+  return fila ?? null;
+}
+
+/**
+ * Las cuentas para la pantalla de equipo, con `debeCambiarPassword`: quien
+ * administra tiene que ver quien todavia no cambio la provisoria que le
+ * entrego (puede que nunca haya llegado a ingresar).
+ *
+ * Por nombre y nada mas, activas y desactivadas juntas: si las activas fueran
+ * primero, la tarjeta que se acaba de desactivar saltaria al final de la lista
+ * con el mensaje del resultado adentro. Nunca devuelve `passwordHash`.
+ */
+export type CuentaEquipo = FilaAdmin & { debeCambiarPassword: boolean };
+
+export async function listarCuentasEquipo(): Promise<CuentaEquipo[]> {
+  return db
+    .select({
+      id: admins.id,
+      email: admins.email,
+      nombre: admins.nombre,
+      rol: admins.rol,
+      activo: admins.activo,
+      debeCambiarPassword: admins.debeCambiarPassword,
+      ultimoIngreso: admins.ultimoIngreso,
+      createdAt: admins.createdAt,
+    })
+    .from(admins)
+    .orderBy(asc(admins.nombre), asc(admins.id));
+}
+
+/**
+ * Sale del enum del esquema y no de una lista escrita a mano, por lo mismo que
+ * `EstadoIdea`: un valor nuevo en `accion_equipo` llega solo, y el compilador
+ * marca la etiqueta que falta en la pantalla.
+ */
+export type AccionEquipo = (typeof bitacoraEquipo.accion.enumValues)[number];
+
+/**
+ * Un movimiento de la bitacora del equipo, con los dos ids: con ellos la
+ * pantalla distingue a quien cambio SU contrasena de a quien se la restablecio
+ * otra persona, que en la tabla son la misma accion (`cambio_password`).
+ * Cualquiera de los dos puede ser null: la cuenta se borro (`set null`) o el
+ * cambio salio de la consola (scripts/crear-admin.ts).
+ */
+export type MovimientoEquipo = {
+  id: number;
+  adminId: number | null;
+  adminNombre: string;
+  objetivoId: number | null;
+  objetivoEmail: string;
+  accion: AccionEquipo;
+  rolAnterior: RolAdmin | null;
+  rolNuevo: RolAdmin | null;
+  createdAt: Date;
+};
+
+export async function listarBitacoraEquipo(limite = 100): Promise<MovimientoEquipo[]> {
+  return db
+    .select({
+      id: bitacoraEquipo.id,
+      adminId: bitacoraEquipo.adminId,
+      adminNombre: bitacoraEquipo.adminNombre,
+      objetivoId: bitacoraEquipo.objetivoId,
+      objetivoEmail: bitacoraEquipo.objetivoEmail,
+      accion: bitacoraEquipo.accion,
+      rolAnterior: bitacoraEquipo.rolAnterior,
+      rolNuevo: bitacoraEquipo.rolNuevo,
+      createdAt: bitacoraEquipo.createdAt,
+    })
+    .from(bitacoraEquipo)
+    .orderBy(desc(bitacoraEquipo.createdAt), desc(bitacoraEquipo.id))
+    .limit(limite);
+}
 
 // ---------------------------------------------------------------------------
 // Contenido editable (Fase 2)
