@@ -430,9 +430,10 @@ export async function responderSinIA(
       "- *cuántas ideas se presentaron*",
       "- *cómo participo*",
     ].join("\n"),
+    // Con un año en la pregunta, las vistas de esa edicion.
     referencias: [
-      { titulo: "Mapa de distritos", url: "/distritos" },
-      { titulo: "Todos los proyectos", url: "/proyectos" },
+      { titulo: "Mapa de distritos", url: enlace("/distritos") },
+      { titulo: "Todos los proyectos", url: enlace("/proyectos") },
     ],
   };
 }

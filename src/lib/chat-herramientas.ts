@@ -610,36 +610,48 @@ export async function ejecutarHerramienta(
           porDistrito.set(idea.distrito, (porDistrito.get(idea.distrito) ?? 0) + 1);
         }
         const repartidos = oficiales.some((b) => b.distritos.length > 1);
+        const mapa = conEdicion("/distritos", anioEnEnlaces);
+        const numeros = [
+          ...new Set(oficiales.flatMap((b) => b.distritos.map((parte) => parte.distrito))),
+        ];
 
         return {
           contenido: JSON.stringify({
             busqueda: barrio,
             edicion: edicion.anio,
             fuente: "capa oficial de barrios del municipio",
-            barrios: oficiales.map((b) => ({
-              barrio: b.nombre,
-              distrito: b.distritos[0].distrito,
-              ...(b.distritos.length > 1
-                ? {
-                    repartido_entre_distritos: b.distritos.map((p) => ({
-                      distrito: p.distrito,
-                      porcentaje_aproximado_del_barrio: p.porcentaje,
-                    })),
-                  }
-                : {}),
-              ...(b.sectores > 1
-                ? {
-                    aviso_del_nombre:
-                      "en la capa oficial este nombre tiene sectores separados: pueden ser barrios distintos que se llaman igual",
-                  }
-                : {}),
-              ideas_en_el_barrio: ideasDelBarrio(b.feature, ideas).length,
-              ideas_en_el_distrito: b.distritos.map((p) => ({
-                distrito: p.distrito,
-                ideas: porDistrito.get(p.distrito) ?? 0,
-              })),
-              url: conEdicion(`/distritos/${b.distritos[0].distrito}`, anioEnEnlaces),
-            })),
+            barrios: oficiales.map((b) => {
+              // Un barrio repartido NO lleva `distrito`: con el de mas superficie
+              // en ese campo, y su url, el dato decia "queda en el 6" aunque el
+              // aviso de abajo pidiera no elegir uno. Lleva la lista, y la url
+              // es el mapa, que es donde se ubica la cuadra.
+              const repartido = b.distritos.length > 1;
+              return {
+                barrio: b.nombre,
+                ...(repartido
+                  ? {
+                      repartido_entre_distritos: b.distritos.map((p) => ({
+                        distrito: p.distrito,
+                        porcentaje_aproximado_del_barrio: p.porcentaje,
+                      })),
+                    }
+                  : { distrito: b.distritos[0].distrito }),
+                ...(b.sectores > 1
+                  ? {
+                      aviso_del_nombre:
+                        "en la capa oficial este nombre tiene sectores separados: pueden ser barrios distintos que se llaman igual",
+                    }
+                  : {}),
+                ideas_en_el_barrio: ideasDelBarrio(b.feature, ideas).length,
+                ideas_en_el_distrito: b.distritos.map((p) => ({
+                  distrito: p.distrito,
+                  ideas: porDistrito.get(p.distrito) ?? 0,
+                })),
+                url: repartido
+                  ? mapa
+                  : conEdicion(`/distritos/${b.distritos[0].distrito}`, anioEnEnlaces),
+              };
+            }),
             ...(repartidos
               ? {
                   aviso:
@@ -647,16 +659,15 @@ export async function ejecutarHerramienta(
                 }
               : {}),
           }),
+          // Con un barrio repartido, el mapa va entre las tarjetas: es lo que el
+          // aviso manda a mirar (igual que el buscador sin IA).
           referencias: [
-            ...new Map(
-              oficiales
-                .flatMap((b) => b.distritos.map((p) => p.distrito))
-                .map((numero) => [
-                  numero,
-                  { titulo: `Distrito ${numero}`, url: conEdicion(`/distritos/${numero}`, anioEnEnlaces) },
-                ]),
-            ).values(),
-          ].slice(0, 3),
+            ...numeros.slice(0, repartidos ? 2 : 3).map((numero) => ({
+              titulo: `Distrito ${numero}`,
+              url: conEdicion(`/distritos/${numero}`, anioEnEnlaces),
+            })),
+            ...(repartidos ? [{ titulo: "Mapa de distritos", url: mapa }] : []),
+          ],
         };
       }
 
@@ -693,7 +704,8 @@ export async function ejecutarHerramienta(
           aviso:
             "Ese barrio no figura en la capa oficial de barrios ni en las ideas cargadas. No adivinar el distrito: sugerir que la persona lo busque en el mapa de /distritos, donde puede tocar su ubicacion.",
         }),
-        referencias: [{ titulo: "Mapa de distritos", url: "/distritos" }],
+        // El mapa de la edicion pedida: desde la 2025, el de la 2025.
+        referencias: [{ titulo: "Mapa de distritos", url: conEdicion("/distritos", anioEnEnlaces) }],
         sinDatos: true,
       };
     }

@@ -158,6 +158,26 @@ test("ubicar_barrio usa la capa oficial aunque la edicion no tenga ideas ahi", a
   assert.equal(urquiza2025.datos.barrios[0].url, "/distritos/5?edicion=2025");
 });
 
+test("ubicar_barrio no le da un solo distrito a un barrio repartido", async () => {
+  const { datos, referencias } = await herramienta("ubicar_barrio", { barrio: "Villa 9 de Julio" });
+  const [villa] = datos.barrios;
+  assert.match(villa.barrio, /^villa 9 de julio$/i);
+  // Con el distrito de mas superficie en `distrito` el dato decia "queda en el
+  // 6", contra el aviso que pide no elegir uno.
+  assert.equal(villa.distrito, undefined);
+  assert.deepEqual(
+    villa.repartido_entre_distritos.map((p: { distrito: number }) => p.distrito),
+    [6, 5, 8],
+  );
+  assert.equal(villa.url, "/distritos", "la url es el mapa, donde se ubica la cuadra");
+  assert.match(datos.aviso, /No elegir uno/);
+  assert.ok(referencias.some((r) => r.url === "/distritos"));
+
+  // En otra edicion, el mapa de esa edicion.
+  const de2025 = await herramienta("ubicar_barrio", { barrio: "Villa 9 de Julio", edicion: 2025 });
+  assert.equal(de2025.datos.barrios[0].url, "/distritos?edicion=2025");
+});
+
 test("un barrio que no esta en la capa se busca en lo que escribieron los vecinos", async () => {
   // Solo en las ideas publicadas: el barrio de una idea en moderacion es un dato de ella.
   await base.db
@@ -265,6 +285,22 @@ test("sin IA: el barrio se ubica con la capa oficial, y el numero del barrio no 
   // El 9 es parte del nombre: antes contestaba con el distrito 9.
   const nueveDeJulio = await sinIA.responderSinIA("¿En qué distrito queda Villa 9 de Julio?", vigente);
   assert.match(nueveDeJulio.texto, /repartido entre los distritos 6, 5 y 8/);
+});
+
+test("sin IA: las sugerencias del widget siguen contestando lo suyo con dos ediciones", async () => {
+  // "mi distrito" cuenta como pregunta por un lugar: que ningun barrio de la
+  // capa se robe la sugerencia, y que conteste con los ganadores de 2025.
+  const ganador = await sinIA.responderSinIA("¿Qué ganó en mi distrito?", vigente);
+  assert.match(ganador.texto, /2026 todavía no tiene proyectos ganadores/);
+  assert.match(ganador.texto, /Los últimos ganadores son los de la edición 2025/);
+
+  const totales = await sinIA.responderSinIA("¿Cuántas ideas se presentaron?", vigente);
+  assert.match(totales.texto, /\*\*Edición 2026\*\*/);
+  assert.doesNotMatch(totales.texto, /Sin proyecto ganador/, "antes de votar no es un resultado");
+  assert.ok(totales.referencias.some((r) => r.url === "/transparencia?edicion=2025"));
+
+  const participar = await sinIA.responderSinIA("¿Cómo presento una idea?", vigente);
+  assert.match(participar.texto, /formas de participar/);
 });
 
 test("sin IA: el distrito antes de votar no dice 'sin ganador' y nombra el de 2025", async () => {
