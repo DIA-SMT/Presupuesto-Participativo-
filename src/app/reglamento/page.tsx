@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Aviso } from "@/components/ui";
 import { getEdicionActiva, getTextos } from "@/db/queries";
 import { formatearRango } from "@/lib/formato";
+import CuerpoReglamento, { parrafosDelReglamento } from "./cuerpo";
 
 export const metadata: Metadata = {
   title: "Reglamento",
@@ -12,7 +13,10 @@ export const metadata: Metadata = {
 
 export default async function Reglamento() {
   const [textos, edicion] = await Promise.all([getTextos(), getEdicionActiva()]);
-  const reglamento = textos["reglamento-cuerpo"];
+  // Se decide por los parrafos y no por el texto crudo: un cuerpo con solo
+  // espacios o renglones en blanco no es un reglamento, y antes dejaba la
+  // pagina sin el texto y sin el aviso.
+  const parrafos = parrafosDelReglamento(textos["reglamento-cuerpo"]);
 
   return (
     <div className="contenedor py-10 sm:py-14">
@@ -20,12 +24,8 @@ export default async function Reglamento() {
         <h1 className="text-3xl font-bold sm:text-4xl">Reglamento</h1>
       </header>
 
-      {reglamento ? (
-        <div className="mt-6 max-w-3xl space-y-4 text-[0.9375rem] leading-relaxed">
-          {reglamento.split("\n").filter(Boolean).map((parrafo, indice) => (
-            <p key={indice}>{parrafo}</p>
-          ))}
-        </div>
+      {parrafos.length > 0 ? (
+        <CuerpoReglamento parrafos={parrafos} />
       ) : (
         <>
           <div className="mt-6 max-w-3xl">
