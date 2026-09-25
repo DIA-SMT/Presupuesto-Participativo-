@@ -26,7 +26,7 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { admins, ediciones, ideas } from "@/db/schema";
+import { ediciones, ideas } from "@/db/schema";
 import type {
   AccionRevision,
   AccionSistema,
@@ -53,44 +53,69 @@ export type Autorizacion = {
   email: string;
   nombre: string;
   rol: RolAdmin;
+  /**
+   * La version de las sesiones con la que se autorizo. Las acciones del equipo
+   * la vuelven a comparar DENTRO de su transaccion (equipo/cuentas.ts): entre
+   * este chequeo y la escritura, otra persona puede haber cortado la sesion.
+   */
+  version: number;
 };
 
 /**
  * Sesion valida con al menos el rol pedido, o null.
  *
- * El rol y el estado de la cuenta se releen de la base en cada request y NO se
- * toman del JWT de la cookie: el token dura 12 horas, asi que una cuenta
- * desactivada o degradada seguiria escribiendo con el rol viejo hasta que
- * venciera. La cookie prueba quien es; la base dice que puede hacer.
+ * Es la MISMA validacion que usan el layout y las paginas: `getSesionAdmin`
+ * (src/lib/sesion.ts). La cookie prueba quien es y con que version de sus
+ * sesiones entro; la base dice si esa version sigue vigente, si la cuenta esta
+ * activa y que rol tiene. Nada de eso se toma del JWT, que dura 12 horas: una
+ * cuenta dada de baja o degradada seguiria escribiendo hasta que venciera.
+ *
+ * Una sola consulta por accion, la de esa validacion: el rol, el nombre y el
+ * correo salen de la misma fila, y aca no se vuelve a leer nada.
+ *
+ * Con la contrasena provisoria sin cambiar no se escribe nada: la validacion
+ * redirige a /admin/password (en una server action es una navegacion del
+ * cliente). Por eso `exigirAdmin` va siempre ANTES de cualquier try/catch de la
+ * accion, que se tragaria la redireccion. La unica que pasa
+ * `permitirPasswordProvisoria` es la accion que la cambia.
  */
-export async function exigirAdmin(minimo: RolAdmin): Promise<Autorizacion | null> {
-  const sesion = await getSesionAdmin();
+export async function exigirAdmin(
+  minimo: RolAdmin,
+  opciones: { permitirPasswordProvisoria?: boolean } = {},
+): Promise<Autorizacion | null> {
+  const sesion = await getSesionAdmin(opciones);
   if (!sesion) return null;
+  if (JERARQUIA[sesion.rol] < JERARQUIA[minimo]) return null;
 
-  const [fila] = await db
-    .select({
-      id: admins.id,
-      email: admins.email,
-      nombre: admins.nombre,
-      rol: admins.rol,
-      activo: admins.activo,
-    })
-    .from(admins)
-    .where(eq(admins.id, sesion.adminId))
-    .limit(1);
-
-  if (!fila || !fila.activo) return null;
-  if (JERARQUIA[fila.rol] < JERARQUIA[minimo]) return null;
-
-  return { adminId: fila.id, email: fila.email, nombre: fila.nombre, rol: fila.rol };
+  return {
+    adminId: sesion.adminId,
+    email: sesion.email,
+    nombre: sesion.nombre,
+    rol: sesion.rol,
+    version: sesion.version,
+  };
 }
 
+/**
+ * El mensaje cuando `exigirAdmin` devuelve null. Con las sesiones que se cortan
+ * (una baja, un cambio de rol o de contrasena, tambien la propia desde otro
+ * dispositivo) el null ya no significa solamente "no te alcanza el rol", y no
+ * hay forma de saber cual de las dos cosas fue sin otra consulta: el texto
+ * nombra las dos. Sin la segunda frase, un administrador cuya sesion se corto
+ * leia que la accion era "solo para administradores".
+ */
 export function sinPermiso(minimo: RolAdmin): Resultado {
   if (minimo === "admin") {
-    return { ok: false, error: "Esta acción la puede hacer solo un administrador." };
+    return {
+      ok: false,
+      error: "Esta acción la puede hacer solo un administrador. Si tu sesión se cerró, volvé a ingresar.",
+    };
   }
   if (minimo === "moderador") {
-    return { ok: false, error: "Tu sesión no tiene permisos para escribir." };
+    return {
+      ok: false,
+      error: "Tu sesión no tiene permisos para escribir. Si se cerró, volvé a ingresar.",
+    };
   }
   return { ok: false, error: "Tu sesión no está activa. Volvé a ingresar." };
 }

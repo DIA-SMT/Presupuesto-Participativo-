@@ -2328,6 +2328,42 @@ export async function getTokensUsadosHoy(): Promise<number> {
 // Las consultas de /admin/equipo: cuentas, roles, su bitacora.
 // ---------------------------------------------------------------------------
 
+/**
+ * Lo que la validacion de la sesion del panel necesita de la cuenta: si esta
+ * activa, que version de sesiones tiene, si le falta cambiar la contrasena
+ * provisoria, y el nombre y el rol que muestra la cabecera.
+ *
+ * Es la consulta que corre en CADA pedido del panel (ver `validarTokenAdmin` en
+ * src/lib/sesion.ts), asi que es una sola fila por clave primaria y nada mas.
+ * Nunca trae `passwordHash`: esta fila termina en la cabecera y en las paginas.
+ */
+export type CuentaDeSesion = {
+  id: number;
+  email: string;
+  nombre: string;
+  rol: RolAdmin;
+  activo: boolean;
+  versionSesion: number;
+  debeCambiarPassword: boolean;
+};
+
+export async function getCuentaDeSesion(id: number): Promise<CuentaDeSesion | null> {
+  const [fila] = await db
+    .select({
+      id: admins.id,
+      email: admins.email,
+      nombre: admins.nombre,
+      rol: admins.rol,
+      activo: admins.activo,
+      versionSesion: admins.versionSesion,
+      debeCambiarPassword: admins.debeCambiarPassword,
+    })
+    .from(admins)
+    .where(eq(admins.id, id))
+    .limit(1);
+  return fila ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Contenido editable (Fase 2)
 // Las de /admin/contenido: textos, preguntas frecuentes, novedades.

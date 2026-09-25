@@ -22,7 +22,6 @@ import { db } from "@/db";
 import {
   admins,
   avances,
-  bitacoraEquipo,
   bitacoraSistema,
   categorias,
   chatConsultas,
@@ -72,6 +71,7 @@ import {
   sinPermiso,
   type Resultado,
 } from "./comun";
+import { cambiarPasswordPropia } from "./equipo/cuentas";
 
 
 /** Fecha ISO tal como esta guardada, o el texto que la reemplaza si falta. */
@@ -206,8 +206,13 @@ export async function ingresarAdmin(
     .set({ ultimoIngreso: new Date() })
     .where(eq(admins.id, admin.id));
 
-  await crearSesionAdmin({ adminId: admin.id, email: admin.email, rol: admin.rol });
-  redirect("/admin");
+  // En el token va la version de sesiones que la cuenta tiene AHORA: cualquier
+  // baja, cambio de rol o de contrasena posterior la sube y esta sesion se corta
+  // (ver `validarTokenAdmin` en src/lib/sesion.ts).
+  await crearSesionAdmin({ adminId: admin.id, version: admin.versionSesion });
+  // Con una provisoria, derecho a elegir la propia: cualquier otra pantalla lo
+  // mandaria ahi igual, y asi se ahorra el salto.
+  redirect(admin.debeCambiarPassword ? "/admin/password" : "/admin");
 }
 
 export async function salirAdmin(): Promise<void> {
@@ -217,14 +222,20 @@ export async function salirAdmin(): Promise<void> {
 
 /**
  * Cambio de la propia contrasena. Pide la actual, salvo cuando la cuenta esta
- * marcada con `debeCambiarPassword` (la eligio otra persona al crear la cuenta,
- * asi que exigirla no protegeria nada).
+ * marcada con `debeCambiarPassword` (la eligio otra persona al crear la cuenta
+ * o al restablecerla, asi que exigirla no protegeria nada).
+ *
+ * Cierra las OTRAS sesiones de la cuenta: sube la version de sesiones y a este
+ * navegador le reemite la cookie con la nueva, asi quien la cambio sigue
+ * adentro. Tambien apaga `debeCambiarPassword`, que es lo que libera el resto
+ * del panel a quien entro con una provisoria.
  */
 export async function cambiarMiPassword(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  const sesion = await exigirAdmin("lector");
+  // La unica accion que se deja usar con la provisoria: es la que la reemplaza.
+  const sesion = await exigirAdmin("lector", { permitirPasswordProvisoria: true });
   if (!sesion) return sinPermiso("lector");
 
   const actual = String(formulario.get("actual") ?? "");
@@ -262,22 +273,25 @@ export async function cambiarMiPassword(
   }
 
   const hash = await hashearPassword(nueva);
-  await db.transaction(async (tx) => {
-    await tx
-      .update(admins)
-      .set({ passwordHash: hash, debeCambiarPassword: false })
-      .where(eq(admins.id, sesion.adminId));
-    await tx.insert(bitacoraEquipo).values({
-      adminId: sesion.adminId,
-      adminNombre: sesion.nombre,
-      objetivoId: sesion.adminId,
-      objetivoEmail: sesion.email,
-      accion: "cambio_password",
-    });
-  });
+  // La escritura (con su fila de bitacora) solo prospera si la cuenta sigue
+  // activa y con la version de esta sesion: si en el medio alguien la desactivo
+  // o le restablecio la contrasena, gana lo que hizo esa persona.
+  const version = await cambiarPasswordPropia(sesion, hash);
+  if (version === null) {
+    return {
+      ok: false,
+      error: "Tu sesión se cerró mientras cambiabas la contraseña. Volvé a ingresar.",
+    };
+  }
+  await crearSesionAdmin({ adminId: sesion.adminId, version });
 
   revalidatePath("/", "layout");
-  return { ok: true, mensaje: "Contraseña actualizada." };
+  return {
+    ok: true,
+    mensaje: cuenta.debeCambiarPassword
+      ? "Listo: ya tenés tu contraseña y el panel está disponible."
+      : "Contraseña actualizada. Si tenías el panel abierto en otro dispositivo, esa sesión se cerró.",
+  };
 }
 
 // ---------------------------------------------------------------------------
