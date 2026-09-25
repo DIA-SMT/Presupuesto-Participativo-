@@ -190,10 +190,20 @@ export default async function Proyectos({ searchParams }: Props) {
                 alto="28rem"
                 edicionEnEnlaces={anioEnEnlaces}
               />
-              <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-                <span>Los puntos grandes con halo dorado son los proyectos ganadores.</span>
-                <span>Los puntos con borde punteado tienen ubicación aproximada.</span>
-              </p>
+              {/* Cada aclaracion, solo si el mapa tiene puntos de ese tipo: con una
+                  edicion que todavia no voto, hablar de "los proyectos ganadores"
+                  era explicar algo que no esta en el mapa. */}
+              {(conPunto.some((idea) => idea.ganador) ||
+                conPunto.some((idea) => idea.ubicacionAproximada)) && (
+                <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: "var(--texto-suave)" }}>
+                  {conPunto.some((idea) => idea.ganador) && (
+                    <span>Los puntos grandes con halo dorado son los proyectos ganadores.</span>
+                  )}
+                  {conPunto.some((idea) => idea.ubicacionAproximada) && (
+                    <span>Los puntos con borde punteado tienen ubicación aproximada.</span>
+                  )}
+                </p>
+              )}
             </div>
           )}
 

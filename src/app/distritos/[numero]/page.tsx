@@ -116,10 +116,15 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
 
       <dl className="mt-8 grid gap-3 sm:grid-cols-3">
         <Dato valor={String(distrito.ideas.length)} etiqueta="ideas presentadas" />
-        <Dato
-          valor={ganador ? formatearNumero(ganador.votos) : "—"}
-          etiqueta="votos del proyecto ganador"
-        />
+        {/* Recien cuando la votacion termino: antes, "—" en "votos del proyecto
+            ganador" se leia como un distrito que se quedo sin nada. Despues si:
+            es el distrito que quedo sin ganador. */}
+        {votacionTerminada(edicion.etapa) && (
+          <Dato
+            valor={ganador ? formatearNumero(ganador.votos) : "—"}
+            etiqueta="votos del proyecto ganador"
+          />
+        )}
         {/*
           El tercer dato grande del distrito era "estado de la obra", y mostraba
           el `preparacion` que ponia el ETL por defecto: un dato inventado con el
@@ -219,7 +224,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
           {/* Una edicion recien abierta no tiene ideas: "0 de las 0" no dice nada. */}
           {distrito.ideas.length === 0
             ? `Todavía no hay ideas presentadas en este distrito en la edición ${edicion.anio}.`
-            : `${conPunto.length} de las ${distrito.ideas.length} ideas tienen una ubicación en el mapa. Los puntos con borde punteado son aproximados: esas ideas se cargaron sin coordenada y se ubican en el centro del distrito.`}
+            : `${conPunto.length} de las ${distrito.ideas.length} ideas tienen una ubicación en el mapa. Los puntos con borde punteado son aproximados: no marcan el lugar exacto de la obra.`}
         </p>
         <div className="mt-4">
           <Mapa
@@ -255,7 +260,8 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
       <section className="mt-12">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <h2 className="text-xl font-bold">
-            Las otras ideas del distrito ({otras.length})
+            {/* "Las otras" solo si arriba hay un ganador del que son las otras. */}
+            {ganador ? "Las otras ideas del distrito" : "Las ideas del distrito"} ({otras.length})
           </h2>
           <div className="flex flex-wrap gap-2">
             {[...porEstado.entries()].map(([estado, cantidad]) => (
@@ -276,7 +282,11 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
           </div>
         ) : (
           <div className="mt-5">
-            <Vacio>No hay otras ideas cargadas para este distrito.</Vacio>
+            <Vacio>
+              {ganador
+                ? "No hay otras ideas cargadas para este distrito."
+                : "Todavía no hay ideas publicadas en este distrito."}
+            </Vacio>
           </div>
         )}
       </section>

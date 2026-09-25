@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import heroImagen from "../../public/images/presupuesto-participativo/hero-mapa-distritos.png";
 import heroImagenOscura from "../../public/images/presupuesto-participativo/hero-mapa-distritos-oscuro.webp";
+import type { AccionPortada } from "@/lib/portada";
 
 /**
  * Portada de la home.
@@ -41,6 +42,10 @@ import heroImagenOscura from "../../public/images/presupuesto-participativo/hero
  *
  * Es un componente de servidor: la animacion de entrada es CSS y no necesita
  * JavaScript. El mismo patron que usa el mapa para sus estilos propios.
+ *
+ * Los botones y la linea del momento dependen de la etapa y los decide
+ * `portadaSegunEtapa` (src/lib/portada.ts): eran fijos, y ofrecian presentar
+ * ideas y votar con la carga y la votacion cerradas.
  */
 
 /** Los tres indicadores describen el programa; no son estadisticas. */
@@ -50,7 +55,15 @@ const INDICADORES = [
   "Proyectos para la comunidad",
 ];
 
-export default function HeroInicio() {
+export default function HeroInicio({
+  momento,
+  principal,
+  secundaria,
+}: {
+  momento: string;
+  principal: AccionPortada;
+  secundaria: AccionPortada;
+}) {
   return (
     <section aria-labelledby="hero-titulo" className="hero">
       {/*
@@ -72,12 +85,17 @@ export default function HeroInicio() {
             que querés ver realizadas.
           </p>
 
+          <p className="hero-momento">
+            <span aria-hidden="true" className="hero-punto" />
+            {momento}
+          </p>
+
           <div className="hero-acciones">
-            <Link href="/ideas/nueva" className="hero-boton hero-boton-principal">
-              Presentar un proyecto
+            <Link href={principal.href} className="hero-boton hero-boton-principal">
+              {principal.texto}
             </Link>
-            <Link href="/proyectos" className="hero-boton hero-boton-secundario">
-              Ver proyectos y votar
+            <Link href={secundaria.href} className="hero-boton hero-boton-secundario">
+              {secundaria.texto}
             </Link>
           </div>
 
@@ -385,7 +403,21 @@ const estilos = `
   color: var(--texto-suave);
 }
 
-.hero-acciones { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; }
+/* El momento del proceso: en el color del texto y no en el suave, porque es lo
+   unico del bloque que cambia y lo que explica los botones de abajo. */
+.hero-momento {
+  margin-top: 1.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--texto);
+}
+.hero-momento .hero-punto { transform: translateY(-0.15em); }
+
+.hero-acciones { margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem; }
 
 .hero-boton {
   display: inline-flex;
@@ -448,6 +480,7 @@ const estilos = `
 .hero-texto > *:nth-child(3) { animation-delay: 140ms; }
 .hero-texto > *:nth-child(4) { animation-delay: 210ms; }
 .hero-texto > *:nth-child(5) { animation-delay: 280ms; }
+.hero-texto > *:nth-child(6) { animation-delay: 350ms; }
 .hero-lienzo { animation-name: hero-entra; animation-delay: 100ms; }
 
 @keyframes hero-sube {
