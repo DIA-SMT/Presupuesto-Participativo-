@@ -1,30 +1,45 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import AvisoEdicion from "@/components/AvisoEdicion";
 import Mapa from "@/components/Mapa";
 import { Chip, Vacio } from "@/components/ui";
-import { getDistritos, getEdicionActiva, getTextos } from "@/db/queries";
+import { getDistritos, getTextos } from "@/db/queries";
+import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
+import { conEdicion, votacionTerminada } from "@/lib/ediciones";
 import { colorCategoria, formatearNumero } from "@/lib/formato";
 
-export const metadata: Metadata = {
-  title: "Distritos",
-  description:
-    "Los 20 distritos de San Miguel de Tucumán. Tocá tu distrito para ver las ideas presentadas y el proyecto ganador.",
-};
+const DESCRIPCION =
+  "Los 20 distritos de San Miguel de Tucumán. Tocá tu distrito para ver las ideas presentadas y el proyecto ganador.";
 
-export default async function Distritos() {
-  const edicion = await getEdicionActiva();
-  if (!edicion) {
+type Props = { searchParams: Promise<{ edicion?: string | string[] }> };
+
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
+  const { edicion } = await searchParams;
+  const resuelta = await resolverEdicion(edicion).catch(() => null);
+  return { title: tituloConEdicion("Distritos", resuelta), description: DESCRIPCION };
+}
+
+export default async function Distritos({ searchParams }: Props) {
+  const vista = await edicionDeLaPagina((await searchParams).edicion);
+  if (!vista) {
     return (
       <div className="contenedor py-20">
         <Vacio>Todavía no hay una edición cargada.</Vacio>
       </div>
     );
   }
+  const { edicion, anioEnEnlaces } = vista;
 
   const [textos, distritos] = await Promise.all([getTextos(), getDistritos(edicion.id)]);
+  // Antes de que termine la votacion no hay ganadores, y "sin proyecto ganador"
+  // en las 20 tarjetas de una edicion recien abierta se leia como que ningun
+  // distrito habia elegido nada.
+  const yaVoto = votacionTerminada(edicion.etapa);
 
   return (
     <div className="contenedor py-10 sm:py-14">
+      <AvisoEdicion vista={vista} hrefActual="/distritos" />
+
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold sm:text-4xl">
           {textos["distritos-titulo"] ?? "Distritos"}
@@ -45,6 +60,7 @@ export default async function Distritos() {
             etiquetaGanador: d.ganador?.titulo ?? null,
           }))}
           alto="34rem"
+          edicionEnEnlaces={anioEnEnlaces}
         />
       </div>
 
@@ -52,7 +68,7 @@ export default async function Distritos() {
         {distritos.map((distrito) => (
           <li key={distrito.numero}>
             <Link
-              href={`/distritos/${distrito.numero}`}
+              href={conEdicion(`/distritos/${distrito.numero}`, anioEnEnlaces)}
               className="superficie group flex h-full flex-col rounded-2xl p-5 transition hover:shadow-lg"
               style={{
                 borderLeft: `4px solid ${
@@ -100,7 +116,9 @@ export default async function Distritos() {
                   </>
                 ) : (
                   <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-                    Sin proyecto ganador en esta edición.
+                    {yaVoto
+                      ? "Sin proyecto ganador en esta edición."
+                      : "El proyecto ganador se elige en la votación."}
                   </p>
                 )}
               </div>

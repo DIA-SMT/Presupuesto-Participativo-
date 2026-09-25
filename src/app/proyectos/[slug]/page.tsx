@@ -1,15 +1,19 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import AvisoEdicion from "@/components/AvisoEdicion";
 import Mapa from "@/components/Mapa";
 import { Chip, ChipEstado, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
   getAvances,
-  getEdicionActiva,
+  getEdicionParaVer,
   getIdea,
   listarIdeas,
   ordenDeIdeasPara,
 } from "@/db/queries";
+import { vistaDe, type VistaDeEdicion } from "@/lib/edicion-en-vista";
+import { conEdicion, leerAnioPedido } from "@/lib/ediciones";
 import {
   DESCRIPCION_ESTADO,
   ETAPAS_PRESUPUESTO,
@@ -21,42 +25,85 @@ import {
   recortar,
 } from "@/lib/formato";
 
-type Props = { params: Promise<{ slug: string }> };
+type Props = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ edicion?: string | string[] }>;
+};
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug } = await params;
-  const idea = await getIdea(slug).catch(() => null);
-  if (!idea) return { title: "Proyecto no encontrado" };
+/**
+ * La idea y la edicion en la que se la esta viendo, o null si no hay ficha
+ * (404). Con `?edicion=AAAA`, esa edicion y ninguna otra; sin el parametro,
+ * lo que decide `getIdea`: la activa y, si el slug no esta ahi, la edicion mas
+ * reciente que lo tenga.
+ *
+ * `cache` porque la piden `generateMetadata` y la pagina en el mismo pedido.
+ * No llama a `notFound()`: en `generateMetadata` un catch se lo tragaria, asi
+ * que el 404 lo decide la pagina.
+ */
+const cargarFicha = cache(
+  async (
+    slug: string,
+    valorEdicion: string | string[] | undefined,
+  ): Promise<{ idea: NonNullable<Awaited<ReturnType<typeof getIdea>>>; vista: VistaDeEdicion } | null> => {
+    const pedido = leerAnioPedido(valorEdicion);
+    if (pedido.tipo === "invalido") return null;
+
+    const pedida = pedido.tipo === "anio" ? await getEdicionParaVer(pedido.anio) : null;
+    if (pedido.tipo === "anio" && !pedida) return null;
+
+    const idea = await getIdea(slug, pedida?.id ?? null);
+    if (!idea) return null;
+
+    // Sin parametro, la edicion es la de la idea que encontro `getIdea`.
+    const edicion = pedida ?? (await getEdicionParaVer(idea.anio));
+    if (!edicion) return null;
+    return { idea, vista: vistaDe(edicion) };
+  },
+);
+
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+  const [{ slug }, { edicion }] = await Promise.all([params, searchParams]);
+  const ficha = await cargarFicha(slug, edicion).catch(() => null);
+  if (!ficha) return { title: "Proyecto no encontrado" };
+  const { idea, vista } = ficha;
   return {
-    title: idea.titulo,
+    title: vista.edicion.activa ? idea.titulo : `${idea.titulo} · Edición ${idea.anio}`,
     description: recortar(
       idea.problema ?? idea.solucion ?? `Proyecto del Distrito ${idea.distrito}.`,
       160,
     ),
+    // Una ficha de otra edicion tiene su propia URL: con `?edicion`. Sin esto,
+    // /proyectos/<slug> y /proyectos/<slug>?edicion=2025 podian ser la misma
+    // pagina o dos distintas segun que edicion este activa, y un buscador no
+    // tenia como saber cual es la de cada idea. La de la activa va sin
+    // parametro, aunque se haya llegado con `?edicion=` de la activa.
+    alternates: { canonical: conEdicion(`/proyectos/${idea.slug}`, vista.anioEnEnlaces) },
   };
 }
 
-export default async function PaginaProyecto({ params }: Props) {
-  const { slug } = await params;
-  const idea = await getIdea(slug);
-  if (!idea) notFound();
+export default async function PaginaProyecto({ params, searchParams }: Props) {
+  const [{ slug }, { edicion: valorEdicion }] = await Promise.all([params, searchParams]);
+  const ficha = await cargarFicha(slug, valorEdicion);
+  if (!ficha) notFound();
+  const { idea, vista } = ficha;
+  const { edicion, anioEnEnlaces } = vista;
 
   const colorDeCategoria = colorCategoria(idea.categoriaSlug, idea.categoriaColor);
 
-  const edicion = await getEdicionActiva();
   const avances = idea.ganador ? await getAvances(idea.id) : [];
+  // Las otras ideas del distrito son de la MISMA edicion que la ficha. Antes se
+  // pedian a la activa: con la 2026 activa, la ficha de un ganador 2025 ofrecia
+  // como "otras ideas del distrito" las de 2026.
   // Mientras se vota, alfabetico como en /proyectos y en la boleta: por votos,
   // "otros proyectos del distrito" eran justo los cuatro que van ganando.
-  const relacionadas = edicion
-    ? (
-        await listarIdeas({
-          edicionId: edicion.id,
-          distrito: idea.distrito,
-          limite: 4,
-          orden: ordenDeIdeasPara(edicion.etapa),
-        })
-      ).filter((otra) => otra.slug !== idea.slug)
-    : [];
+  const relacionadas = (
+    await listarIdeas({
+      edicionId: edicion.id,
+      distrito: idea.distrito,
+      limite: 4,
+      orden: ordenDeIdeasPara(edicion.etapa),
+    })
+  ).filter((otra) => otra.slug !== idea.slug);
 
   const secciones = [
     { titulo: "El problema", texto: idea.problema },
@@ -67,12 +114,14 @@ export default async function PaginaProyecto({ params }: Props) {
 
   return (
     <div className="contenedor py-10 sm:py-14">
+      <AvisoEdicion vista={vista} hrefActual="/proyectos" />
+
       <nav aria-label="Camino de navegación" className="text-sm" style={{ color: "var(--texto-suave)" }}>
-        <Link href="/proyectos" className="hover:underline">
+        <Link href={conEdicion("/proyectos", anioEnEnlaces)} className="hover:underline">
           Proyectos
         </Link>
         <span aria-hidden="true"> / </span>
-        <Link href={`/distritos/${idea.distrito}`} className="hover:underline">
+        <Link href={conEdicion(`/distritos/${idea.distrito}`, anioEnEnlaces)} className="hover:underline">
           Distrito {idea.distrito}
         </Link>
       </nav>
@@ -262,7 +311,7 @@ export default async function PaginaProyecto({ params }: Props) {
             </h2>
             <dl className="mt-3 space-y-3 text-sm">
               <Fila etiqueta="Distrito">
-                <Link href={`/distritos/${idea.distrito}`} className="underline">
+                <Link href={conEdicion(`/distritos/${idea.distrito}`, anioEnEnlaces)} className="underline">
                   Distrito {idea.distrito}
                 </Link>
               </Fila>
@@ -319,6 +368,7 @@ export default async function PaginaProyecto({ params }: Props) {
                 ]}
                 mostrarEtiquetas={false}
                 alto="18rem"
+                edicionEnEnlaces={anioEnEnlaces}
               />
               {idea.ubicacionAproximada && (
                 <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
@@ -336,7 +386,7 @@ export default async function PaginaProyecto({ params }: Props) {
           <h2 className="text-xl font-bold">Otras ideas del Distrito {idea.distrito}</h2>
           <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {relacionadas.slice(0, 3).map((otra) => (
-              <TarjetaProyecto key={otra.slug} idea={otra} />
+              <TarjetaProyecto key={otra.slug} idea={otra} edicionEnEnlaces={anioEnEnlaces} />
             ))}
           </div>
         </section>

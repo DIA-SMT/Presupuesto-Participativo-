@@ -16,6 +16,7 @@ import {
 
   isNull,
   like,
+  ne,
   or,
   sql,
   type SQLWrapper,
@@ -536,17 +537,44 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
   return filtro.limite ? ordenadas.slice(0, filtro.limite) : ordenadas;
 }
 
+/**
+ * La ficha de una idea por su slug.
+ *
+ * El slug es unico DENTRO de una edicion (`ideas_edicion_slug_idx`), no entre
+ * ediciones: una idea 2026 puede repetir el titulo, y el slug, de una 2025. Por
+ * eso la edicion es parte de la busqueda:
+ *
+ *  - con `edicionId`: esa edicion y ninguna otra;
+ *  - sin `edicionId`: la edicion ACTIVA, y si el slug no esta ahi, la edicion
+ *    mas reciente que lo tenga. Asi los enlaces viejos (/proyectos/<slug>, sin
+ *    edicion, compartidos cuando la 2025 era la activa) siguen abriendo su
+ *    ficha despues de que se active otra.
+ *
+ * Antes no habia orden: con el slug repetido devolvia una cualquiera de las dos
+ * y la otra no se podia abrir de ninguna manera.
+ */
 export async function getIdea(
   slug: string,
-  filtro: { edicionId?: number; incluirNoPublicadas?: boolean } = {},
+  edicionId?: number | null,
+  opciones: { incluirNoPublicadas?: boolean } = {},
 ) {
   const condiciones = [eq(ideas.slug, slug)];
-  if (filtro.edicionId) condiciones.push(eq(ideas.edicionId, filtro.edicionId));
+  if (edicionId !== null && edicionId !== undefined) {
+    condiciones.push(eq(ideas.edicionId, edicionId));
+  }
   // Mismo criterio que listarIdeas: una idea sin publicar no existe para el
   // sitio ni para el chatbot. Sin este filtro, una idea recien enviada por el
   // formulario publico ya era visible en /proyectos/<slug>. El backoffice pide
   // incluirNoPublicadas de forma explicita.
-  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true));
+  //
+  // Una descartada (prueba, spam, carga repetida) tampoco, aunque quedara
+  // publicada por error: el descarte la despublica, y esta es la segunda
+  // barrera. Aca importa doble, porque la busqueda cruza ediciones: una
+  // descartada de la activa con el slug de un ganador 2025 no puede tapar al
+  // ganador, igual que una sin publicar.
+  if (!opciones.incluirNoPublicadas) {
+    condiciones.push(eq(ideas.publicada, true), ne(ideas.estado, "descartado"));
+  }
 
   const [fila] = await db
     .select({ ...camposIdea, notasMigracion: ideas.notasMigracion })
@@ -555,6 +583,10 @@ export async function getIdea(
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(and(...condiciones))
+    // Con edicion pedida hay una sola fila posible. Sin ella: la activa primero
+    // y, si no esta ahi, la mas reciente. Los filtros de arriba van antes del
+    // orden: una idea sin publicar en la activa no tapa a la publicada de otra.
+    .orderBy(desc(ediciones.activa), desc(ediciones.anio))
     .limit(1);
 
   if (!fila) return null;
@@ -2488,4 +2520,330 @@ export const NOVEDADES_EN_PORTADA = 3;
 // ---------------------------------------------------------------------------
 // Ediciones anteriores (Fase 2)
 // Que una edicion pasada siga navegable con otra activa.
+//
+// Todo el sitio publico lee la edicion activa y la base admite una sola. Al
+// activar una nueva, la anterior no se borra, pero sin estas consultas quedaba
+// fuera de la navegacion, del sitemap y del chat, y sus ganadores son justo las
+// obras que se estan ejecutando. La forma de pedir otra edicion es
+// `?edicion=AAAA` (src/lib/ediciones.ts) y se resuelve con `getEdicionParaVer`.
+//
+// Todas las de esta seccion que leen ideas son publicas (paginas, sitemap,
+// chat) y dejan afuera, ademas de las sin publicar, las DESCARTADAS (estado
+// "descartado", migracion 0012): una prueba o un spam no es una idea del
+// archivo, ni una ficha del sitemap, ni el barrio de nadie. El descarte ya la
+// despublica; el filtro por estado es la segunda barrera, la misma que llevan
+// las demas consultas publicas, para el dia en que una quede publicada por una
+// carga a mano o un script.
 // ---------------------------------------------------------------------------
+
+/**
+ * Una edicion tal como la muestra una pagina publica: la activa o la pedida.
+ */
+export type EdicionEnVista = Edicion & {
+  /** Si es la activa: sin aviso de edicion anterior y sin `?edicion` en los enlaces. */
+  activa: boolean;
+  /**
+   * El año de la edicion activa, o null si no hay ninguna. El aviso de edicion
+   * anterior ofrece "Ver la edición actual" solo si hay una a la que ir.
+   */
+  anioActiva: number | null;
+};
+
+/**
+ * La edicion que pide una pagina publica, los datos abiertos o el chat. Es la
+ * UNICA forma de resolverla, para que "que edicion se esta mirando" se decida
+ * igual en todos lados:
+ *
+ *  - `anio` null: la edicion activa, como siempre. null si no hay activa.
+ *  - `anio` con valor: la edicion de ese año, este activa o no. null si no
+ *    existe (las paginas responden 404).
+ *
+ * Una sola consulta trae la pedida y la activa, porque el aviso de edicion
+ * anterior necesita saber las dos cosas.
+ */
+export async function getEdicionParaVer(anio: number | null): Promise<EdicionEnVista | null> {
+  const filas = await db
+    .select({
+      id: ediciones.id,
+      anio: ediciones.anio,
+      etapa: ediciones.etapa,
+      votacionDesde: ediciones.votacionDesde,
+      votacionHasta: ediciones.votacionHasta,
+      ideasDesde: ediciones.ideasDesde,
+      ideasHasta: ediciones.ideasHasta,
+      activa: ediciones.activa,
+    })
+    .from(ediciones)
+    .where(
+      anio === null
+        ? eq(ediciones.activa, true)
+        : or(eq(ediciones.activa, true), eq(ediciones.anio, anio)),
+    );
+
+  const activa = filas.find((fila) => fila.activa) ?? null;
+  const pedida = anio === null ? activa : (filas.find((fila) => fila.anio === anio) ?? null);
+  if (!pedida) return null;
+  return { ...pedida, activa: Boolean(pedida.activa), anioActiva: activa?.anio ?? null };
+}
+
+export type EdicionDelArchivo = {
+  id: number;
+  anio: number;
+  etapa: EtapaEdicion;
+  activa: boolean;
+  /**
+   * Ideas PUBLICADAS y no descartadas: las que el sitio muestra. Distinto de
+   * `getEdiciones`, que es del panel y cuenta todas; aca una edicion con ideas
+   * cargadas pero ninguna publicada no tiene nada para ver.
+   */
+  ideas: number;
+  /** Proyectos ganadores publicados. */
+  ganadores: number;
+};
+
+/**
+ * Todas las ediciones, de la mas nueva a la mas vieja, con lo que tiene cada
+ * una para ver. La usan /archivo (que no muestra como navegable una edicion sin
+ * ideas) y el chat (que ofrece otra edicion cuando en la pedida no hay nada).
+ */
+export async function getArchivoDeEdiciones(): Promise<EdicionDelArchivo[]> {
+  const filas = await consultar<{
+    id: number;
+    anio: number;
+    etapa: EtapaEdicion;
+    activa: boolean;
+    ideas: number;
+    ganadores: number;
+  }>(sql`
+    SELECT e.id,
+           e.anio,
+           e.etapa,
+           e.activa,
+           count(i.id) FILTER (WHERE i.publicada)::int              AS ideas,
+           count(i.id) FILTER (WHERE i.publicada AND i.ganador)::int AS ganadores
+      FROM ediciones e
+      LEFT JOIN ideas i ON i.edicion_id = e.id AND i.estado <> 'descartado'
+     GROUP BY e.id, e.anio, e.etapa, e.activa
+     ORDER BY e.anio DESC
+  `);
+
+  return filas.map((f) => ({
+    id: Number(f.id),
+    anio: Number(f.anio),
+    etapa: f.etapa,
+    activa: Boolean(f.activa),
+    ideas: Number(f.ideas),
+    ganadores: Number(f.ganadores),
+  }));
+}
+
+export type FichaPublicada = {
+  slug: string;
+  anio: number;
+  /** Si es de la edicion activa: su URL va sin `?edicion`. */
+  activa: boolean;
+};
+
+/**
+ * Las fichas publicadas de TODAS las ediciones, para el sitemap. La activa
+ * primero. El mismo slug puede aparecer en dos ediciones: son dos fichas, y
+ * cada una tiene su URL (la de la activa sin parametro, la otra con su año).
+ */
+export async function getFichasPublicadas(): Promise<FichaPublicada[]> {
+  const filas = await db
+    .select({ slug: ideas.slug, anio: ediciones.anio, activa: ediciones.activa })
+    .from(ideas)
+    .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
+    .where(and(eq(ideas.publicada, true), ne(ideas.estado, "descartado")))
+    .orderBy(desc(ediciones.activa), desc(ediciones.anio), asc(ideas.id));
+
+  return filas.map((f) => ({ slug: f.slug, anio: Number(f.anio), activa: Boolean(f.activa) }));
+}
+
+export type GanadorEnObra = {
+  slug: string;
+  titulo: string;
+  distrito: number | null;
+  votos: number;
+  categoriaNombre: string | null;
+  /**
+   * La etapa de la obra (`estado_presupuesto`: preparacion, contratacion,
+   * ejecucion, finalizado), SOLO si el municipio publico al menos un avance.
+   * Sin avances es null, y quien la muestre tiene que decir que no hay
+   * informacion: en los 19 ganadores migrados la columna dice "preparacion"
+   * porque es el valor que les puso el ETL, no porque alguien lo haya
+   * informado (ver la seccion "Avance de la obra" de /proyectos/[slug]).
+   */
+  estadoObra: string | null;
+  /** Avances publicados de la obra. */
+  avancesPublicados: number;
+  /** Fecha (AAAA-MM-DD) del ultimo avance publicado, o null si no hay ninguno. */
+  ultimoAvance: string | null;
+};
+
+export type EdicionConGanadores = {
+  id: number;
+  anio: number;
+  etapa: EtapaEdicion;
+  /** Puede ser la activa, si la activa ya termino de votar. */
+  activa: boolean;
+  /** Uno por distrito como maximo, ordenados por numero de distrito. */
+  ganadores: GanadorEnObra[];
+};
+
+/**
+ * La ultima edicion que ya termino de votar y tiene ganadores publicados, con
+ * sus ganadores. Es "lo que se esta ejecutando": con una edicion nueva recien
+ * abierta (en ideas, evaluacion o votacion) la activa todavia no tiene
+ * ganadores, y lo unico que hay para seguir son las obras de la anterior.
+ *
+ * "Termino de votar" es etapa "seguimiento" o "cerrada" (`votacionTerminada` en
+ * src/lib/ediciones.ts, el mismo corte que `puedeProclamar`). "La ultima" es la
+ * de año mas alto entre esas. No excluye a la activa: si la activa ya voto y
+ * proclamo, la ultima con ganadores es ella, y quien llama compara `activa` o
+ * `anio` con la edicion que esta mostrando.
+ *
+ * null si ninguna edicion termino de votar con ganadores publicados.
+ *
+ * Es la consulta que necesitan las paginas que se adaptan a la etapa (la
+ * portada, sobre todo, cuando la activa todavia no voto). Hoy la usan
+ * /transparencia, /distritos/[numero], /proyectos cuando la edicion no tiene
+ * ideas, y el chat.
+ */
+export async function getUltimaEdicionTerminadaConGanadores(): Promise<EdicionConGanadores | null> {
+  const filas = await consultar<{
+    edicion_id: number;
+    anio: number;
+    etapa: EtapaEdicion;
+    activa: boolean;
+    slug: string;
+    titulo: string;
+    votos: number;
+    distrito: number | null;
+    categoria: string | null;
+    estado_presupuesto: string;
+    avances: number;
+    ultimo_avance: string | null;
+  }>(sql`
+    WITH ultima AS (
+      SELECT e.id
+        FROM ediciones e
+       WHERE e.etapa IN ('seguimiento', 'cerrada')
+         AND EXISTS (
+           SELECT 1 FROM ideas g
+            WHERE g.edicion_id = e.id AND g.ganador AND g.publicada
+              AND g.estado <> 'descartado'
+         )
+       ORDER BY e.anio DESC
+       LIMIT 1
+    )
+    SELECT e.id     AS edicion_id,
+           e.anio,
+           e.etapa,
+           e.activa,
+           i.slug,
+           i.titulo,
+           i.votos,
+           d.numero AS distrito,
+           c.nombre AS categoria,
+           i.estado_presupuesto,
+           (SELECT count(*) FROM avances a
+             WHERE a.idea_id = i.id AND a.publicado)::int  AS avances,
+           (SELECT max(a.fecha) FROM avances a
+             WHERE a.idea_id = i.id AND a.publicado)::text AS ultimo_avance
+      FROM ultima u
+      JOIN ediciones e ON e.id = u.id
+      JOIN ideas i ON i.edicion_id = e.id AND i.ganador AND i.publicada
+                  AND i.estado <> 'descartado'
+      LEFT JOIN distritos d ON d.id = i.distrito_id
+      LEFT JOIN categorias c ON c.id = i.categoria_id
+     ORDER BY d.numero NULLS LAST, i.id
+  `);
+
+  const [primera] = filas;
+  if (!primera) return null;
+  return {
+    id: Number(primera.edicion_id),
+    anio: Number(primera.anio),
+    etapa: primera.etapa,
+    activa: Boolean(primera.activa),
+    ganadores: filas.map((f) => {
+      const avances = Number(f.avances);
+      return {
+        slug: f.slug,
+        titulo: f.titulo,
+        distrito: f.distrito === null ? null : Number(f.distrito),
+        votos: Number(f.votos ?? 0),
+        categoriaNombre: f.categoria,
+        estadoObra: avances > 0 ? f.estado_presupuesto : null,
+        avancesPublicados: avances,
+        ultimoAvance: f.ultimo_avance,
+      };
+    }),
+  };
+}
+
+export type BarrioDeclarado = {
+  /** Como lo escribio quien presento la idea: no es el nombre oficial. */
+  barrio: string;
+  distrito: number;
+  /** Ideas publicadas que lo nombran asi, sumando todas las ediciones. */
+  ideas: number;
+};
+
+/** `%` y `_` de lo que escribio la persona son letras, no comodines del LIKE. */
+function escaparComodines(texto: string): string {
+  return texto.replace(/[\\%_]/g, (caracter) => `\\${caracter}`);
+}
+
+/**
+ * Barrios escritos a mano en las ideas publicadas que contienen alguna de las
+ * palabras, con el distrito de cada idea (que sale del punto en el mapa).
+ *
+ * Es el RESPALDO de la capa oficial de barrios (src/lib/barrios.ts): sirve para
+ * nombres que la capa no tiene ("Parque 9 de Julio", "Casino"). Mira todas las
+ * ediciones porque en que distrito queda un barrio no depende de la edicion: con
+ * la 2026 recien abierta y sin ideas, buscar solo en la activa daba "no figura"
+ * para cualquier barrio.
+ *
+ * Solo publicadas y no descartadas. Reemplaza al SQL suelto que tenian las dos
+ * formas del chat, y la del buscador sin IA miraba tambien las sin publicar: un
+ * barrio y un distrito de una idea en moderacion ya son un dato de esa idea, y
+ * el barrio de un spam no le dice a nadie en que distrito vive.
+ */
+export async function buscarBarriosEnIdeas(
+  palabras: string[],
+  limite = 8,
+): Promise<BarrioDeclarado[]> {
+  const patrones = palabras
+    .map((palabra) => normalizar(palabra))
+    .filter((palabra) => palabra.length >= 2)
+    .map((palabra) => like(ideas.barrioNormalizado, `%${escaparComodines(palabra)}%`));
+  if (!patrones.length) return [];
+
+  const filas = await db
+    .select({
+      distrito: distritos.numero,
+      barrio: ideas.barrio,
+      ideas: sql<number>`count(*)::int`,
+    })
+    .from(ideas)
+    .innerJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(
+      and(
+        eq(ideas.publicada, true),
+        ne(ideas.estado, "descartado"),
+        isNotNull(ideas.barrio),
+        or(...patrones),
+      ),
+    )
+    .groupBy(distritos.numero, ideas.barrio)
+    .orderBy(desc(sql`count(*)`), asc(distritos.numero), asc(ideas.barrio))
+    .limit(limite);
+
+  return filas.map((f) => ({
+    barrio: String(f.barrio),
+    distrito: Number(f.distrito),
+    ideas: Number(f.ideas),
+  }));
+}

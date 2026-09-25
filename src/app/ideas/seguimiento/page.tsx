@@ -3,6 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { getEdiciones, getSeguimientoIdea, getTextos } from "@/db/queries";
 import { codigoValido } from "@/lib/avisos";
+import { conEdicion } from "@/lib/ediciones";
 import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
 import FormularioSeguimiento, { type ResultadoSeguimiento } from "./formulario";
 
@@ -77,8 +78,12 @@ async function consultarSeguimiento(
         distrito: idea.distrito,
         fecha: idea.fecha,
         publicada: idea.publicada,
-        // Sin publicar no hay ficha publica: el enlace llevaria a un 404.
-        slug: idea.publicada ? idea.slug : null,
+        // Sin publicar no hay ficha publica: el enlace llevaria a un 404. La
+        // idea puede ser de una edicion anterior (se prueban todas, arriba): su
+        // ficha lleva `?edicion`, como en el resto del sitio.
+        ficha: idea.publicada
+          ? conEdicion(`/proyectos/${idea.slug}`, edicion.activa ? null : edicion.anio)
+          : null,
       },
     };
   }

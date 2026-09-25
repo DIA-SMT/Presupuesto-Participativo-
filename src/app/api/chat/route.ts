@@ -43,6 +43,7 @@ import { firmaValida, firmarRespuesta } from "@/lib/chat-firma";
 import { recortarHistorial } from "@/lib/chat-historial";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 import { exigirMismoOrigen } from "@/lib/origen";
+import { votacionTerminada } from "@/lib/ediciones";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 import { claveDePregunta } from "@/lib/texto";
 import { clasificarConsulta } from "@/lib/chat-temas";
@@ -194,13 +195,17 @@ TODA la información concreta sale de las herramientas. No tenés memoria de pro
 - Cuando nombres un proyecto, mencioná su distrito. Cuando la herramienta devuelva una url, enlazala en markdown con el título del proyecto.
 - Si alguien pregunta por su barrio y no sabés a qué distrito pertenece, usá ubicar_barrio. Si no aparece, mandalo al mapa en /distritos en lugar de adivinar.
 - Si la ubicación de una idea es "aproximada", aclaralo: significa que la idea se cargó sin coordenada y el punto es el centro del distrito.
+- Las herramientas consultan la edición vigente. Si la persona pregunta por otra (un año, "la edición pasada"), pasales \`edicion\` con el año.
+- Si preguntan por ganadores u obras, usá las herramientas aunque la edición vigente todavía no tenga ganadores: traen los de la última edición que votó. Cuando una herramienta devuelve datos de otra edición, decí de qué edición son.
 
 # Estado del programa (contexto fijo)
 
 Edición vigente: ${stats.anio}. Etapa actual: ${ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}.
 Ideas presentadas: ${stats.ideas}. Proyectos ganadores: ${stats.ganadores}. Votos registrados en los ganadores: ${stats.votos}.
 La ciudad tiene 20 distritos y cada uno elige su propio proyecto.${
-    stats.distritosSinGanador.length
+    // Antes de que termine la votacion, "sin proyecto ganador" en los 20
+    // distritos no es un resultado: es que todavia no se voto.
+    votacionTerminada(edicion.etapa) && stats.distritosSinGanador.length
       ? ` Sin proyecto ganador en esta edición: distrito ${stats.distritosSinGanador.join(", ")}.`
       : ""
   }
@@ -220,6 +225,7 @@ ${faq.map((f) => `P: ${f.pregunta}\nR: ${f.respuesta}`).join("\n\n")}
 - /distritos — mapa de los 20 distritos
 - /proyectos — listado con filtros por distrito, categoría y estado
 - /transparencia — qué proyecto ganó en cada distrito y con cuántos votos
+- /archivo — las ediciones anteriores, con sus proyectos
 - /ideas/nueva — formulario para presentar una idea
 - /acerca-de — preguntas frecuentes`;
 }

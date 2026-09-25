@@ -49,8 +49,13 @@ export type IdeaSeguida = {
   distrito: number | null;
   fecha: string | null;
   publicada: boolean;
-  /** Solo si esta publicada: si no, todavia no hay pagina que mostrar. */
-  slug: string | null;
+  /**
+   * La ruta de su ficha publica, solo si esta publicada: si no, todavia no hay
+   * pagina que mostrar. La arma el servidor, con `?edicion` cuando la idea es de
+   * una edicion que no es la activa: el slug se repite entre ediciones, y sin el
+   * parametro el enlace podia abrir la idea de otra edicion con el mismo titulo.
+   */
+  ficha: string | null;
 };
 
 export type ResultadoSeguimiento =
@@ -227,9 +232,9 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
         </p>
       )}
 
-      {idea.publicada && idea.slug && (
+      {idea.publicada && idea.ficha && (
         <p className="mt-5 text-sm">
-          <Link href={`/proyectos/${idea.slug}`} className="font-semibold underline">
+          <Link href={idea.ficha} className="font-semibold underline">
             Ver la ficha pública de tu idea
           </Link>
         </p>
