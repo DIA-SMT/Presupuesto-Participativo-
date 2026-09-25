@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
-import { getEdicionActiva, listarIdeas } from "@/db/queries";
+import { getFichasPublicadas } from "@/db/queries";
+import { conEdicion } from "@/lib/ediciones";
 import { urlDelSitio } from "@/lib/sitio";
 
 export const dynamic = "force-dynamic";
@@ -26,15 +27,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
 
   try {
-    const edicion = await getEdicionActiva();
-    if (!edicion) return [...fijas, ...distritos];
-    const ideas = await listarIdeas({ edicionId: edicion.id });
+    // Las fichas de TODAS las ediciones, no solo de la activa: al activarse la
+    // 2026, los 19 ganadores 2025 (las obras que se estan ejecutando) salian del
+    // sitemap. Cada una con la URL que declara como canonica su pagina: la de la
+    // activa sin parametro, las demas con `?edicion=AAAA`.
+    const fichas = await getFichasPublicadas();
     return [
       ...fijas,
       ...distritos,
-      ...ideas.map((idea) => ({
-        url: `${base}/proyectos/${idea.slug}`,
-        changeFrequency: "weekly" as const,
+      ...fichas.map((ficha) => ({
+        url: `${base}${conEdicion(`/proyectos/${ficha.slug}`, ficha.activa ? null : ficha.anio)}`,
+        // Una edicion anterior ya no cambia salvo por un avance de obra.
+        changeFrequency: ficha.activa ? ("weekly" as const) : ("monthly" as const),
       })),
     ];
   } catch {

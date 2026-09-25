@@ -3,10 +3,12 @@
 /**
  * Filtros del listado de proyectos. Escriben en la barra de direcciones, asi que
  * cualquier filtro se puede compartir por link y el navegador lo recuerda al
- * volver atras.
+ * volver atras. Cada cambio parte de los parametros que ya estan en la URL, asi
+ * que `?edicion=AAAA` viaja con cualquier filtro sin que haya que nombrarlo.
  */
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { PARAMETRO_EDICION } from "@/lib/ediciones";
 
 type Opcion = { valor: string; texto: string };
 
@@ -116,7 +118,16 @@ export default function Filtros({
             type="button"
             onClick={() => {
               setTexto("");
-              iniciar(() => router.replace("/proyectos"));
+              // La edicion no es un filtro: limpiar los filtros de la 2025 deja
+              // la 2025 entera, no salta a la edicion activa.
+              const edicion = parametros.get(PARAMETRO_EDICION);
+              iniciar(() =>
+                router.replace(
+                  edicion
+                    ? `/proyectos?${new URLSearchParams({ [PARAMETRO_EDICION]: edicion })}`
+                    : "/proyectos",
+                ),
+              );
             }}
             className="text-sm underline"
             style={{ color: "var(--texto-suave)" }}

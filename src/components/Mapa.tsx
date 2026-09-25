@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { Map as MapaLibre, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { conEdicion } from "@/lib/ediciones";
 
 // MapLibre procesa las fuentes GeoJSON en un Web Worker. El worker se sirve
 // como archivo estatico (scripts/copiar-maplibre.mjs lo copia en el
@@ -52,6 +53,12 @@ type Props = {
   puntoElegido?: { lat: number; lon: number } | null;
   alto?: string;
   mostrarEtiquetas?: boolean;
+  /**
+   * El año que llevan los enlaces del mapa (el distrito y "Ver el proyecto")
+   * mientras se recorre una edicion que no es la activa. Sin el, un clic en el
+   * mapa de la 2025 llevaba a la 2026.
+   */
+  edicionEnEnlaces?: number | null;
 };
 
 const GEO = "/geo/distritos.geojson";
@@ -113,6 +120,7 @@ export default function Mapa({
   puntoElegido,
   alto = "30rem",
   mostrarEtiquetas = true,
+  edicionEnEnlaces = null,
 }: Props) {
   const contenedor = useRef<HTMLDivElement>(null);
   const mapa = useRef<MapaLibre | null>(null);
@@ -273,7 +281,7 @@ export default function Mapa({
     const alClic = (evento: maplibregl.MapLayerMouseEvent) => {
       if (modo === "seleccionar") return;
       const numero = evento.features?.[0]?.properties?.numero;
-      if (numero) window.location.href = `/distritos/${numero}`;
+      if (numero) window.location.href = conEdicion(`/distritos/${numero}`, edicionEnEnlaces);
     };
 
     instancia.on("mousemove", "distritos-relleno", alMover);
@@ -286,7 +294,7 @@ export default function Mapa({
       instancia.off("mouseleave", "distritos-relleno", alSalir);
       instancia.off("click", "distritos-relleno", alClic);
     };
-  }, [listo, distritos, distritoActivo, modo]);
+  }, [listo, distritos, distritoActivo, modo, edicionEnEnlaces]);
 
   // --- Modo seleccionar: un clic en cualquier parte elige el punto ---------
   useEffect(() => {
@@ -343,7 +351,7 @@ export default function Mapa({
         if (modo === "navegar") {
           nodo.addEventListener("click", (evento) => {
             evento.stopPropagation();
-            window.location.href = `/distritos/${distrito.numero}`;
+            window.location.href = conEdicion(`/distritos/${distrito.numero}`, edicionEnEnlaces);
           });
         } else {
           nodo.style.pointerEvents = "none";
@@ -375,7 +383,9 @@ export default function Mapa({
                ? '<p class="pp-popup-aviso">Ubicación aproximada: la idea no tenía coordenada cargada.</p>'
                : ""
            }
-           <a class="pp-popup-link" href="/proyectos/${punto.slug}">Ver el proyecto</a>
+           <a class="pp-popup-link" href="${escapar(
+             conEdicion(`/proyectos/${punto.slug}`, edicionEnEnlaces),
+           )}">Ver el proyecto</a>
          </div>`,
       );
 
@@ -386,7 +396,7 @@ export default function Mapa({
           .addTo(instancia),
       );
     }
-  }, [listo, distritos, puntos, distritoActivo, modo, mostrarEtiquetas]);
+  }, [listo, distritos, puntos, distritoActivo, modo, mostrarEtiquetas, edicionEnEnlaces]);
 
   // --- Encuadre del distrito activo ---------------------------------------
   useEffect(() => {
