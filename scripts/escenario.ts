@@ -60,7 +60,7 @@ type Plantilla = {
   lon: string | null;
 };
 
-type Estado = "pendiente" | "factible" | "no_factible";
+type Estado = "pendiente" | "factible" | "no_factible" | "ganador";
 type Fila = { plantilla: Plantilla; estado: Estado; publicada: boolean; votos: number; ganador: boolean };
 
 /**
@@ -96,12 +96,20 @@ export function ideasDeEjemplo(etapa: Etapa, plantillas: Plantilla[]): Fila[] {
   if (etapa === "votacion") {
     return votables.map((plantilla) => ({ plantilla, estado: "factible", publicada: true, votos: 0, ganador: false }));
   }
-  // seguimiento y cerrada: votos y el primero de cada distrito gana.
+  // seguimiento y cerrada: votos y el primero de cada distrito gana. El ganador
+  // queda como lo deja proclamarGanador: estado "ganador" y la marca, no
+  // "factible" con la marca (asi se veia "Factible" en su tarjeta).
   const vistos = new Set<number>();
   return votables.map((plantilla, i) => {
     const gana = !vistos.has(plantilla.distrito);
     vistos.add(plantilla.distrito);
-    return { plantilla, estado: "factible", publicada: true, votos: gana ? 140 + i * 7 : 60 + i * 3, ganador: gana };
+    return {
+      plantilla,
+      estado: gana ? "ganador" : "factible",
+      publicada: true,
+      votos: gana ? 140 + i * 7 : 60 + i * 3,
+      ganador: gana,
+    };
   });
 }
 
@@ -134,7 +142,15 @@ async function escenario2026(etapa: Etapa) {
     INSERT INTO ediciones (anio, etapa, activa, ideas_desde, ideas_hasta, votacion_desde, votacion_hasta)
     VALUES (2026, ${etapa}, false, ${FECHAS_2026.ideasDesde}, ${FECHAS_2026.ideasHasta},
             ${FECHAS_2026.votacionDesde}, ${FECHAS_2026.votacionHasta})
-    ON CONFLICT (anio) DO UPDATE SET etapa = EXCLUDED.etapa`);
+    ON CONFLICT (anio) DO UPDATE SET
+      etapa = EXCLUDED.etapa,
+      -- Una 2026 que ya existia (de una prueba anterior o cargada a mano) puede
+      -- no tener fechas, y sin ellas la portada no dice hasta cuando esta
+      -- abierta cada etapa. Se completan las que faltan; las cargadas no se pisan.
+      ideas_desde = coalesce(ediciones.ideas_desde, EXCLUDED.ideas_desde),
+      ideas_hasta = coalesce(ediciones.ideas_hasta, EXCLUDED.ideas_hasta),
+      votacion_desde = coalesce(ediciones.votacion_desde, EXCLUDED.votacion_desde),
+      votacion_hasta = coalesce(ediciones.votacion_hasta, EXCLUDED.votacion_hasta)`);
   await consultar(sql`UPDATE ediciones SET etapa = 'seguimiento' WHERE anio = 2025`);
   await activar(2026);
 
@@ -147,7 +163,14 @@ async function escenario2026(etapa: Etapa) {
      ORDER BY i.ganador DESC, (i.solucion IS NOT NULL) DESC, i.distrito_id, i.numero`);
 
   const filas = ideasDeEjemplo(etapa, plantillas);
-  let numero = 0;
+  // Los ejemplos se numeran despues de las ideas que no son de ejemplo (una
+  // cargada desde el panel en una demo, por ejemplo): numerarlos desde 1
+  // chocaba con el indice unico de numero por edicion y el escenario se cortaba
+  // a mitad de camino.
+  const [{ ultimo }] = await consultar<{ ultimo: number }>(
+    sql`SELECT coalesce(max(numero), 0)::int AS ultimo FROM ideas WHERE edicion_id = ${edicion.id}`,
+  );
+  let numero = Number(ultimo);
   for (const { plantilla: p, estado, publicada, votos, ganador } of filas) {
     numero += 1;
     await consultar(sql`

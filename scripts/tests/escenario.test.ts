@@ -35,6 +35,8 @@ test("en seguimiento hay exactamente un ganador por distrito, y es el mas votado
   for (const [distrito, lista] of porDistrito) {
     const ganadores = lista.filter((f) => f.ganador);
     assert.equal(ganadores.length, 1, `distrito ${distrito}`);
+    // Como lo deja proclamarGanador: con el estado, no solo con la marca.
+    assert.equal(ganadores[0].estado, "ganador", `distrito ${distrito}`);
     assert.equal(Math.max(...lista.map((f) => f.votos)), ganadores[0].votos, `distrito ${distrito}`);
   }
 });
