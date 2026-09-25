@@ -311,12 +311,9 @@ export async function registrarAlta(
     };
   }
 
-  const [categoria] = await db
-    .select({ nombre: categorias.nombre })
-    .from(categorias)
-    .where(eq(categorias.slug, datos.categoria))
-    .limit(1);
-
+  // De aca en adelante la idea YA esta guardada: nada de lo que sigue va a la
+  // base. Un error aca lo mostraria la accion como "no se pudo guardar", y el
+  // reintento la cargaria dos veces sin que nadie vea el primer codigo.
   return {
     ok: true,
     idea: {
@@ -326,7 +323,7 @@ export async function registrarAlta(
       distrito: creada.distrito,
       anio: edicion.anio,
       titulo: creada.titulo,
-      categoria: categoria?.nombre ?? "",
+      categoria: creada.categoria,
       barrio: creada.barrio,
       problema: creada.problema,
       solucion: creada.solucion,

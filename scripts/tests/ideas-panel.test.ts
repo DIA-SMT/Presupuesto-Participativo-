@@ -182,6 +182,7 @@ test("el panel carga una idea igual que el formulario, con su canal, su fecha y 
   assert.equal(idea.distrito, 1, "el distrito sale del punto, no lo elige nadie");
   assert.ok(avisos.codigoValido(idea.id, idea.codigo), "el codigo es el de seguimiento de esa idea");
   assert.equal(idea.anio, 2026);
+  assert.equal(idea.categoria, "Urbana", "el comprobante nombra la categoria");
 
   const fila = await filaDe(idea.id);
   assert.equal(fila.estado, "pendiente");

@@ -93,6 +93,13 @@ export type IdeaCreada = {
   /** Numero de distrito, derivado del punto. */
   distrito: number;
   slug: string;
+  /**
+   * El nombre de la categoria, para el comprobante. Sale de la misma lectura que
+   * valida el slug: pedirlo despues del alta era una consulta mas con la idea ya
+   * guardada, y si fallaba el panel decia "no se pudo guardar" de una idea que
+   * si quedo (y el reintento la cargaba dos veces).
+   */
+  categoria: string;
   /** El titulo y el barrio tal como quedaron guardados, ya normalizados. */
   titulo: string;
   barrio: string | null;
@@ -140,7 +147,7 @@ export async function crearIdea(
   }
 
   const [categoria] = await db
-    .select({ id: categorias.id })
+    .select({ id: categorias.id, nombre: categorias.nombre })
     .from(categorias)
     .where(eq(categorias.slug, datos.categoria))
     .limit(1);
@@ -226,6 +233,7 @@ export async function crearIdea(
       numero,
       distrito,
       slug,
+      categoria: categoria.nombre,
       titulo,
       barrio,
       problema,
