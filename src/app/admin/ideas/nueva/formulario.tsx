@@ -103,18 +103,22 @@ export default function FormularioCarga({
    * y con el el boton que tenia el foco: sin esto quedaba en el <body>, y un
    * lector de pantalla no decia ni el numero ni el codigo (la region "polite"
    * aparece junto con su texto, y asi no siempre se anuncia). Se lleva al titulo
-   * de la idea cargada. "Cargar otra" lo lleva al titulo del formulario nuevo:
-   * es lo primero que se tipea de un papel (el punto se marca con el mouse).
+   * de la idea cargada, arriba de todo, adonde ya sube la pantalla.
+   *
+   * "Cargar otra" lo lleva al primer campo que cambia de una idea a la otra,
+   * "Quien la presento": lo de la tanda queda puesto arriba de el. Sin
+   * preventScroll, para que el navegador lo deje a la vista: el del titulo,
+   * que esta mas abajo, podia quedar fuera de la pantalla con el foco adentro.
    */
   const titularCargada = useRef<HTMLHeadingElement>(null);
-  const campoTitulo = useRef<HTMLInputElement>(null);
+  const campoAutor = useRef<HTMLInputElement>(null);
   const alVolverAlFormulario = useRef(false);
   useEffect(() => {
     if (ultima) {
       titularCargada.current?.focus({ preventScroll: true });
     } else if (alVolverAlFormulario.current) {
       alVolverAlFormulario.current = false;
-      campoTitulo.current?.focus({ preventScroll: true });
+      campoAutor.current?.focus();
     }
   }, [ultima]);
 
@@ -198,7 +202,8 @@ export default function FormularioCarga({
     setPunto(null);
     setDistrito(undefined);
     setAproximada(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Sin scroll a mano: el foco en "Quien la presento" (ver el efecto de
+    // arriba) ya deja la pantalla ahi, y un scroll suave lo peleaba.
   }
 
   // --- Terminada: el numero, el codigo y el comprobante ----------------------
@@ -399,6 +404,7 @@ export default function FormularioCarga({
               ayuda="Solo el nombre: sin DNI, teléfono ni correo."
             >
               <input
+                ref={campoAutor}
                 name="autorNombre"
                 maxLength={limites.autorNombre.maximo}
                 value={contenido.autorNombre}
@@ -498,7 +504,6 @@ export default function FormularioCarga({
 
           <Campo etiqueta="Título de la idea" contador={contador(contenido.titulo, limites.titulo)}>
             <input
-              ref={campoTitulo}
               name="titulo"
               required
               maxLength={limites.titulo.maximo}
