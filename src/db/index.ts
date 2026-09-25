@@ -58,7 +58,13 @@ export function esBaseRemota(valor = process.env.DATABASE_URL?.trim() ?? ""): bo
     const leida = new URL(valor);
     // node-postgres acepta el host tambien como parametro (?host=...), y ese
     // parametro gana sobre el de la URL: hay que mirar el mismo que va a usar.
-    host = leida.searchParams.get("host") ?? decodeURIComponent(leida.hostname);
+    // Con `||` y no `??`: un `?host=` vacio no gana (pg-connection-string
+    // pregunta `!config.host`) y se usa el de la URL. Si tampoco hay, pg cae a
+    // PGHOST antes que a localhost (`val` en pg/lib/connection-parameters.js).
+    host =
+      leida.searchParams.get("host") ||
+      decodeURIComponent(leida.hostname) ||
+      (process.env.PGHOST ?? "");
   } catch {
     return true;
   }

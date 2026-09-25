@@ -48,6 +48,9 @@ test("cualquier otro host es remoto, incluido el que llega por ?host=", () => {
   assert.equal(esBaseRemota("postgres://u:p@10.0.0.5:5432/db"), true);
   // node-postgres usa el parametro por encima del host de la URL.
   assert.equal(esBaseRemota("postgres://u:p@localhost/db?host=db.remota.com"), true);
+  // Un ?host= vacio no gana: node-postgres usa el de la URL.
+  assert.equal(esBaseRemota("postgres://u:p@db.remota.com/db?host="), true);
+  assert.equal(new ConnectionParameters({ connectionString: "postgres://u:p@db.remota.com/db?host=" }).host, "db.remota.com");
 });
 
 // --- TLS ---------------------------------------------------------------------
