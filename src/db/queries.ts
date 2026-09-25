@@ -16,6 +16,7 @@ import {
 
   isNull,
   like,
+  ne,
   or,
   sql,
   type SQLWrapper,
@@ -565,7 +566,15 @@ export async function getIdea(
   // sitio ni para el chatbot. Sin este filtro, una idea recien enviada por el
   // formulario publico ya era visible en /proyectos/<slug>. El backoffice pide
   // incluirNoPublicadas de forma explicita.
-  if (!opciones.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true));
+  //
+  // Una descartada (prueba, spam, carga repetida) tampoco, aunque quedara
+  // publicada por error: el descarte la despublica, y esta es la segunda
+  // barrera. Aca importa doble, porque la busqueda cruza ediciones: una
+  // descartada de la activa con el slug de un ganador 2025 no puede tapar al
+  // ganador, igual que una sin publicar.
+  if (!opciones.incluirNoPublicadas) {
+    condiciones.push(eq(ideas.publicada, true), ne(ideas.estado, "descartado"));
+  }
 
   const [fila] = await db
     .select({ ...camposIdea, notasMigracion: ideas.notasMigracion })
@@ -575,7 +584,7 @@ export async function getIdea(
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(and(...condiciones))
     // Con edicion pedida hay una sola fila posible. Sin ella: la activa primero
-    // y, si no esta ahi, la mas reciente. El filtro de publicada va antes del
+    // y, si no esta ahi, la mas reciente. Los filtros de arriba van antes del
     // orden: una idea sin publicar en la activa no tapa a la publicada de otra.
     .orderBy(desc(ediciones.activa), desc(ediciones.anio))
     .limit(1);
@@ -2370,6 +2379,14 @@ export async function getTokensUsadosHoy(): Promise<number> {
 // fuera de la navegacion, del sitemap y del chat, y sus ganadores son justo las
 // obras que se estan ejecutando. La forma de pedir otra edicion es
 // `?edicion=AAAA` (src/lib/ediciones.ts) y se resuelve con `getEdicionParaVer`.
+//
+// Todas las de esta seccion que leen ideas son publicas (paginas, sitemap,
+// chat) y dejan afuera, ademas de las sin publicar, las DESCARTADAS (estado
+// "descartado", migracion 0012): una prueba o un spam no es una idea del
+// archivo, ni una ficha del sitemap, ni el barrio de nadie. El descarte ya la
+// despublica; el filtro por estado es la segunda barrera, la misma que llevan
+// las demas consultas publicas, para el dia en que una quede publicada por una
+// carga a mano o un script.
 // ---------------------------------------------------------------------------
 
 /**
@@ -2428,9 +2445,9 @@ export type EdicionDelArchivo = {
   etapa: EtapaEdicion;
   activa: boolean;
   /**
-   * Ideas PUBLICADAS: las que el sitio muestra. Distinto de `getEdiciones`, que
-   * es del panel y cuenta todas; aca una edicion con ideas cargadas pero ninguna
-   * publicada no tiene nada para ver.
+   * Ideas PUBLICADAS y no descartadas: las que el sitio muestra. Distinto de
+   * `getEdiciones`, que es del panel y cuenta todas; aca una edicion con ideas
+   * cargadas pero ninguna publicada no tiene nada para ver.
    */
   ideas: number;
   /** Proyectos ganadores publicados. */
@@ -2458,7 +2475,7 @@ export async function getArchivoDeEdiciones(): Promise<EdicionDelArchivo[]> {
            count(i.id) FILTER (WHERE i.publicada)::int              AS ideas,
            count(i.id) FILTER (WHERE i.publicada AND i.ganador)::int AS ganadores
       FROM ediciones e
-      LEFT JOIN ideas i ON i.edicion_id = e.id
+      LEFT JOIN ideas i ON i.edicion_id = e.id AND i.estado <> 'descartado'
      GROUP BY e.id, e.anio, e.etapa, e.activa
      ORDER BY e.anio DESC
   `);
@@ -2490,7 +2507,7 @@ export async function getFichasPublicadas(): Promise<FichaPublicada[]> {
     .select({ slug: ideas.slug, anio: ediciones.anio, activa: ediciones.activa })
     .from(ideas)
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
-    .where(eq(ideas.publicada, true))
+    .where(and(eq(ideas.publicada, true), ne(ideas.estado, "descartado")))
     .orderBy(desc(ediciones.activa), desc(ediciones.anio), asc(ideas.id));
 
   return filas.map((f) => ({ slug: f.slug, anio: Number(f.anio), activa: Boolean(f.activa) }));
@@ -2568,6 +2585,7 @@ export async function getUltimaEdicionTerminadaConGanadores(): Promise<EdicionCo
          AND EXISTS (
            SELECT 1 FROM ideas g
             WHERE g.edicion_id = e.id AND g.ganador AND g.publicada
+              AND g.estado <> 'descartado'
          )
        ORDER BY e.anio DESC
        LIMIT 1
@@ -2589,6 +2607,7 @@ export async function getUltimaEdicionTerminadaConGanadores(): Promise<EdicionCo
       FROM ultima u
       JOIN ediciones e ON e.id = u.id
       JOIN ideas i ON i.edicion_id = e.id AND i.ganador AND i.publicada
+                  AND i.estado <> 'descartado'
       LEFT JOIN distritos d ON d.id = i.distrito_id
       LEFT JOIN categorias c ON c.id = i.categoria_id
      ORDER BY d.numero NULLS LAST, i.id
@@ -2640,9 +2659,10 @@ function escaparComodines(texto: string): string {
  * la 2026 recien abierta y sin ideas, buscar solo en la activa daba "no figura"
  * para cualquier barrio.
  *
- * Solo publicadas. Reemplaza al SQL suelto que tenian las dos formas del chat,
- * y la del buscador sin IA miraba tambien las sin publicar: un barrio y un
- * distrito de una idea en moderacion ya son un dato de esa idea.
+ * Solo publicadas y no descartadas. Reemplaza al SQL suelto que tenian las dos
+ * formas del chat, y la del buscador sin IA miraba tambien las sin publicar: un
+ * barrio y un distrito de una idea en moderacion ya son un dato de esa idea, y
+ * el barrio de un spam no le dice a nadie en que distrito vive.
  */
 export async function buscarBarriosEnIdeas(
   palabras: string[],
@@ -2662,7 +2682,14 @@ export async function buscarBarriosEnIdeas(
     })
     .from(ideas)
     .innerJoin(distritos, eq(distritos.id, ideas.distritoId))
-    .where(and(eq(ideas.publicada, true), isNotNull(ideas.barrio), or(...patrones)))
+    .where(
+      and(
+        eq(ideas.publicada, true),
+        ne(ideas.estado, "descartado"),
+        isNotNull(ideas.barrio),
+        or(...patrones),
+      ),
+    )
     .groupBy(distritos.numero, ideas.barrio)
     .orderBy(desc(sql`count(*)`), asc(distritos.numero), asc(ideas.barrio))
     .limit(limite);

@@ -183,3 +183,64 @@ test("/api/proyectos: los errores tambien llevan CORS, para que se lea el motivo
   }
   assert.match((await (await pedir("?edicion=1999")).json()).error, /No hay una edición 1999/);
 });
+
+// ---------------------------------------------------------------------------
+// Descartadas
+//
+// Va al final a proposito: cambia el escenario y las pruebas de arriba cuentan
+// ideas.
+// ---------------------------------------------------------------------------
+
+test("una descartada no sale en ninguna consulta de ediciones, aunque quedara publicada", async () => {
+  const { db, schema, sql } = base;
+  // El descarte la despublica. Lo que se prueba es la segunda barrera: una
+  // descartada que quedo publicada por una carga a mano o un script.
+  //
+  // En la activa, con el slug de un ganador 2025: no puede tapar al ganador.
+  await db
+    .update(schema.ideas)
+    .set({ estado: "descartado", publicada: true })
+    .where(sql`${schema.ideas.slug} = 'solo-en-2025' AND ${schema.ideas.edicionId} = ${id2026}`);
+  // En la 2025, con un barrio escrito y marcada ganadora (no deberia poder
+  // pasar, y por eso mismo no puede colarse entre los ganadores).
+  const [spam] = await db
+    .insert(schema.ideas)
+    .values({
+      edicionId: id2025,
+      distritoId: 5,
+      titulo: "Prueba de carga",
+      slug: "prueba-de-carga",
+      estado: "descartado",
+      publicada: true,
+      ganador: true,
+      barrio: "Barrio Fantasma",
+      barrioNormalizado: "barrio fantasma",
+    })
+    .returning({ id: schema.ideas.id });
+  assert.ok(spam);
+
+  const ficha = await consultas.getIdea("solo-en-2025");
+  assert.equal(ficha?.anio, 2025, "la descartada de la activa no tapa al ganador 2025");
+  assert.equal(await consultas.getIdea("solo-en-2025", id2026), null);
+  assert.equal(await consultas.getIdea("prueba-de-carga"), null);
+
+  const fichas = await consultas.getFichasPublicadas();
+  assert.ok(!fichas.some((f) => f.slug === "prueba-de-carga"));
+  assert.ok(!fichas.some((f) => f.slug === "solo-en-2025" && f.anio === 2026));
+
+  const archivo = await consultas.getArchivoDeEdiciones();
+  assert.deepEqual(
+    archivo.map((e) => [e.anio, e.ideas, e.ganadores]),
+    [
+      [2027, 0, 0],
+      [2026, 2, 0],
+      [2025, 3, 2],
+    ],
+    "las cuentas del archivo no cambian",
+  );
+
+  const ultima = await consultas.getUltimaEdicionTerminadaConGanadores();
+  assert.deepEqual(ultima?.ganadores.map((g) => g.slug), ["plaza-del-barrio", "solo-en-2025"]);
+
+  assert.deepEqual(await consultas.buscarBarriosEnIdeas(["fantasma"]), []);
+});
