@@ -37,10 +37,15 @@
  * cerrado el anterior. Con sessionStorage bloqueado se cierra igual, hasta
  * recargar. Quien lo cerro y recarga la pagina lo ve un instante hasta que
  * hidrata el JavaScript: el servidor no conoce el sessionStorage.
+ *
+ * Al cerrarlo, el foco pasa al contenedor, que queda en su lugar: el boton que
+ * lo tenia desaparece, y sin esto el foco se iba al <body> (en Safari y con los
+ * lectores de pantalla, de vuelta al principio de la pagina). Asi el proximo
+ * Tab sigue en el encabezado, que es lo que venia despues de la banda.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Fragment, useId, useSyncExternalStore } from "react";
+import { Fragment, useId, useRef, useSyncExternalStore } from "react";
 import { trozosDelAviso } from "@/lib/aviso-urgente";
 
 /** Mismo prefijo que el tema (`pp-smt:tema`, src/components/BotonTema.tsx). */
@@ -86,12 +91,24 @@ export default function AvisoUrgente({ texto }: { texto?: string | null }) {
   // En el servidor y al hidratar vale "nada cerrado", asi los dos HTML
   // coinciden; enseguida despues React lee el sessionStorage.
   const cerrado = useSyncExternalStore(suscribir, leerCerrado, () => null);
+  const contenedor = useRef<HTMLDivElement>(null);
   const aviso = (texto ?? "").trim();
   const visible = aviso !== "" && !esDelPanel(ruta) && cerrado !== aviso;
 
   return (
-    <div aria-live="polite">
-      {visible && <BandaAviso texto={aviso} alCerrar={() => cerrar(aviso)} />}
+    // tabIndex -1: enfocable solo desde el codigo, para recibir el foco al
+    // cerrar (ver arriba). No entra en el orden del Tab. Sin contorno: no es un
+    // control, y vacio quedaria una raya a lo ancho de la pagina.
+    <div ref={contenedor} aria-live="polite" tabIndex={-1} className="outline-none">
+      {visible && (
+        <BandaAviso
+          texto={aviso}
+          alCerrar={() => {
+            contenedor.current?.focus({ preventScroll: true });
+            cerrar(aviso);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -151,9 +168,18 @@ export function BandaAviso({ texto, alCerrar }: { texto: string; alCerrar?: () =
             if (trozo.tipo === "texto") return <Fragment key={indice}>{trozo.texto}</Fragment>;
             const clases = "font-semibold underline underline-offset-2";
             // Subrayado siempre: el enlace no se distingue solo por el color.
+            //
+            // Sin prefetch: la banda esta en la pantalla de entrada de TODAS
+            // las paginas, asi que en produccion cada visita pediria de fondo
+            // la ruta del aviso, sea cual sea. Y la ruta la elige quien escribe
+            // el aviso: "/auth/cidituc/ingresar" es un GET que deja la cookie
+            // del ingreso y redirige a CIDITUC, y un prefetch de esa ruta le
+            // podia pisar la cookie a quien estuviera ingresando en otra
+            // pestaña. El clic sigue siendo una navegacion del sitio, sin
+            // recargar.
             if (trozo.interno && !esVistaPrevia) {
               return (
-                <Link key={indice} href={trozo.href} className={clases}>
+                <Link key={indice} href={trozo.href} prefetch={false} className={clases}>
                   {trozo.texto}
                 </Link>
               );

@@ -34,8 +34,11 @@ export type TrozoAviso =
  * dangerouslySetInnerHTML.
  *
  * Se convierte en enlace, y nada mas:
- *  - una url completa con http:// o https://, que se muestra tal como se
- *    escribio (se ve a donde lleva);
+ *  - una url completa con https://, que se muestra tal como se escribio (se ve
+ *    a donde lleva). Con http:// no: la banda sale en todo el sitio del
+ *    municipio, y un enlace sin cifrar ahi es una puerta para que alguien en la
+ *    red del vecino le cambie la pagina de destino. El panel avisa antes de
+ *    guardar (`avisosDeFormato`) y el texto se ve igual, sin clic;
  *  - una ruta del sitio que empieza con "/", como /votar o /reglamento.
  *
  * Todo lo demas queda como texto, incluido el formato [texto](url) de
@@ -78,8 +81,13 @@ export function trozosDelAviso(texto: string): TrozoAviso[] {
 /** Signos que pueden abrir una palabra sin ser parte del enlace: "(ver /votar)". */
 const APERTURA = "([¿¡«“‘\"'";
 
-/** Signos que suelen cerrar una frase pegados al enlace: "en /votar." */
-const CIERRE = ".,;:!?]}»”’\"'";
+/**
+ * Signos que suelen cerrar una frase pegados al enlace: "en /votar." Los tres
+ * puntos van tambien como un solo caracter ("…"), que es como los escriben el
+ * Word y el telefono: sin eso, "Votá en /votar…" enlazaba a "/votar…", que no
+ * existe.
+ */
+const CIERRE = ".,;:!?…]}»”’\"'";
 
 function enlaceDe(
   palabra: string,
@@ -93,7 +101,7 @@ function enlaceDe(
   const antes = palabra.slice(0, inicio);
   const despues = resto.slice(nucleo.length);
 
-  if (/^https?:\/\//i.test(nucleo)) {
+  if (/^https:\/\//i.test(nucleo)) {
     const href = urlExterna(nucleo);
     return href ? { antes, texto: nucleo, href, interno: false, despues } : null;
   }
@@ -139,7 +147,7 @@ function sinCola(palabra: string): string {
 function urlExterna(candidata: string): string | null {
   try {
     const url = new URL(candidata);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (url.protocol !== "https:") return null;
     if (url.username || url.password) return null;
     if (!url.hostname.includes(".")) return null;
     return url.href;

@@ -161,6 +161,15 @@ test("avisa del markdown solo donde la pagina no lo entiende", () => {
   assert.equal(avisosDeFormato("Mirá [el mapa](/distritos)", "aviso", "linea").length, 1);
 });
 
+test("en el aviso urgente avisa que un http:// no va a ser enlace, y no molesta con https://", () => {
+  // La banda enlaza solo https:// (src/lib/aviso-urgente.ts): el http:// se
+  // publica como texto sin clic, y eso se tiene que saber antes de guardar.
+  assert.equal(avisosDeFormato("Más datos en http://smt.gob.ar/pp", "aviso", "linea").length, 1);
+  assert.deepEqual(avisosDeFormato("Más datos en https://smt.gob.ar/pp", "aviso", "linea"), []);
+  // En los otros textos una url no es enlace de ninguna forma: no hay nada que avisar.
+  assert.deepEqual(avisosDeFormato("Más datos en http://smt.gob.ar/pp", "llano", "linea"), []);
+});
+
 test("avisa que un salto de linea no se ve donde la pagina lo muestra en un parrafo", () => {
   assert.equal(avisosDeFormato("Primera.\nSegunda.", "llano", "parrafo").length, 1);
   // En el chat cada renglon es un parrafo: ahi el salto si se ve.

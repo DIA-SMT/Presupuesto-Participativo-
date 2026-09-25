@@ -597,6 +597,15 @@ export function avisosDeFormato(valor: string, formato: FormatoTexto, tipo: Tipo
     );
   }
 
+  // El aviso enlaza solo las urls con https:// (ver `trozosDelAviso` en
+  // src/lib/aviso-urgente.ts). Una con http:// se publica como texto sin clic, y
+  // quien la escribio tiene que enterarse antes y no mirando el sitio.
+  if (formato === "aviso" && URL_SIN_CIFRAR.test(valor)) {
+    avisos.push(
+      "Una dirección que empieza con http:// (sin la s) no se convierte en enlace: se ve como texto, sin clic. Si la página abre con https://, escribila así.",
+    );
+  }
+
   const negritasQueNoSeVen = NEGRITA.test(valor) && formato !== "negritas" && formato !== "chat";
   if (negritasQueNoSeVen || TITULO_MARKDOWN.test(valor)) {
     avisos.push(
@@ -633,6 +642,7 @@ const HTML =
 const ENLACE_MARKDOWN = /\[[^\]\n]+\]\(([^)\s]+)\)/g;
 const NEGRITA = /\*\*[^*\n]+\*\*/;
 const TITULO_MARKDOWN = /^\s{0,3}#{1,6}\s+\S/m;
+const URL_SIN_CIFRAR = /\bhttp:\/\//i;
 
 /**
  * El sintoma del texto copiado de un PDF: el renglon termina sin signo de

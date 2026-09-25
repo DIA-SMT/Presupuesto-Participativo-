@@ -3,7 +3,8 @@
  * convierte en enlace y que deja como texto. No tocan la base.
  *
  * El aviso sale en TODAS las paginas publicas, asi que el criterio es
- * conservador: solo una url completa, que se ve tal cual, o una ruta del sitio.
+ * conservador: solo una url completa con https://, que se ve tal cual, o una
+ * ruta del sitio.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -33,6 +34,17 @@ test("una ruta del sitio es un enlace interno, sin el punto final", () => {
   assert.deepEqual(enlaces(texto), [["/votar", "/votar"]]);
   const [, enlace] = trozosDelAviso(texto);
   assert.equal(enlace.tipo === "enlace" && enlace.interno, true);
+  assert.equal(leido(texto), texto);
+});
+
+test("los tres puntos en un solo caracter tambien cierran la frase", () => {
+  // Word y el teclado del telefono escriben "…" y no "...": sin esto el enlace
+  // iba a "/votar…", que no existe.
+  const texto = "Votá en /votar… o mirá https://smt.gob.ar/pp…";
+  assert.deepEqual(enlaces(texto), [
+    ["/votar", "/votar"],
+    ["https://smt.gob.ar/pp", "https://smt.gob.ar/pp"],
+  ]);
   assert.equal(leido(texto), texto);
 });
 
@@ -74,9 +86,11 @@ test("lo que puede llevar a otro sitio sin que se note queda como texto", () => 
     // Relativa al protocolo, y la barra invertida que el navegador toma como barra.
     "Entrá a //otro.sitio/votar",
     "Entrá a /\\otro.sitio",
-    // Otros esquemas: nunca.
+    // Otros esquemas: nunca. Tampoco http:// sin cifrar: la banda sale en todo
+    // el sitio, y ese enlace se puede desviar en la red del vecino.
     "javascript:alert(1)",
     "Escribí a mailto:alguien@smt.gob.ar",
+    "Más datos en http://smt.gob.ar/pp",
     // Sin punto en el host no es una direccion publica.
     "https://intranet/avisos",
   ]) {
