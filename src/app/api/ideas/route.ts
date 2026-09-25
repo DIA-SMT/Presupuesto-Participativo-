@@ -21,6 +21,7 @@ import {
 } from "@/lib/texto";
 import { altaIdea } from "@/lib/idea-esquema";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
+import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 import { exigirMismoOrigen } from "@/lib/origen";
 
 export const runtime = "nodejs";
@@ -29,6 +30,20 @@ export const runtime = "nodejs";
 // el asistente de carga: si cada uno tuviera los suyos, el asistente podria
 // aprobar un texto que esta ruta rechaza.
 const esquema = altaIdea;
+
+/**
+ * Con los avisos por correo apagados (src/lib/aviso-por-mail.ts), el contacto
+ * se saca del cuerpo ANTES de validar. Despues seria tarde en los dos sentidos:
+ * un correo mal escrito haria rechazar una idea por un campo que no se usa, y
+ * un correo con la casilla marcada pasaria el zod y llegaria al insert.
+ */
+function sinContacto(cuerpo: unknown): unknown {
+  if (AVISO_POR_MAIL_HABILITADO || !cuerpo || typeof cuerpo !== "object") return cuerpo;
+  const copia = { ...(cuerpo as Record<string, unknown>) };
+  delete copia.autorEmail;
+  delete copia.autorAvisos;
+  return copia;
+}
 
 export async function POST(request: Request) {
   // Primero, antes del rate limit: un pedido armado desde otra pagina no tiene
@@ -53,7 +68,7 @@ export async function POST(request: Request) {
 
   let datos: z.infer<typeof esquema>;
   try {
-    datos = esquema.parse(await request.json());
+    datos = esquema.parse(sinContacto(await request.json()));
   } catch (causa) {
     const detalle =
       causa instanceof z.ZodError
@@ -121,8 +136,11 @@ export async function POST(request: Request) {
   const slug = Number(tomados) > 0 ? `${base}-${Number(tomados) + 1}` : base;
 
   // Sin casilla marcada no hay consentimiento, y sin consentimiento no se
-  // guarda el contacto (el zod ya rechaza mail sin casilla).
-  const quiereAvisos = Boolean(datos.autorAvisos && datos.autorEmail);
+  // guarda el contacto (el zod ya rechaza mail sin casilla). Con los avisos
+  // apagados `sinContacto` ya saco los dos campos; el interruptor se repite aca
+  // para que el insert no dependa de que esa limpieza siga existiendo.
+  const quiereAvisos =
+    AVISO_POR_MAIL_HABILITADO && Boolean(datos.autorAvisos && datos.autorEmail);
 
   try {
     const [creada] = await db

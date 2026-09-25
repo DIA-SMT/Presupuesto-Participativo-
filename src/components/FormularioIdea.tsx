@@ -9,9 +9,12 @@
  * invalida ni de asignar mal el distrito.
  *
  * Datos personales: el telefono ya no se pide (la columna no existe) y el
- * correo es facultativo, detras de una casilla desmarcada. Sin la casilla el
- * campo del correo ni siquiera se envia, y el aviso de como sigue la idea se
- * resuelve con el codigo de seguimiento que devuelve /api/ideas.
+ * correo HOY TAMPOCO: la casilla "Quiero dejar mi correo..." esta apagada con
+ * AVISO_POR_MAIL_HABILITADO (src/lib/aviso-por-mail.ts) porque el envio de
+ * avisos no existe todavia. El codigo de la casilla queda, listo para cuando
+ * exista: desmarcada por defecto y, sin marcarla, el correo ni siquiera se
+ * envia. Mientras tanto, como sigue la idea se consulta con el codigo de
+ * seguimiento que devuelve /api/ideas, que no necesita ningun contacto.
  *
  * UN solo boton de inteligencia artificial
  * ----------------------------------------
@@ -59,6 +62,7 @@ import DocumentoIdea, {
 } from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
 import type { PropuestaIA, RespuestaAsistente } from "@/app/api/ideas/asistente/route";
+import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 
 type Categoria = { slug: string; nombre: string; descripcion: string };
 
@@ -159,7 +163,13 @@ export default function FormularioIdea({
   const [ubicando, setUbicando] = useState(false);
   const [estado, setEstado] = useState<Estado>({ tipo: "editando" });
   /** Consentimiento para guardar el correo. Arranca en false, siempre. */
-  const [avisos, setAvisos] = useState(false);
+  const [casillaAvisos, setCasillaAvisos] = useState(false);
+  /**
+   * Lo que vale de verdad: la casilla solo cuenta si los avisos existen. Con el
+   * interruptor apagado la casilla no se dibuja y esto es false siempre, asi
+   * que ni la validacion del ultimo paso ni el envio miran el correo.
+   */
+  const avisos = AVISO_POR_MAIL_HABILITADO && casillaAvisos;
 
   /** Ultima respuesta del asistente, o null si todavia no se pidio ninguna. */
   const [revision, setRevision] = useState<RespuestaAsistente | null>(null);
@@ -1048,52 +1058,57 @@ export default function FormularioIdea({
             />
           </Campo>
 
-          {/* Consentimiento del correo: casilla desmarcada y finalidad declarada. */}
-          <div
-            className="rounded-xl px-4 py-4"
-            style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
-          >
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={avisos}
-                onChange={(evento) => setAvisos(evento.target.checked)}
-                disabled={!abierta || ocupado}
-                className="mt-0.5"
-              />
-              <span className="text-sm font-medium">
-                Quiero dejar mi correo para que me avisen cómo sigue mi idea.
-              </span>
-            </label>
-            <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-              Lo usamos solo para contarte cómo sigue tu idea: no lo publicamos, no lo damos a nadie
-              y no te vamos a mandar otra cosa. Es opcional, y{" "}
-              <strong>no dar el correo no afecta la evaluación de tu propuesta</strong>: se evalúa
-              igual. Podés pedir que lo borremos cuando quieras. Cómo tratamos tus datos está
-              explicado en la{" "}
-              <a href="/privacidad" className="underline">
-                política de privacidad
-              </a>
-              .
-            </p>
+          {/* Consentimiento del correo: casilla desmarcada y finalidad declarada.
+              Apagado mientras no exista el envio de avisos (ver
+              src/lib/aviso-por-mail.ts): ofrecerlo era pedir un dato para una
+              promesa que nadie iba a cumplir. */}
+          {AVISO_POR_MAIL_HABILITADO && (
+            <div
+              className="rounded-xl px-4 py-4"
+              style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+            >
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={casillaAvisos}
+                  onChange={(evento) => setCasillaAvisos(evento.target.checked)}
+                  disabled={!abierta || ocupado}
+                  className="mt-0.5"
+                />
+                <span className="text-sm font-medium">
+                  Quiero dejar mi correo para que me avisen cómo sigue mi idea.
+                </span>
+              </label>
+              <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+                Lo usamos solo para contarte cómo sigue tu idea: no lo publicamos, no lo damos a nadie
+                y no te vamos a mandar otra cosa. Es opcional, y{" "}
+                <strong>no dar el correo no afecta la evaluación de tu propuesta</strong>: se evalúa
+                igual. Podés pedir que lo borremos cuando quieras. Cómo tratamos tus datos está
+                explicado en la{" "}
+                <a href="/privacidad" className="underline">
+                  política de privacidad
+                </a>
+                .
+              </p>
 
-            {avisos && (
-              <div className="mt-4">
-                <Campo etiqueta="Correo electrónico">
-                  <input
-                    name="autorEmail"
-                    type="email"
-                    maxLength={160}
-                    onInput={(evento) => anotarValor("autorEmail", evento.currentTarget.value)}
-                    disabled={!abierta || ocupado}
-                    placeholder="tunombre@ejemplo.com"
-                    className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                    style={campoEstilo}
-                  />
-                </Campo>
-              </div>
-            )}
-          </div>
+              {avisos && (
+                <div className="mt-4">
+                  <Campo etiqueta="Correo electrónico">
+                    <input
+                      name="autorEmail"
+                      type="email"
+                      maxLength={160}
+                      onInput={(evento) => anotarValor("autorEmail", evento.currentTarget.value)}
+                      disabled={!abierta || ocupado}
+                      placeholder="tunombre@ejemplo.com"
+                      className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                      style={campoEstilo}
+                    />
+                  </Campo>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {estado.tipo === "error" && (
