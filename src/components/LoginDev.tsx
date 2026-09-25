@@ -25,7 +25,8 @@ export default function LoginDev() {
           distrito: Number(datos.get("distrito")),
         }),
       });
-      const cuerpo = (await respuesta.json()) as { ok?: boolean; error?: string };
+      // Un 500 sin cuerpo (por ejemplo, sin SESSION_SECRET) no trae JSON.
+      const cuerpo = (await respuesta.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!respuesta.ok) throw new Error(cuerpo.error ?? "No se pudo ingresar.");
       window.location.reload();
     } catch (causa) {

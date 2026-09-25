@@ -625,7 +625,10 @@ export default function FormularioIdea({
         }),
       });
 
-      const cuerpo = (await respuesta.json()) as {
+      // Un 500 sin cuerpo (la base caida, por ejemplo) no trae JSON: sin el
+      // catch, la persona leia el error crudo del navegador, en ingles, justo
+      // al mandar su propuesta. Asi cae al mensaje de abajo.
+      const cuerpo = (await respuesta.json().catch(() => ({}))) as {
         numero?: number;
         distrito?: number;
         codigo?: string;

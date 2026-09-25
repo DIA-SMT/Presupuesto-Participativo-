@@ -113,11 +113,16 @@ export default function HeroInicio() {
           sizes="(min-width: 75rem) 84vw, 100vw"
           className="hero-imagen hero-imagen-clara"
         />
+        {/*
+          Sin placeholder="blur": el borroso de un dibujo con transparencia es
+          una mancha gris clara, que sobre el fondo oscuro se veia como un
+          fogonazo mientras cargaba la imagen. Sin el, hasta que llega no hay
+          nada, y despues entra con la animacion del lienzo.
+        */}
         <Image
           src={heroImagenOscura}
           alt="Migue señalando el mapa en relieve de San Miguel de Tucumán con sus 20 distritos numerados"
           fetchPriority="high"
-          placeholder="blur"
           sizes="(min-width: 75rem) 84vw, 100vw"
           className="hero-imagen hero-imagen-oscura"
         />
@@ -285,9 +290,10 @@ const estilos = `
 
   - El dibujo es la version recortada (sin el fondo claro pintado), asi que
     ya no hay nada que empalmar: el fondo pasa a ser el --fondo del sitio, con
-    un brillo azul tenue detras del mapa que termina en --fondo exacto en los
-    bordes. Asi no se ve costura ni con el encabezado ni con la banda de
-    numeros de abajo, que no tienen fondo propio.
+    un brillo azul tenue detras del mapa. Encima del brillo va una capa que
+    vuelve a --fondo exacto en el borde de arriba y en el de abajo: el brillo
+    solo no alcanzaba (en el celular, con el mapa abajo, llegaba al borde) y se
+    veia la costura con la banda de numeros, que no tiene fondo propio.
   - Los tokens de texto vuelven a los del tema (inherit toma el valor de
     :root, que en oscuro es el oscuro). Medido: titulo #8ec7fc y bajada
     #9aa9c0 dan 10,3:1 y 7,8:1 sobre #0c141f, y todavia 8,9:1 y 6,7:1 en el
@@ -309,14 +315,16 @@ const estilos = `
     --marca-texto: inherit;
     --fondo-tarjeta: inherit;
     --borde-control: inherit;
-    background: radial-gradient(
-      ellipse 60% 75% at var(--hero-brillo-en),
-      color-mix(in srgb, var(--color-marca-700) 22%, var(--fondo)) 0%,
-      var(--fondo) 72%
-    );
+    background:
+      linear-gradient(to bottom, var(--fondo), transparent 14%, transparent 86%, var(--fondo)),
+      radial-gradient(
+        ellipse 60% 75% at var(--hero-brillo-en),
+        color-mix(in srgb, var(--color-marca-700) 22%, var(--fondo)) 0%,
+        var(--fondo) 72%
+      );
   }
   :root:not([data-theme="light"]) .hero-imagen-clara { display: none; }
-  :root:not([data-theme="light"]) .hero-imagen-oscura { display: inline; }
+  :root:not([data-theme="light"]) .hero-imagen-oscura { display: block; }
   :root:not([data-theme="light"]) .hero-lienzo::before { display: none; }
 }
 :root[data-theme="dark"] .hero {
@@ -325,14 +333,16 @@ const estilos = `
   --marca-texto: inherit;
   --fondo-tarjeta: inherit;
   --borde-control: inherit;
-  background: radial-gradient(
-    ellipse 60% 75% at var(--hero-brillo-en),
-    color-mix(in srgb, var(--color-marca-700) 22%, var(--fondo)) 0%,
-    var(--fondo) 72%
-  );
+  background:
+    linear-gradient(to bottom, var(--fondo), transparent 14%, transparent 86%, var(--fondo)),
+    radial-gradient(
+      ellipse 60% 75% at var(--hero-brillo-en),
+      color-mix(in srgb, var(--color-marca-700) 22%, var(--fondo)) 0%,
+      var(--fondo) 72%
+    );
 }
 :root[data-theme="dark"] .hero-imagen-clara { display: none; }
-:root[data-theme="dark"] .hero-imagen-oscura { display: inline; }
+:root[data-theme="dark"] .hero-imagen-oscura { display: block; }
 :root[data-theme="dark"] .hero-lienzo::before { display: none; }
 
 .hero-volanta {
