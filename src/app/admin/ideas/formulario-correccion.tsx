@@ -22,7 +22,7 @@
  * formulario de la misma ficha que guarda (la evaluacion) le borraria a la
  * persona lo que estaba corrigiendo.
  */
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import type { CandidataIntegracion, IdeaAdmin } from "@/db/queries";
 import { puedeCambiarDeDistrito, puedeCambiarIdea, type Etapa } from "@/lib/etapas";
 import { corregirIdea } from "./acciones";
@@ -59,6 +59,14 @@ export default function BloqueCorreccion({
     null,
   );
   const veredicto = puedeCambiarIdea(etapa, ficha, { accion: "corregir" });
+
+  // Guardada, el formulario se cierra y se lleva con el el boton que tenia el
+  // foco: sin esto quedaba en el <body>. Se lleva al aviso, que dice que quedo
+  // guardado y cuantos cambios.
+  const aviso = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (resultado?.ok) aviso.current?.focus({ preventScroll: true });
+  }, [resultado]);
 
   return (
     <section className="grid gap-3" style={{ borderTop: "1px solid var(--borde)" }}>
@@ -97,6 +105,8 @@ export default function BloqueCorreccion({
 
       {resultado && (
         <span
+          ref={aviso}
+          tabIndex={-1}
           role="status"
           className="text-sm"
           style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}

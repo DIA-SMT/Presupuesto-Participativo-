@@ -19,7 +19,7 @@
  * para imprimir y darle al vecino.
  */
 import Link from "next/link";
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import DocumentoIdea from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
 import { cargarIdea } from "../acciones";
@@ -98,6 +98,26 @@ export default function FormularioCarga({
   const consulta = useRef(0);
   const geometria = useRef<Promise<Record<number, number[][]>> | null>(null);
 
+  /*
+   * El foco, cuando la pantalla cambia entera. Al cargar, el formulario se va
+   * y con el el boton que tenia el foco: sin esto quedaba en el <body>, y un
+   * lector de pantalla no decia ni el numero ni el codigo (la region "polite"
+   * aparece junto con su texto, y asi no siempre se anuncia). Se lleva al titulo
+   * de la idea cargada. "Cargar otra" lo lleva al titulo del formulario nuevo:
+   * es lo primero que se tipea de un papel (el punto se marca con el mouse).
+   */
+  const titularCargada = useRef<HTMLHeadingElement>(null);
+  const campoTitulo = useRef<HTMLInputElement>(null);
+  const alVolverAlFormulario = useRef(false);
+  useEffect(() => {
+    if (ultima) {
+      titularCargada.current?.focus({ preventScroll: true });
+    } else if (alVolverAlFormulario.current) {
+      alVolverAlFormulario.current = false;
+      campoTitulo.current?.focus({ preventScroll: true });
+    }
+  }, [ultima]);
+
   const [resultado, accion, pendiente] = useActionState(
     async (previo: ResultadoAlta | null, datos: FormData): Promise<ResultadoAlta> => {
       const respuesta = await cargarIdea(previo, datos);
@@ -171,6 +191,7 @@ export default function FormularioCarga({
   }
 
   function cargarOtra() {
+    alVolverAlFormulario.current = true;
     setUltima(null);
     setContenido(CONTENIDO_VACIO);
     setBarrio(BARRIO_VACIO);
@@ -195,7 +216,7 @@ export default function FormularioCarga({
           <p className="text-sm font-semibold" style={{ color: "var(--color-cat-ambiental)" }}>
             Idea cargada{cargadas > 1 ? ` · ${cargadas} en esta tanda` : ""}
           </p>
-          <h2 className="mt-1 text-xl font-bold">
+          <h2 ref={titularCargada} tabIndex={-1} className="mt-1 text-xl font-bold">
             #{ultima.numero} · {ultima.titulo}
           </h2>
           <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
@@ -477,6 +498,7 @@ export default function FormularioCarga({
 
           <Campo etiqueta="Título de la idea" contador={contador(contenido.titulo, limites.titulo)}>
             <input
+              ref={campoTitulo}
               name="titulo"
               required
               maxLength={limites.titulo.maximo}
