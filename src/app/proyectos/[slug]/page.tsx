@@ -172,8 +172,12 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
             </div>
           ) : (
             <Vacio>
-              El texto completo de esta idea no está cargado en el sistema. El relevamiento del sitio
-              anterior sólo recuperó el contenido de los proyectos ganadores.
+              {/* La explicacion del relevamiento vale solo para las ideas del
+                  sitio anterior (las que traen notas de la migracion): para una
+                  idea cargada en este sitio seria falsa. */}
+              {idea.notasMigracion.length > 0
+                ? "El texto completo de esta idea no está cargado en el sistema. El relevamiento del sitio anterior sólo recuperó el contenido de los proyectos ganadores."
+                : "Todavía no se cargó el texto de esta idea."}
             </Vacio>
           )}
 

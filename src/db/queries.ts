@@ -2002,6 +2002,12 @@ export type SeguimientoIdea = {
   motivoEstado: string | null;
   /** Por donde entro: decide que se le dice si no hay devolucion escrita. */
   canal: CanalCarga;
+  /**
+   * Si vino del sitio anterior (tiene el rastro que deja el ETL). El canal solo
+   * no alcanza: "asamblea" es tambien lo que pone el panel a una idea que el
+   * equipo carga hoy, y esa SI se evalua en este sitio.
+   */
+  migrada: boolean;
   distrito: number | null;
   fecha: string | null;
   publicada: boolean;
@@ -2036,6 +2042,7 @@ export async function getSeguimientoIdea(
       estado: ideas.estado,
       motivoEstado: ideas.motivoEstado,
       canal: ideas.canal,
+      migrada: sql<boolean>`${ideas.tituloOriginal} IS NOT NULL`,
       distrito: distritos.numero,
       fecha: ideas.fecha,
       publicada: ideas.publicada,
@@ -2049,6 +2056,7 @@ export async function getSeguimientoIdea(
   return {
     ...fila,
     numero: fila.numero === null ? null : Number(fila.numero),
+    migrada: Boolean(fila.migrada),
     distrito: fila.distrito === null ? null : Number(fila.distrito),
   };
 }

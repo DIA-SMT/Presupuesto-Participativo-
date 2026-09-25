@@ -25,6 +25,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { hoyEnTucuman } from "../../src/lib/formato";
 import {
   cargarMinimo,
   crearBaseDePrueba,
@@ -169,9 +170,10 @@ async function cargar(cambios: Record<string, string> = {}) {
 
 test("el dia de hoy es el de Tucuman, no el de UTC", () => {
   // 23:30 del 25 en Tucuman son las 02:30 del 26 en UTC: toISOString() daba
-  // el dia siguiente, y el tope de la fecha dejaba cargar "manana".
-  assert.equal(operaciones.hoyEnTucuman(new Date("2026-09-26T02:30:00Z")), "2026-09-25");
-  assert.equal(operaciones.hoyEnTucuman(new Date("2026-09-26T03:30:00Z")), "2026-09-26");
+  // el dia siguiente, y el tope de la fecha dejaba cargar "manana". La usan el
+  // panel y el formulario publico, que hasta la Fase 2 guardaba la de UTC.
+  assert.equal(hoyEnTucuman(new Date("2026-09-26T02:30:00Z")), "2026-09-25");
+  assert.equal(hoyEnTucuman(new Date("2026-09-26T03:30:00Z")), "2026-09-26");
 });
 
 test("el panel carga una idea igual que el formulario, con su canal, su fecha y su fila de alta", async () => {

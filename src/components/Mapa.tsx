@@ -380,7 +380,7 @@ export default function Mapa({
            <p class="pp-popup-titulo">${escapar(punto.titulo)}</p>
            ${
              punto.aproximada
-               ? '<p class="pp-popup-aviso">Ubicación aproximada: la idea no tenía coordenada cargada.</p>'
+               ? '<p class="pp-popup-aviso">Ubicación aproximada: el punto no marca el lugar exacto de la obra.</p>'
                : ""
            }
            <a class="pp-popup-link" href="${escapar(

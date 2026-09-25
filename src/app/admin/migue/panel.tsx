@@ -106,6 +106,7 @@ export type Props = {
   limiteSinResolver: number;
   /** Tope de la lista de las ultimas consultas. */
   limiteUltimas: number;
+  puedeCargarPreguntas: boolean;
 };
 
 export default function PanelMigue({
@@ -119,6 +120,7 @@ export default function PanelMigue({
   ultimas,
   limiteSinResolver,
   limiteUltimas,
+  puedeCargarPreguntas,
 }: Props) {
   // Nunca hubo una consulta: no hay nada que graficar ni que explicar por
   // bloque, asi que la pantalla es un solo cartel.
@@ -174,6 +176,7 @@ export default function PanelMigue({
             resumen={resumen}
             dias={dias}
             limite={limiteSinResolver}
+            puedeCargarPreguntas={puedeCargarPreguntas}
           />
 
           <QueBusca filas={repetidas} dias={dias} />
@@ -257,11 +260,13 @@ function SinResolver({
   resumen,
   dias,
   limite,
+  puedeCargarPreguntas,
 }: {
   filas: FilaConsultaChat[];
   resumen: ResumenChat;
   dias: number;
   limite: number;
+  puedeCargarPreguntas: boolean;
 }) {
   return (
     <section className="mt-8" aria-labelledby="titulo-sin-resolver">
@@ -271,12 +276,19 @@ function SinResolver({
       <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
         Esto es <strong>contenido que le falta al sitio</strong>, escrito con las palabras del
         vecino. Migue no inventa: cuando el dato no está cargado lo dice y la consulta queda acá.
-        Leelas de arriba abajo y preguntate dónde debería estar la respuesta: en un{" "}
-        <Link href="/admin/contenido" className="underline">
-          texto del sitio
-        </Link>
-        , en el cronograma de la edición, en una novedad, o en un dato de una idea que todavía nadie
-        cargó. Cuando eso esté cargado, Migue lo contesta solo.
+        Leelas de arriba abajo y preguntate dónde debería estar la respuesta. Migue contesta con
+        tres cosas: las{" "}
+        {/* Los textos del sitio y las novedades NO: el chat no los lee. Decia
+            "un texto del sitio" y mandaba a cargar algo que Migue nunca iba a usar. */}
+        {puedeCargarPreguntas ? (
+          <Link href="/admin/contenido?seccion=preguntas" className="underline">
+            preguntas frecuentes
+          </Link>
+        ) : (
+          <>preguntas frecuentes (las carga un administrador)</>
+        )}
+        , el cronograma de la edición y los datos de cada idea. Cuando lo que falta esté cargado
+        en alguna de las tres, Migue lo contesta solo.
       </p>
 
       <div

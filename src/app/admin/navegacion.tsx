@@ -66,7 +66,10 @@ const ENLACES: Enlace[] = [
  * subrutas, para que una pantalla de detalle no apague la seccion.
  */
 function estaActivo(pathname: string, href: string): boolean {
-  if (href === "/admin") return pathname === "/admin";
+  // "Propuestas" es la bandeja y tambien lo que se hace desde ella: cargar una
+  // idea (/admin/ideas/nueva) no es otra seccion, y sin esto ninguna solapa
+  // quedaba marcada en esa pantalla.
+  if (href === "/admin") return pathname === "/admin" || pathname.startsWith("/admin/ideas/");
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -80,6 +83,12 @@ export default function CabeceraPanel({
   rol: RolAdmin;
 }) {
   const pathname = usePathname();
+
+  // El layout del panel no se vuelve a dibujar al navegar dentro de el: si la
+  // sesion se corta (una baja, un cambio de contrasena desde otra sesion) y la
+  // pagina manda al ingreso, la cabecera con el nombre quedaba arriba del
+  // formulario de ingreso. En /admin/ingresar nunca hay una sesion que mostrar.
+  if (pathname === "/admin/ingresar") return null;
 
   // La pantalla de la etapa no se le ofrece a quien no la puede usar. Esconder
   // el enlace es cosmetico: la autorizacion real la hace cada pagina y cada

@@ -35,7 +35,7 @@ import {
   puedeCargarIdea,
   puedeDescartarse,
 } from "@/lib/etapas";
-import { formatearFechaCorta } from "@/lib/formato";
+import { formatearFechaCorta, hoyEnTucuman } from "@/lib/formato";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import { contenidoIdea, LARGOS, MINIMOS } from "@/lib/idea-esquema";
 import { normalizar, normalizarParrafo } from "@/lib/texto";
@@ -72,22 +72,6 @@ export const MINIMO_MOTIVO = 10;
 
 /** Tope de cada valor del antes y el despues en la fila de una correccion. */
 const TOPE_VALOR_CORRECCION = 160;
-
-/**
- * El dia de hoy en Tucuman, AAAA-MM-DD. Se arma con las partes de Intl y no con
- * `toISOString()`, que da el dia en UTC: despues de las 21:00 locales ya es
- * manana, y una idea cargada a la noche quedaba con fecha del dia siguiente.
- */
-export function hoyEnTucuman(ahora: Date = new Date()): string {
-  const partes = new Intl.DateTimeFormat("es-AR", {
-    timeZone: "America/Argentina/Tucuman",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(ahora);
-  const parte = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
-  return `${parte("year")}-${parte("month")}-${parte("day")}`;
-}
 
 /** Un campo de texto de una sola linea: sin espacios de mas. */
 function limpiarLinea(valor: string | null | undefined): string {

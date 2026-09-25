@@ -17,6 +17,8 @@ export const DESCRIPCION_ESTADO: Record<string, string> = {
   no_factible: "La evaluación técnica determinó que no puede ejecutarse como está presentada.",
   integrado: "Se fusionó con otra propuesta parecida para presentarse como un solo proyecto.",
   ganador: "Fue el proyecto más votado de su distrito y se incorpora al presupuesto municipal.",
+  // Solo en el panel: una descartada nunca se publica.
+  descartado: "Se descartó: era una prueba, un mensaje sin propuesta o una carga repetida.",
 };
 
 /*
@@ -31,6 +33,8 @@ export const COLOR_ESTADO: Record<string, string> = {
   no_factible: "var(--color-estado-nofactible)",
   integrado: "var(--color-estado-integrado)",
   ganador: "var(--ganador-texto)",
+  // Gris como "no factible": en la bandeja tiene que leerse apagada.
+  descartado: "var(--color-estado-nofactible)",
 };
 
 /**
@@ -135,6 +139,23 @@ const fechaCorta = new Intl.DateTimeFormat("es-AR", {
   year: "numeric",
   timeZone: "America/Argentina/Tucuman",
 });
+
+/**
+ * El dia de hoy en Tucuman, AAAA-MM-DD. Se arma con las partes de Intl y no con
+ * `toISOString()`, que da el dia en UTC: despues de las 21:00 locales ya es
+ * manana, y una idea cargada a la noche quedaba con fecha del dia siguiente.
+ * La usan el formulario publico (/api/ideas) y la carga desde el panel.
+ */
+export function hoyEnTucuman(ahora: Date = new Date()): string {
+  const partes = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Tucuman",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(ahora);
+  const parte = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  return `${parte("year")}-${parte("month")}-${parte("day")}`;
+}
 
 /** Las fechas del dataset son "YYYY-MM-DD": se parsean sin corrimiento de zona. */
 function aFecha(valor: string): Date {

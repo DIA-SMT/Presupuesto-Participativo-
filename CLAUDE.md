@@ -39,6 +39,18 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   proclamar, cambiar de etapa, activar otra edición) lo decide
   `src/lib/etapas.ts`. Una acción nueva que toque ideas votables o la etapa lo
   consulta dentro de su transacción, releyendo la etapa de la base.
+- Toda consulta sobre ideas (listas, cuentas, búsquedas, el chat) excluye las
+  descartadas con `NO_DESCARTADA` (`src/db/queries.ts`), también las públicas:
+  una descartada no cuenta en ningún número. Solo la solapa "Descartadas" de la
+  bandeja las muestra.
+- La edición que muestra una página pública sale de `?edicion=AAAA`, leído con
+  `src/lib/edicion-en-vista.ts`; sin el parámetro, la activa. Los enlaces
+  internos de una página que muestra otra edición se arman con `conEdicion`
+  (`src/lib/ediciones.ts`): el slug se repite entre ediciones.
+- Un texto editable del sitio se lee con su clave literal (`textos["clave"]`) y
+  la clave se suma a `src/app/admin/contenido/catalogo.ts`, que es lo que
+  muestra la pantalla de Contenido. Lo exige
+  `scripts/tests/contenido-catalogo.test.ts`.
 - La limpieza de datos migrados es auditable: cualquier transformación nueva en
   el ETL debe registrarse en `notasMigracion` y en el reporte.
 
@@ -51,7 +63,8 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
 - `.env.local` **no lleva la URL de producción**: `DATABASE_URL` va vacía y el
   desarrollo usa PGlite. Los scripts que escriben (`db:migrate`, `seed`,
   `crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`,
-  `aplicar-geografia --aplicar`, `ver-ideas-web --borrar … --confirmar`) se
+  `aplicar-geografia --aplicar`, `ver-ideas-web --borrar … --confirmar`,
+  `limpiar-pruebas --confirmar`) se
   niegan a correr contra una base remota salvo con `--produccion`
   (`npm run x -- --produccion`: sin el `--` npm se queda el flag), y con el
   flag muestran el host y esperan 5 s antes de escribir. El candado es
@@ -77,6 +90,18 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   extensiones de Postgres: la
   geografía y la búsqueda sin tildes se resuelven en la aplicación
   (`src/lib/geo.ts`, columna `barrio_normalizado`).
+- `scripts/escenario.ts <etapa>` pone la base local en una etapa del proceso,
+  con ideas de ejemplo, para ver el sitio en cada una; no corre contra una base
+  remota ni con flag.
+- La sesión del panel se valida contra la base en cada pedido
+  (`getSesionAdmin`, `src/lib/sesion.ts`): el token lleva el id de la cuenta y
+  su `version_sesion`, y el rol, el nombre y si está activa salen de la fila.
+  Lo que tenga que cortar las sesiones abiertas de una cuenta (baja, cambio de
+  rol o de contraseña, restablecimiento) sube `version_sesion` (ver
+  `src/app/admin/equipo/cuentas.ts`). En las acciones, `exigirAdmin`
+  (`src/app/admin/comun.ts`) va antes de cualquier try/catch, porque con la
+  contraseña provisoria redirige a `/admin/password`; solo esa pantalla, su
+  acción y el layout del panel pasan `permitirPasswordProvisoria`.
 - `AUTH_PROVIDER=dev` habilita un login de prueba sin verificación; el código
   lo bloquea en producción y con cualquier base remota
   (`src/lib/empadronamiento.ts`).

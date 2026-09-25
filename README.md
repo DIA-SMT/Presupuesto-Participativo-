@@ -26,11 +26,12 @@ desplegarse en **Vercel**.
 | Proyectos | `/proyectos` | Listado con filtros por distrito, categoría, estado y texto; vista con mapa |
 | Ficha de proyecto | `/proyectos/<slug>` | Problema, propuesta, beneficios, votos, presupuesto y avance de obra |
 | Transparencia | `/transparencia` | Qué proyecto ganó en cada distrito y con cuántos votos; datos abiertos |
+| Ediciones anteriores | `/archivo` y `?edicion=2025` | Proyectos, fichas, distritos y transparencia de cualquier edición, con un aviso cuando no es la vigente |
 | Carga de ideas | `/ideas/nueva` | Formulario con selector de punto en el mapa; el distrito se deriva solo |
 | Votación | `/votar` | Empadronamiento con CIDITUC, un voto por persona en su distrito |
 | Chatbot | botón flotante | Consultas en lenguaje natural sobre los datos reales del programa |
-| Backoffice | `/admin` | Leer las propuestas, evaluarlas, exportarlas en PDF y mover la etapa del proceso |
-| Datos abiertos | `/api/proyectos`, `/geo/distritos.geojson` | JSON/CSV y geometría oficial reutilizables |
+| Backoffice | `/admin` | Leer las propuestas, evaluarlas, exportarlas en PDF y mover la etapa; cargar las que llegan por otro canal, corregirlas o descartarlas; y, solo admin, el equipo y el contenido del sitio |
+| Datos abiertos | `/api/proyectos`, `/geo/distritos.geojson` | JSON/CSV de la edición vigente (u otra con `?edicion=AAAA`) y geometría oficial reutilizables |
 
 ## Cómo levantarlo (desarrollo)
 
@@ -116,7 +117,10 @@ que el entorno esté preparado ANTES de desplegar:
    padrón se conserva (hay una prueba de eso). Sin `DNI_PEPPER`, votar falla con
    "sin-padron"; con otro valor, cada persona pasa a ser un votante nuevo. Si
    `SESSION_SECRET` está marcada como *Sensitive* en Vercel no se puede leer:
-   resolverlo antes de desplegar. Recién después se puede rotar `SESSION_SECRET`.
+   resolverlo antes de desplegar. Recién después se puede rotar `SESSION_SECRET`,
+   y conviene hacerlo antes de abrir la etapa de ideas: rotarla cambia los
+   códigos de seguimiento que ya tienen los vecinos, también los impresos en el
+   comprobante del panel.
 2. **`DATABASE_CA_PEM`** con la raíz de Supabase (confirmar la huella que
    figura en `.env.example`), probándola primero en un deploy de Preview: con la
    CA como único almacén, un certificado equivocado deja al sitio sin base.
@@ -132,12 +136,36 @@ cookies pasan a llamarse `__Host-…`), los contadores de límite por IP arranca
 de cero (cambió la pimienta de la IP) y las respuestas del chat guardadas en el
 navegador dejan de viajar como contexto (ahora van firmadas).
 
+### Primer deploy con la Fase 2 (en este orden)
+
+1. **La migración `0012` antes que el código.** `npm run db:migrate -- --produccion`
+   (ver [Tocar producción desde la terminal](#tocar-producción-desde-la-terminal)).
+   Solo suma dos columnas con valor por defecto (`admins.version_sesion`,
+   `ideas.canal_detalle`) y valores nuevos a cuatro enums, así que el código de
+   la Fase 1 sigue andando con ella aplicada. Al revés no: el código nuevo lee
+   `version_sesion` al ingresar y en cada página del panel, y sin la columna no
+   entra nadie. Si la Fase 1 todavía no se desplegó, sus pasos van primero y el
+   runner aplica las pendientes juntas.
+2. **Desplegar.** Se cierran todas las sesiones del panel, una vez: los tokens
+   viejos no llevan la versión de la sesión. Cada persona vuelve a entrar con su
+   contraseña.
+3. **Las cuentas nuevas se dan de alta en `/admin/equipo`** (solo admin), con
+   una contraseña provisoria que la persona cambia al primer ingreso.
+   `crear-admin` queda para la primera cuenta y para recuperar el acceso si nadie
+   puede entrar; restablecer una contraseña desde ahí también cierra las
+   sesiones de esa cuenta.
+
+Antes de abrir la etapa de ideas al público se barren las pruebas con
+`scripts/limpiar-pruebas.ts` (ver [Scripts](#scripts)), con la fecha del día
+anterior a la apertura y primero sin `--confirmar`.
+
 ### Tocar producción desde la terminal
 
 Los scripts que escriben en la base **se niegan a correr contra una base
 remota** salvo que se les pase `--produccion`: `db:migrate`, `seed`,
 `crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`,
-`aplicar-geografia --aplicar` y `ver-ideas-web --borrar … --confirmar`. Con el
+`aplicar-geografia --aplicar`, `ver-ideas-web --borrar … --confirmar` y
+`limpiar-pruebas --confirmar`. Con el
 flag, antes de empezar muestran el host (sin usuario ni contraseña) y esperan
 5 segundos, para poder cancelar con Ctrl+C si no era la base que se creía. Y al
 revés: `--produccion` contra una base local también se rechaza, para que nadie
@@ -169,10 +197,11 @@ lo queda, el script no lo recibe y lo rechaza (avisando por qué).
 | Qué se hace en producción | Cómo |
 |---|---|
 | Aplicar las migraciones nuevas | `npm run db:migrate -- --produccion` (ver [Cambios de esquema](#cambios-de-esquema-siempre-por-migraciones)) |
-| Dar de alta una cuenta del panel | `npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" moderador --produccion` |
+| Dar de alta una cuenta del panel | Desde `/admin/equipo` (solo admin). La primera cuenta, o si nadie puede entrar: `npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" admin --produccion` |
 | Purgar los contactos de una edición cerrada | `npm run purgar-contactos` (solo muestra) y después `npm run purgar-contactos -- --confirmar --produccion` |
 | Cambiar la etapa del proceso | Desde `/admin/ediciones`. `scripts/cambiar-etapa.ts` es para pruebas locales (también deja rastro en la bitácora) |
-| Borrar una idea cargada en una demostración | `npx tsx scripts/ver-ideas-web.ts --borrar <número>` (muestra cuál) y después con `--confirmar --produccion` |
+| Sacar una idea cargada en una demostración | Descartarla desde su ficha del panel: queda despublicada, fuera de toda cuenta y con motivo. Para borrarla del todo, `npx tsx scripts/ver-ideas-web.ts --borrar <número>` (muestra cuál) y después con `--confirmar --produccion` |
+| Barrer las pruebas antes del lanzamiento | `npx tsx scripts/limpiar-pruebas.ts --hasta AAAA-MM-DD` (muestra qué borraría) y después con `--confirmar --produccion` |
 
 **`npm run setup` y `npm run seed` no se corren contra Supabase.** `setup` se
 niega siempre ante una base remota, sin flag que lo habilite. `seed` con
@@ -277,8 +306,10 @@ proyecto Landing Elecop (Dirección de IA).
   recibe la base entera sino cinco herramientas
   (`buscar_proyectos`, `detalle_proyecto`, `resumen_distrito`, `ubicar_barrio`,
   `estadisticas`) que llaman exactamente a las mismas consultas que las
-  páginas. Si un dato no está cargado, la herramienta lo dice y el asistente
-  lo repite en lugar de inventarlo. La clave de API nunca llega al navegador.
+  páginas. Todas aceptan `edicion` (sin ella, la vigente); si la vigente
+  todavía no votó, la búsqueda, el resumen de distrito y las estadísticas traen
+  también los ganadores de la última que sí votó, marcados como de esa edición. Si un dato no está cargado, la herramienta lo
+  dice y el asistente lo repite en lugar de inventarlo. La clave de API nunca llega al navegador.
   Sin clave configurada, con el tope diario pasado o si el proveedor falla (sin
   crédito, modelo mal escrito, caído, colgado a mitad de la respuesta), el
   endpoint responde con un buscador determinístico (`src/lib/chat-sin-ia.ts`). Cada consulta queda registrada (pregunta,
@@ -358,8 +389,10 @@ campo `notasMigracion` de cada idea, visible en la ficha pública):
 | `npm run db:migrate` | Aplica las migraciones pendientes de `drizzle/` |
 | `npm run etl` | Regenera el dataset limpio y el reporte de limpieza (no toca la base) |
 | `npm run seed` | Carga la edición 2025 en la base de desarrollo. Pisa contenido: no es para producción |
-| `npm run crear-admin` | Crea o actualiza **una** cuenta del panel, con fila en la bitácora del equipo |
+| `npm run crear-admin` | Crea o actualiza **una** cuenta del panel, con fila en la bitácora del equipo. Es para la primera cuenta y para emergencias: el alta normal es desde `/admin/equipo`. Restablecer desde acá cierra las sesiones abiertas de la cuenta |
 | `npm run purgar-contactos` | Borra el contacto de los autores de las ediciones cerradas; sin `--confirmar` solo muestra |
+| `npx tsx scripts/limpiar-pruebas.ts` | Antes del lanzamiento: votantes del login de prueba, ideas de las demos con sus votos, y el registro del chat y de los informes de cuando se probaba. Con `--hasta AAAA-MM-DD` (el día anterior a la apertura) muestra qué borraría; con `--confirmar`, lo borra. Los votantes verificados por CIDITUC solo con `--incluir-cidituc` |
+| `npx tsx scripts/escenario.ts <etapa>` | Solo base local: pone una 2026 de ejemplo en `ideas`, `evaluacion`, `votacion`, `seguimiento` o `cerrada`, para ver el sitio en cada etapa. `2025` vuelve a como lo deja el seed |
 | `npm test` | Pruebas (normalización, geografía, reglas de votación y de revisión, candado de producción). Las que usan base levantan una PGlite descartable |
 | `npm run typecheck` | Genera los tipos de Next (`next typegen`) y corre TypeScript sin emitir |
 | `npm run lint` | ESLint con la configuración de Next (`eslint .`) |
@@ -408,7 +441,13 @@ archivo nuevo en `drizzle/`.
   antes de salir a producción (ver arriba).
 - **Contenido de ideas no ganadoras**: el relevamiento solo recuperó el texto
   completo de los 19 ganadores; las demás ideas tienen título, barrio, estado y
-  votos. Si el municipio conserva los textos, se cargan por el admin.
+  votos. Si el municipio conserva los textos, se cargan desde la ficha de cada
+  idea en el panel, con **Corregir** (queda en su historial).
+- **Códigos de seguimiento atados a `SESSION_SECRET`**: se derivan de ese
+  secreto (`src/lib/avisos.ts`), así que rotarlo cambia todos los que ya tienen
+  los vecinos, también los impresos en el comprobante del panel. Conviene darles
+  un secreto propio, como se hizo con `DNI_PEPPER`, antes de la primera edición
+  con ideas cargadas en este sitio.
 - **7 ideas con distrito dudoso**: listadas en `data/reporte-limpieza.md`,
   requieren confirmación del equipo.
 - **Aviso por mail**: la casilla "quiero dejar mi correo" del formulario está

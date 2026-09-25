@@ -75,6 +75,7 @@ async function consultarSeguimiento(
         estado: idea.estado,
         devolucion: idea.motivoEstado,
         canal: idea.canal,
+        migrada: idea.migrada,
         distrito: idea.distrito,
         fecha: idea.fecha,
         publicada: idea.publicada,

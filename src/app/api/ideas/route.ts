@@ -19,6 +19,7 @@ import { altaIdea } from "@/lib/idea-esquema";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 import { exigirMismoOrigen } from "@/lib/origen";
+import { hoyEnTucuman } from "@/lib/formato";
 
 export const runtime = "nodejs";
 
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
           quiereAvisos && datos.autorEmail
             ? { email: datos.autorEmail, version: VERSION_CONSENTIMIENTO }
             : null,
-        fecha: new Date().toISOString().slice(0, 10),
+        fecha: hoyEnTucuman(),
       },
       {
         etapaPermitida: ({ etapa }) =>

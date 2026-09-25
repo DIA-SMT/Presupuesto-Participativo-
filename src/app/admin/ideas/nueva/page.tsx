@@ -6,7 +6,7 @@ import { ETIQUETA_ETAPA } from "@/lib/formato";
 import { getSesionAdmin } from "@/lib/sesion";
 import { urlDelSitio } from "@/lib/sitio";
 import { limitesDeLaIdea } from "../limites";
-import { hoyEnTucuman } from "../operaciones";
+import { hoyEnTucuman } from "@/lib/formato";
 import FormularioCarga from "./formulario";
 
 export const metadata = { title: "Cargar una idea" };

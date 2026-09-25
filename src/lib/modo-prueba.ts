@@ -21,10 +21,12 @@
  * Lo que la idea cargada asi NO tiene es un trato distinto: entra `pendiente`
  * y sin publicar, igual que una real, porque justamente lo que se quiere
  * mostrar es el circuito real. No mueve ningun numero publico (las
- * estadisticas cuentan solo ideas publicadas) y el equipo la borra con
- * `npx tsx scripts/ver-ideas-web.ts --borrar <numero>`: el numero que mostro la
- * pantalla de idea recibida, de la edicion activa. Sin `--confirmar` el script
- * solo muestra cual borraria; el panel no tiene boton para borrar ideas.
+ * estadisticas cuentan solo ideas publicadas). Despues de la demo, desde la
+ * ficha del panel se DESCARTA (queda despublicada, fuera de toda cuenta y con
+ * motivo, sin borrarla). Para borrarla del todo esta
+ * `npx tsx scripts/ver-ideas-web.ts --borrar <numero>`, con el numero que
+ * mostro la pantalla de idea recibida (sin `--confirmar` solo muestra cual
+ * borraria), y antes del lanzamiento `scripts/limpiar-pruebas.ts` barre todas.
  */
 import { getSesionAdmin } from "@/lib/sesion";
 
