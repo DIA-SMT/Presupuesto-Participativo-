@@ -6,6 +6,10 @@
  *   4. El proyecto pertenece al distrito de la persona.
  *   5. Un voto por persona por edicion: lo garantiza ademas una restriccion
  *      UNIQUE en la base, asi que ni una condicion de carrera lo rompe.
+ *
+ * Antes que todo eso, el pedido tiene que haber salido de este sitio
+ * (src/lib/origen.ts): la cookie Lax viaja tambien desde cualquier
+ * *.smt.gob.ar, y un formulario text/plain puede armar un JSON valido.
  */
 import { z } from "zod";
 import { and, eq, sql as incremento } from "drizzle-orm";
@@ -14,12 +18,18 @@ import { distritos, ideas, votos } from "@/db/schema";
 import { getEdicionActiva } from "@/db/queries";
 import { getSesionVotante } from "@/lib/sesion";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { exigirMismoOrigen } from "@/lib/origen";
 
 export const runtime = "nodejs";
 
 const esquema = z.object({ slug: z.string().min(1).max(200) });
 
 export async function POST(request: Request) {
+  // Primero, antes del rate limit: un pedido ajeno no tiene que gastarle los
+  // intentos a la conexion de la persona.
+  const rechazo = exigirMismoOrigen(request);
+  if (rechazo) return rechazo;
+
   const ipHash = hashearIp(ipDe(request));
   const limite = await consumir(`votos:${ipHash}`, 20, 600);
   if (!limite.permitido) {

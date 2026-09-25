@@ -21,6 +21,7 @@ import {
 } from "@/lib/texto";
 import { altaIdea } from "@/lib/idea-esquema";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
+import { exigirMismoOrigen } from "@/lib/origen";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,11 @@ export const runtime = "nodejs";
 const esquema = altaIdea;
 
 export async function POST(request: Request) {
+  // Primero, antes del rate limit: un pedido armado desde otra pagina no tiene
+  // que gastarle los cinco intentos a la conexion de la persona.
+  const rechazo = exigirMismoOrigen(request);
+  if (rechazo) return rechazo;
+
   const ipHash = hashearIp(ipDe(request));
 
   // Tope generoso, pero suficiente para frenar una carga automatizada.

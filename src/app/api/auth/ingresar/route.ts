@@ -13,6 +13,7 @@ import { z } from "zod";
 import { empadronar, proveedorActivo } from "@/lib/empadronamiento";
 import { crearSesionVotante } from "@/lib/sesion";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { exigirMismoOrigen } from "@/lib/origen";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,12 @@ const esquemaDev = z.object({
 });
 
 export async function POST(request: Request) {
+  // Aunque sea el login de prueba: sin esto, una pagina ajena podia abrirle a
+  // quien la visita una sesion con un DNI elegido por ella (en una demo, el
+  // voto que esa persona creyera emitir quedaba a nombre de otro).
+  const rechazo = exigirMismoOrigen(request);
+  if (rechazo) return rechazo;
+
   let proveedor: "cidituc" | "dev";
   try {
     proveedor = proveedorActivo();
