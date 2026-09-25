@@ -87,9 +87,11 @@ export async function GET(request: Request) {
        * los 322 barrios de la capa del sitio hay 100 que tocan mas de un
        * distrito. El barrio sirve para proponer, no para asignar.
        *
-       * Si el padron ya tenia un distrito para la persona se conserva
-       * (empadronar ignora el null al actualizar); si no, /votar le explica que
-       * le falta.
+       * Si el padron ya tenia un distrito para la persona, se conserva solo si
+       * esa fila estaba verificada: `empadronar` ignora el null al actualizar,
+       * pero no hereda el distrito de una fila sin verificar, que pudo haberlo
+       * elegido quien la cargo (el login de prueba lo pide a mano). Si no queda
+       * un distrito que conservar, /votar le explica que le falta.
        */
       distrito: null,
       proveedor: "cidituc",
