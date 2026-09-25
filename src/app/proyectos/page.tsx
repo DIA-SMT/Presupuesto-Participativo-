@@ -25,17 +25,31 @@ const ESTADOS: EstadoIdea[] = ["ganador", "factible", "no_factible", "integrado"
 /** Los parametros que son filtros del listado. `edicion` y `vista` no lo son. */
 const FILTROS = ["distrito", "categoria", "estado", "q", "ganadores"] as const;
 
-type Parametros = {
-  distrito?: string;
-  categoria?: string;
-  estado?: string;
-  q?: string;
-  ganadores?: string;
-  vista?: string;
-  edicion?: string | string[];
-};
+/** Los filtros y la vista, ya reducidos a un valor cada uno. */
+type Parametros = Partial<Record<(typeof FILTROS)[number] | "vista", string>>;
 
-type Props = { searchParams: Promise<Parametros> };
+/** Como llegan de la URL: un parametro repetido viene como lista. */
+type ParametrosDeLaUrl = Partial<
+  Record<(typeof FILTROS)[number] | "vista" | "edicion", string | string[]>
+>;
+
+type Props = { searchParams: Promise<ParametrosDeLaUrl> };
+
+/**
+ * Un filtro repetido (`?q=plaza&q=club`) llega como lista, y `listarIdeas`
+ * espera texto: `?q=a&q=b` tiraba un 500. Vale el primero, que es tambien el
+ * que lee `Filtros` en el navegador (`URLSearchParams.get`). La edicion no pasa
+ * por aca: repetida es un 404 (`leerAnioPedido` en src/lib/ediciones.ts).
+ */
+function leerParametros(crudos: ParametrosDeLaUrl): Parametros {
+  const parametros: Parametros = {};
+  for (const clave of [...FILTROS, "vista"] as const) {
+    const valor = crudos[clave];
+    const primero = Array.isArray(valor) ? valor[0] : valor;
+    if (primero !== undefined) parametros[clave] = primero;
+  }
+  return parametros;
+}
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const { edicion } = await searchParams;
@@ -44,8 +58,9 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 }
 
 export default async function Proyectos({ searchParams }: Props) {
-  const filtros = await searchParams;
-  const vista = await edicionDeLaPagina(filtros.edicion);
+  const crudos = await searchParams;
+  const vista = await edicionDeLaPagina(crudos.edicion);
+  const filtros = leerParametros(crudos);
   if (!vista) {
     return (
       <div className="contenedor py-20">
