@@ -170,3 +170,16 @@ test("/api/proyectos acepta ?edicion y rechaza lo que no es una edicion", async 
   assert.equal((await pedir("?edicion=abc")).status, 400);
   assert.equal((await pedir("?edicion=2025&edicion=2026")).status, 400);
 });
+
+test("/api/proyectos: los errores tambien llevan CORS, para que se lea el motivo", async () => {
+  const { GET } = await import("../../src/app/api/proyectos/route");
+  const pedir = (consulta: string) => GET(new Request(`http://localhost/api/proyectos${consulta}`));
+
+  // Un sistema de otro dominio que pide un año que no hay recibe el 404, pero
+  // sin la cabecera el navegador le esconde el cuerpo y no sabe por que fallo.
+  for (const consulta of ["?edicion=1999", "?edicion=abc", "?edicion=2025&formato=csv"]) {
+    const respuesta = await pedir(consulta);
+    assert.equal(respuesta.headers.get("access-control-allow-origin"), "*", consulta);
+  }
+  assert.match((await (await pedir("?edicion=1999")).json()).error, /No hay una edición 1999/);
+});

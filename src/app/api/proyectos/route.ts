@@ -14,6 +14,14 @@ import { PARAMETRO_EDICION, conEdicion, leerAnioPedido } from "@/lib/ediciones";
 // Render a demanda; el cacheo lo maneja la cabecera Cache-Control de abajo.
 export const dynamic = "force-dynamic";
 
+/**
+ * Van en TODAS las respuestas, tambien en los errores y en el CSV. Sin ella, un
+ * sistema de otro dominio que pide `?edicion=1999` recibe el 404 pero el
+ * navegador le esconde el cuerpo, y el motivo que viaja en el JSON ("No hay una
+ * edición 1999") no le llega. Son datos publicos: no hay nada que proteger.
+ */
+const CORS = { "Access-Control-Allow-Origin": "*" } as const;
+
 const COLUMNAS = [
   "distrito",
   "titulo",
@@ -50,15 +58,18 @@ export async function GET(request: Request) {
         error:
           "El parámetro edicion va una sola vez y con un año de cuatro cifras, por ejemplo ?edicion=2025.",
       },
-      { status: 400 },
+      { status: 400, headers: CORS },
     );
   }
 
   const edicion = await getEdicionParaVer(pedido.tipo === "anio" ? pedido.anio : null);
   if (!edicion) {
     return pedido.tipo === "anio"
-      ? Response.json({ error: `No hay una edición ${pedido.anio}.` }, { status: 404 })
-      : Response.json({ error: "No hay una edición activa." }, { status: 503 });
+      ? Response.json(
+          { error: `No hay una edición ${pedido.anio}.` },
+          { status: 404, headers: CORS },
+        )
+      : Response.json({ error: "No hay una edición activa." }, { status: 503, headers: CORS });
   }
   // La url de cada ficha, como la declara su pagina: con `?edicion` si no es la activa.
   const anioEnEnlaces = edicion.activa ? null : edicion.anio;
@@ -101,6 +112,7 @@ export async function GET(request: Request) {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="pp-smt-${edicion.anio}.csv"`,
         "Cache-Control": "public, max-age=300",
+        ...CORS,
       },
     });
   }
@@ -119,7 +131,7 @@ export async function GET(request: Request) {
     {
       headers: {
         "Cache-Control": "public, max-age=300",
-        "Access-Control-Allow-Origin": "*",
+        ...CORS,
       },
     },
   );
