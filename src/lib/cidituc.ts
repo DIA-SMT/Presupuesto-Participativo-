@@ -19,6 +19,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Agent, request as pedirHttps } from "node:https";
 import { rootCertificates } from "node:tls";
+import { nombreCookie } from "@/lib/cookies";
 
 /**
  * El Derivador (la pantalla de login) y el backend que valida el token.
@@ -72,8 +73,14 @@ export const RUTA_INGRESO = "/auth/cidituc/ingresar";
  * Dura 10 minutos y es de un solo uso. Efecto conocido y aceptado: si alguien
  * abre el ingreso en dos pestañas, la segunda pisa la cookie de la primera y la
  * vuelta de la primera falla con "estado"; el mensaje le dice que entre de nuevo.
+ *
+ * En produccion el nombre lleva el prefijo __Host- (src/lib/cookies.ts). Aca
+ * importa mas que en ningun lado: si otro sistema de *.smt.gob.ar pudiera
+ * plantar esta cookie con un numero elegido, el ataque de arriba volveria a
+ * funcionar. La escriben /auth/cidituc/ingresar y la leen y borran en el
+ * callback, siempre con este nombre y con `atributosCookie()`.
  */
-export const COOKIE_ESTADO = "pp_cidituc_estado";
+export const COOKIE_ESTADO = nombreCookie("pp_cidituc_estado");
 export const DURACION_ESTADO = 600;
 
 export function nuevoEstado(): string {
