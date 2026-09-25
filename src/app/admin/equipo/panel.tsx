@@ -19,7 +19,7 @@
  * usaba la rampa --color-acento-600 como color de letra.
  */
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { Chip } from "@/components/ui";
 import type { AccionEquipo, RolAdmin } from "@/db/queries";
 import { ETIQUETA_ROL, formatearNumero } from "@/lib/formato";
@@ -253,6 +253,11 @@ export default function PanelEquipo({
         ) : (
           <div className="superficie mt-4 overflow-x-auto rounded-2xl">
             <table className="w-full text-sm">
+              {/* Como las otras tablas del panel: el titulo de la seccion no
+                  llega a quien entra a la tabla con el lector de pantalla. */}
+              <caption className="sr-only">
+                Movimientos sobre las cuentas del equipo, del más nuevo al más viejo
+              </caption>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--borde)" }}>
                   <th scope="col" className="px-4 py-3 text-left font-semibold">
@@ -323,9 +328,39 @@ function TarjetaCuenta({
   const [ultima, setUltima] = useState<AccionDeTarjeta | null>(null);
   const [provisoriaOculta, setProvisoriaOculta] = useState<Resultado | null>(null);
 
+  // El nombre de la persona describe cada control de la tarjeta: con varias
+  // tarjetas, un lector de pantalla leia "Rol", "Cambiar rol" o "Desactivar
+  // cuenta" iguales en todas, sin decir de quien.
+  const idNombre = useId();
+
+  // A donde va el foco cuando lo que lo tenia desaparece: el Cancelar de una
+  // confirmacion, "Ya la copié", o el boton que se apreto (se deshabilita
+  // mientras guarda, o se va con su confirmacion). Sin esto el foco caia al
+  // principio de la pagina y quien usa teclado perdia el lugar.
+  const botonBaja = useRef<HTMLButtonElement>(null);
+  const botonClave = useRef<HTMLButtonElement>(null);
+  const aviso = useRef<HTMLDivElement>(null);
+
+  // Cada resultado nuevo se lleva el foco. Solo cambian cuando termina una
+  // accion de ESTA tarjeta: la revalidacion que dispara otra tarjeta no los
+  // toca.
+  useEffect(() => {
+    if (estadoRol || estadoActivo || estadoClave) aviso.current?.focus();
+  }, [estadoRol, estadoActivo, estadoClave]);
+
   function enviar(accion: AccionDeTarjeta) {
     setUltima(accion);
     setConfirmando(null);
+  }
+
+  function cancelar() {
+    (confirmando === "baja" ? botonBaja : botonClave).current?.focus();
+    setConfirmando(null);
+  }
+
+  function ocultarProvisoria() {
+    setProvisoriaOculta(estadoClave);
+    botonClave.current?.focus();
   }
 
   const resultado =
@@ -339,14 +374,16 @@ function TarjetaCuenta({
     <div className="superficie rounded-2xl px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div>
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
-            <span>{cuenta.nombre}</span>
+          {/* Un encabezado por tarjeta: con un lector de pantalla se salta de
+              una cuenta a la otra. */}
+          <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
+            <span id={idNombre}>{cuenta.nombre}</span>
             {esMiCuenta && <Chip color="var(--marca-texto)">tu cuenta</Chip>}
             {!cuenta.activo && <Chip color="var(--acento-texto)">desactivada</Chip>}
             {cuenta.activo && cuenta.debeCambiarPassword && (
               <Chip>contraseña provisoria sin cambiar</Chip>
             )}
-          </p>
+          </h3>
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
             {cuenta.email}
           </p>
@@ -378,6 +415,7 @@ function TarjetaCuenta({
               <select
                 name="rol"
                 defaultValue={cuenta.rol}
+                aria-describedby={idNombre}
                 className="rounded-xl px-3 py-2 text-sm"
                 style={ESTILO_CAMPO}
               >
@@ -391,6 +429,7 @@ function TarjetaCuenta({
             <button
               type="submit"
               disabled={guardandoRol}
+              aria-describedby={idNombre}
               className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-50"
               style={{ background: "var(--color-marca-700)" }}
             >
@@ -400,9 +439,11 @@ function TarjetaCuenta({
 
           {cuenta.activo ? (
             <button
+              ref={botonBaja}
               type="button"
               onClick={() => setConfirmando(confirmando === "baja" ? null : "baja")}
               aria-expanded={confirmando === "baja"}
+              aria-describedby={idNombre}
               disabled={guardandoActivo}
               className="rounded-xl px-3.5 py-2 text-sm font-semibold disabled:opacity-50"
               style={ESTILO_SECUNDARIO}
@@ -416,6 +457,7 @@ function TarjetaCuenta({
               <button
                 type="submit"
                 disabled={guardandoActivo}
+                aria-describedby={idNombre}
                 className="rounded-xl px-3.5 py-2 text-sm font-semibold disabled:opacity-50"
                 style={ESTILO_SECUNDARIO}
               >
@@ -425,9 +467,11 @@ function TarjetaCuenta({
           )}
 
           <button
+            ref={botonClave}
             type="button"
             onClick={() => setConfirmando(confirmando === "clave" ? null : "clave")}
             aria-expanded={confirmando === "clave"}
+            aria-describedby={idNombre}
             disabled={generandoClave}
             className="rounded-xl px-3.5 py-2 text-sm font-semibold disabled:opacity-50"
             style={ESTILO_SECUNDARIO}
@@ -440,7 +484,7 @@ function TarjetaCuenta({
       {!esMiCuenta && confirmando === "baja" && (
         <Confirmacion
           texto={`Si desactivás la cuenta, a ${cuenta.nombre} se le cierran en el momento las sesiones abiertas y no puede volver a ingresar hasta que alguien la reactive. Lo que revisó queda en el historial.`}
-          onCancelar={() => setConfirmando(null)}
+          onCancelar={cancelar}
         >
           <form action={accionActivo} onSubmit={() => enviar("activo")}>
             <input type="hidden" name="id" value={cuenta.id} />
@@ -459,7 +503,7 @@ function TarjetaCuenta({
       {!esMiCuenta && confirmando === "clave" && (
         <Confirmacion
           texto={`Se genera una contraseña provisoria nueva para ${cuenta.nombre}: la que usa hoy deja de andar, se le cierran las sesiones abiertas y al ingresar tiene que elegir una propia. La provisoria se muestra una sola vez.`}
-          onCancelar={() => setConfirmando(null)}
+          onCancelar={cancelar}
         >
           <form action={accionClave} onSubmit={() => enviar("clave")}>
             <input type="hidden" name="id" value={cuenta.id} />
@@ -474,28 +518,38 @@ function TarjetaCuenta({
         </Confirmacion>
       )}
 
-      {provisoria && estadoClave?.ok ? (
-        <ContrasenaProvisoria
-          valor={provisoria}
-          mensaje={estadoClave.mensaje}
-          onOcultar={() => setProvisoriaOculta(estadoClave)}
-        />
-      ) : (
-        resultado && (
-          <p
-            role={resultado.ok ? "status" : "alert"}
-            className="mt-3 text-sm"
-            style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
-          >
-            {resultado.ok ? (resultado.mensaje ?? "Listo.") : resultado.error}
-          </p>
-        )
-      )}
+      <div ref={aviso} tabIndex={-1}>
+        {provisoria && estadoClave?.ok ? (
+          <ContrasenaProvisoria
+            valor={provisoria}
+            mensaje={estadoClave.mensaje}
+            onOcultar={ocultarProvisoria}
+          />
+        ) : (
+          resultado && (
+            <p
+              role={resultado.ok ? "status" : "alert"}
+              className="mt-3 text-sm"
+              style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
+            >
+              {resultado.ok ? (resultado.mensaje ?? "Listo.") : resultado.error}
+            </p>
+          )
+        )}
+      </div>
     </div>
   );
 }
 
-/** El segundo paso de una accion que le corta las sesiones a otra persona. */
+/**
+ * El segundo paso de una accion que le corta las sesiones a otra persona.
+ *
+ * Al abrirse se lleva el foco a su texto: se dibuja despues de todos los
+ * botones de la tarjeta, y sin esto el Tab siguiente pasaba por los otros
+ * botones antes de llegar aca, sin que un lector de pantalla dijera que se
+ * habia abierto. Asi se escucha que va a pasar, y el boton que lo confirma
+ * queda a un Tab.
+ */
 function Confirmacion({
   texto,
   onCancelar,
@@ -505,12 +559,19 @@ function Confirmacion({
   onCancelar: () => void;
   children: React.ReactNode;
 }) {
+  const aviso = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    aviso.current?.focus();
+  }, []);
+
   return (
     <div
       className="mt-3 rounded-xl px-4 py-3"
       style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
     >
-      <p className="text-sm">{texto}</p>
+      <p ref={aviso} tabIndex={-1} className="text-sm">
+        {texto}
+      </p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         {children}
         <button
@@ -584,12 +645,27 @@ function FormularioAlta() {
   const [estado, accion, pendiente] = useActionState(crearSinArrastrar, null);
   const [provisoriaOculta, setProvisoriaOculta] = useState<Resultado | null>(null);
 
+  // Como en las tarjetas: el boton se deshabilita mientras crea, asi que el
+  // resultado se lleva el foco; y al ocultar la provisoria el foco vuelve al
+  // correo, listo para la proxima alta.
+  const campoCorreo = useRef<HTMLInputElement>(null);
+  const aviso = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (estado) aviso.current?.focus();
+  }, [estado]);
+
+  function ocultarProvisoria() {
+    setProvisoriaOculta(estado);
+    campoCorreo.current?.focus();
+  }
+
   return (
     <>
       <form action={accion} className="mt-4 grid gap-3">
         <label className="grid gap-1 text-sm">
           <span className="font-medium">Correo</span>
           <input
+            ref={campoCorreo}
             name="email"
             type="email"
             required
@@ -643,19 +719,21 @@ function FormularioAlta() {
         </button>
       </form>
 
-      {estado && !estado.ok && (
-        <p role="alert" className="mt-3 text-sm" style={{ color: "var(--acento-texto)" }}>
-          {estado.error}
-        </p>
-      )}
+      <div ref={aviso} tabIndex={-1}>
+        {estado && !estado.ok && (
+          <p role="alert" className="mt-3 text-sm" style={{ color: "var(--acento-texto)" }}>
+            {estado.error}
+          </p>
+        )}
 
-      {estado?.ok && estado.passwordProvisoria && provisoriaOculta !== estado && (
-        <ContrasenaProvisoria
-          valor={estado.passwordProvisoria}
-          mensaje={estado.mensaje}
-          onOcultar={() => setProvisoriaOculta(estado)}
-        />
-      )}
+        {estado?.ok && estado.passwordProvisoria && provisoriaOculta !== estado && (
+          <ContrasenaProvisoria
+            valor={estado.passwordProvisoria}
+            mensaje={estado.mensaje}
+            onOcultar={ocultarProvisoria}
+          />
+        )}
+      </div>
     </>
   );
 }
