@@ -202,11 +202,15 @@ function FormularioCorreccion({
       : null;
 
   const faltaTitulo = campos.titulo.trim().length < limites.titulo.minimo;
+  // Movido y sin distrito averiguado (la consulta fallo): no se sabe si se muda,
+  // y la pantalla no podria ofrecer la casilla que el servidor pediria.
+  const sinDistrito = movido && !ubicando && distritoNuevo === undefined;
   const bloqueado =
     pendiente ||
     ubicando ||
     faltaTitulo ||
     !campos.categoria ||
+    sinDistrito ||
     (movido && distritoNuevo === null) ||
     (cambiaDistrito && (!mudanza?.permitido || !confirma));
 
@@ -356,6 +360,11 @@ function FormularioCorreccion({
           )}
           {movido && !ubicando && typeof distritoNuevo === "number" && !cambiaDistrito &&
             `El punto nuevo sigue en el Distrito ${distritoNuevo}.`}
+          {sinDistrito && (
+            <strong style={{ color: "var(--acento-texto)" }}>
+              No se pudo averiguar el distrito del punto nuevo. Tocá el mapa otra vez.
+            </strong>
+          )}
         </span>
 
         {cambiaDistrito && mudanza && !mudanza.permitido && (
