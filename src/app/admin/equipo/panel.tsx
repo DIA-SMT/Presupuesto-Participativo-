@@ -76,20 +76,22 @@ export type MovimientoEnPantalla = {
 /**
  * Lo que puede cada rol, dicho a partir del rol minimo que exige cada accion
  * (`exigirAdmin` en ../acciones.ts y en las acciones de cada carpeta). Si una
- * accion cambia de rol, este texto tiene que acompanarla.
+ * accion cambia de rol, este texto tiene que acompanarla. Solo lo que tiene
+ * pantalla: el presupuesto y los avances de obra tienen acciones pero ninguna
+ * pantalla las usa, y prometerlos aca era mandar a buscar algo que no existe.
  */
 const ROLES: { valor: RolAdmin; etiqueta: string; detalle: string }[] = [
   {
     valor: "admin",
     etiqueta: "Administrador",
     detalle:
-      "Todo lo del moderador, y además cambia la etapa del proceso, maneja las ediciones, asigna presupuesto, proclama los proyectos ganadores y administra las cuentas del equipo.",
+      "Todo lo del moderador, y además cambia la etapa del proceso, maneja las ediciones, proclama los proyectos ganadores, edita el contenido del sitio y administra las cuentas del equipo.",
   },
   {
     valor: "moderador",
     etiqueta: "Moderador",
     detalle:
-      "Evalúa las propuestas y escribe la devolución, las publica o las despublica, y carga el cronograma y los avances de obra. No cambia la etapa ni proclama ganadores.",
+      "Evalúa las propuestas y escribe la devolución, las publica o las despublica, carga las que llegan por otro canal, las corrige o las descarta, y carga el cronograma. No cambia la etapa ni proclama ganadores.",
   },
   {
     valor: "lector",

@@ -37,12 +37,13 @@ import { salirAdmin } from "./acciones";
 type Enlace = { href: string; texto: string; soloAdmin?: boolean };
 
 /**
- * Las dos pantallas del panel.
+ * Las pantallas del panel.
  *
  * Eran nueve, agrupadas en tres bloques con separadores. El panel se recorto a
  * lo que el equipo hace de verdad —leer las propuestas, evaluarlas y
- * exportarlas— asi que quedaron dos, y con dos no hay nada que agrupar: se
- * fueron los grupos, sus titulos y la linea que los separaba.
+ * exportarlas— y se fueron los grupos, sus titulos y la linea que los
+ * separaba. Con las que volvieron en la Fase 2 siguen siendo pocas, en una
+ * sola fila.
  *
  * "Mi contraseña" no esta aca: es de la cuenta, no del proceso, y vive en el
  * bloque de la derecha. Tampoco hay enlace a /admin/bandeja: /admin ES la
@@ -52,10 +53,14 @@ const ENLACES: Enlace[] = [
   { href: "/admin", texto: "Propuestas" },
   { href: "/admin/tablero", texto: "Tablero" },
   { href: "/admin/migue", texto: "Migue" },
-  { href: "/admin/ediciones", texto: "Etapa del proceso", soloAdmin: true },
+  // Para todos los roles: ahi el moderador carga el cronograma y el lector
+  // consulta la etapa. La pantalla deja en solo lectura lo que cada rol no
+  // puede tocar. Era solo para admin de cuando la pantalla era solo la etapa, y
+  // el cronograma de los moderadores quedaba escondido.
+  { href: "/admin/ediciones", texto: "Etapa del proceso" },
   // Volvieron en la Fase 2 (se habian sacado en 98d0f8d): sin ellas, dar de alta
   // a un evaluador o cargar el reglamento se hacia por consola contra
-  // produccion. Solo admin, como la etapa: no son tareas de todos los dias.
+  // produccion. Solo admin: no son tareas de todos los dias.
   { href: "/admin/contenido", texto: "Contenido", soloAdmin: true },
   { href: "/admin/equipo", texto: "Equipo", soloAdmin: true },
 ];
@@ -90,7 +95,7 @@ export default function CabeceraPanel({
   // formulario de ingreso. En /admin/ingresar nunca hay una sesion que mostrar.
   if (pathname === "/admin/ingresar") return null;
 
-  // La pantalla de la etapa no se le ofrece a quien no la puede usar. Esconder
+  // Contenido y Equipo no se le ofrecen a quien no los puede usar. Esconder
   // el enlace es cosmetico: la autorizacion real la hace cada pagina y cada
   // accion releyendo el rol de la base.
   const enlaces = ENLACES.filter((enlace) => !enlace.soloAdmin || rol === "admin");
