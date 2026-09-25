@@ -18,7 +18,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   admins,
@@ -35,6 +35,7 @@ import {
   novedades,
   revisiones,
   textos,
+  votos,
 } from "@/db/schema";
 import {
   getVotosPorIdea,
@@ -44,6 +45,17 @@ import {
   type EstadoIdea,
   type RolAdmin,
 } from "@/db/queries";
+import {
+  ETAPAS,
+  esEtapa,
+  puedeActivarOtraEdicion,
+  puedeCambiarEtapa,
+  puedeCambiarIdea,
+  puedeProclamar,
+  votosDeLaEdicion,
+  type CambioDeIdea,
+  type Etapa,
+} from "@/lib/etapas";
 import { generarInforme, tieneMaterial } from "@/lib/informe-impacto";
 // `mensajeDeError` ya existe aca abajo con otro proposito (encadenar causas):
 // el del proveedor se importa con otro nombre para no pisarlo.
@@ -301,6 +313,74 @@ const ERROR_DEVOLUCION =
   `devolución (mínimo ${MINIMO_DEVOLUCION} caracteres): es lo que lee el vecino.`;
 
 // ---------------------------------------------------------------------------
+// Etapa de la edicion
+//
+// QUE se puede hacer en cada etapa lo decide src/lib/etapas.ts, que tambien usa
+// el panel para deshabilitar botones. Aca vive COMO se le pregunta: siempre
+// dentro de la transaccion que va a escribir, con la etapa releida de la base
+// en ese momento y la fila bloqueada. Nunca con una etapa que haya mandado el
+// formulario: la pantalla puede estar vieja, o la accion puede llegar sin
+// pasar por la pantalla.
+// ---------------------------------------------------------------------------
+
+/** La transaccion de drizzle, para las lecturas que tienen que ir adentro. */
+type Transaccion = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * La etapa de la edicion de una idea y lo que la idea tiene hoy, releidos
+ * dentro de la transaccion que la va a cambiar. Cada bloqueo cubre una carrera
+ * distinta:
+ *  - la edicion, FOR SHARE: choca con el FOR UPDATE de `cambiarEtapa`, asi que
+ *    un cambio de etapa no se cuela entre esta lectura y la escritura. Si
+ *    alguien abre la votacion mientras otra persona evalua, o esta transaccion
+ *    ve "votacion" y rechaza, o termina antes de que la votacion se abra;
+ *  - la idea, FOR UPDATE: la politica decide sobre el estado y la publicacion
+ *    que la idea tiene al escribir, no sobre los que tenia cuando alguien abrio
+ *    la ficha. Dos personas sobre la misma idea quedan en fila.
+ *
+ * El orden es siempre el mismo, primero la edicion y despues la idea, y
+ * `cambiarEtapa` y `activarEdicion` bloquean ediciones pero nunca ideas: entre
+ * las acciones del panel no se puede armar un ciclo de esperas. Tambien es el
+ * orden en que el INSERT de /api/votos toca las dos filas (verifica la clave
+ * foranea de la edicion antes de actualizar el contador de la idea).
+ */
+async function leerIdeaEnJuego(tx: Transaccion, ideaId: number) {
+  const [edicion] = await tx
+    .select({ etapa: ediciones.etapa })
+    .from(ideas)
+    .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
+    .where(eq(ideas.id, ideaId))
+    .for("share", { of: ediciones });
+  if (!edicion) return null;
+
+  const [idea] = await tx
+    .select({ estado: ideas.estado, publicada: ideas.publicada })
+    .from(ideas)
+    .where(eq(ideas.id, ideaId))
+    .for("update");
+  if (!idea) return null;
+
+  return { etapa: edicion.etapa, estado: idea.estado, publicada: idea.publicada };
+}
+
+/**
+ * Por que la etapa no deja aplicarle `cambio` a la idea, o null si lo deja. Se
+ * llama como primera cosa dentro de la transaccion: si devuelve un motivo, la
+ * accion no escribe nada (ni la idea ni la fila de `revisiones`) y lo devuelve
+ * como error, que la pantalla muestra tal cual.
+ */
+async function bloqueoPorEtapa(
+  tx: Transaccion,
+  ideaId: number,
+  cambio: CambioDeIdea,
+): Promise<string | null> {
+  const vigente = await leerIdeaEnJuego(tx, ideaId);
+  if (!vigente) return "La idea no existe.";
+  const veredicto = puedeCambiarIdea(vigente.etapa, vigente, cambio);
+  return veredicto.permitido ? null : veredicto.motivo;
+}
+
+// ---------------------------------------------------------------------------
 // Sesion
 // ---------------------------------------------------------------------------
 
@@ -489,7 +569,16 @@ export async function evaluarIdea(
   }
 
   const ahora = new Date();
-  await db.transaction(async (tx) => {
+  // Con la votacion abierta, evaluar no puede sacar a una idea de la votacion
+  // ni meterla (ver puedeCambiarIdea). Si la etapa lo impide no se escribe
+  // nada, ni siquiera la devolucion que venia en el mismo formulario.
+  const bloqueo = await db.transaction(async (tx) => {
+    const motivo = await bloqueoPorEtapa(tx, datos.id, {
+      accion: "evaluar",
+      estado: datos.estado,
+    });
+    if (motivo) return motivo;
+
     await tx
       .update(ideas)
       .set({
@@ -511,7 +600,9 @@ export async function evaluarIdea(
         nota: datos.devolucion || previa.motivoEstado,
       }),
     );
+    return null;
   });
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -707,7 +798,16 @@ async function cambiarPublicacion(
     };
   }
 
-  await db.transaction(async (tx) => {
+  // Con la votacion abierta no se despublica una idea que se esta votando (sale
+  // del ranking y sus votantes no pueden votar de nuevo) ni se publica una
+  // factible (entra a competir a mitad de camino). El resto de las
+  // publicaciones no mueve la votacion y sigue permitido.
+  const bloqueo = await db.transaction(async (tx) => {
+    const motivoEtapa = await bloqueoPorEtapa(tx, id, {
+      accion: publicada ? "publicar" : "despublicar",
+    });
+    if (motivoEtapa) return motivoEtapa;
+
     await tx
       .update(ideas)
       .set({ publicada, updatedAt: new Date() })
@@ -720,7 +820,9 @@ async function cambiarPublicacion(
         nota: motivo || null,
       }),
     );
+    return null;
   });
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -752,14 +854,25 @@ export async function proclamarGanador(
       estado: ideas.estado,
       publicada: ideas.publicada,
       edicionId: ideas.edicionId,
+      etapa: ediciones.etapa,
       distrito: distritos.numero,
     })
     .from(ideas)
+    .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
     .where(eq(ideas.id, id))
     .limit(1);
 
   if (!idea) return { ok: false, error: "La idea no existe." };
+
+  // Solo con la votacion terminada. Se mira aca, ANTES de pedir el ranking,
+  // para no calcular un "mas votado" con la votacion abierta y para que el
+  // motivo que se muestre sea la etapa y no un empate de un conteo que todavia
+  // se mueve. Adentro de la transaccion se vuelve a mirar, con la fila
+  // bloqueada, por si la etapa cambio en el medio.
+  const porEtapa = puedeProclamar(idea.etapa);
+  if (!porEtapa.permitido) return { ok: false, error: porEtapa.motivo };
+
   if (idea.distrito === null) {
     return { ok: false, error: "La idea no tiene distrito asignado: no se puede proclamar." };
   }
@@ -815,8 +928,14 @@ export async function proclamarGanador(
   }
 
   const ahora = new Date();
+  let bloqueo: string | null;
   try {
-    await db.transaction(async (tx) => {
+    bloqueo = await db.transaction(async (tx) => {
+      const vigente = await leerIdeaEnJuego(tx, idea.id);
+      if (!vigente) return "La idea no existe.";
+      const veredicto = puedeProclamar(vigente.etapa);
+      if (!veredicto.permitido) return veredicto.motivo;
+
       await tx
         .update(ideas)
         .set({
@@ -837,6 +956,7 @@ export async function proclamarGanador(
           nota: nota || `Proyecto más votado del Distrito ${distrito}: ${primera.votos} votos.`,
         }),
       );
+      return null;
     });
   } catch (causa) {
     // Nunca dejar explotar la accion: la pantalla tiene que poder mostrar algo.
@@ -849,6 +969,7 @@ export async function proclamarGanador(
     }
     return { ok: false, error: "No se pudo proclamar el proyecto." };
   }
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -893,7 +1014,13 @@ export async function reabrirRevision(
   }
 
   const ahora = new Date();
-  await db.transaction(async (tx) => {
+  // Reabrir una idea que se esta votando la saca de la votacion (vuelve a
+  // pendiente): con la votacion abierta no se puede. Reabrir un "no" o una
+  // idea sin publicar no mueve la votacion y sigue permitido.
+  const bloqueo = await db.transaction(async (tx) => {
+    const motivoEtapa = await bloqueoPorEtapa(tx, id, { accion: "reabrir" });
+    if (motivoEtapa) return motivoEtapa;
+
     await tx
       .update(ideas)
       .set({
@@ -914,7 +1041,9 @@ export async function reabrirRevision(
         nota: motivo,
       }),
     );
+    return null;
   });
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -952,6 +1081,11 @@ function montoEnPesos(valor: number | null): string {
  * ultimo avance cargado. Un select manual la dejaria diciendo "en ejecucion"
  * sin un solo avance que lo respalde; para retroceder una etapa se carga otro
  * avance.
+ *
+ * No mira la etapa de la edicion, a proposito: el monto no cambia que ideas se
+ * votan ni como se cuentan (ver `puedeCambiarIdea` en src/lib/etapas.ts), y
+ * bloquearlo en votacion impediria corregir un monto mal cargado justo cuando
+ * el vecino lo esta leyendo para decidir. El cambio queda en el historial.
  */
 export async function guardarPresupuestoIdea(
   _previo: Resultado | null,
@@ -1210,10 +1344,6 @@ export async function borrarAvance(
 // Ediciones y cronograma
 // ---------------------------------------------------------------------------
 
-const ETAPAS = ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const;
-
-type Etapa = (typeof ETAPAS)[number];
-
 /**
  * Cambia la etapa de una edicion.
  *
@@ -1222,6 +1352,22 @@ type Etapa = (typeof ETAPAS)[number];
  * del UPDATE, porque despues no queda en ningun lado, y la fila de bitacora va
  * en la misma transaccion: no hay forma de mover la etapa sin que quede quien la
  * movio, cuando y desde donde.
+ *
+ * Que transiciones se permiten lo decide `puedeCambiarEtapa`
+ * (src/lib/etapas.ts): avanzar siempre, volver solo en los casos en que no se
+ * deshace una votacion. Para decidirlo hacen falta los votos y los ganadores de
+ * la edicion, y se cuentan adentro de la transaccion con la fila de la edicion
+ * bloqueada FOR UPDATE. Ese bloqueo choca con el FOR SHARE de las acciones
+ * sobre ideas (ver `leerIdeaEnJuego`), asi que ninguna decide con la etapa
+ * vieja. Tambien choca con el que toma el INSERT de un voto al verificar su
+ * clave foranea hacia `ediciones`, asi que los votos que estaban entrando
+ * terminan antes de que se cuente.
+ *
+ * Hueco conocido, que no se cierra desde aca: /api/votos mira la etapa ANTES de
+ * abrir su transaccion. Un voto que paso ese control justo antes de que la
+ * votacion vuelva atras espera este bloqueo y despues entra igual. Para
+ * cerrarlo, /api/votos tiene que releer la etapa con FOR SHARE dentro de su
+ * transaccion, como hacen las acciones de ideas.
  */
 export async function cambiarEtapa(
   _previo: Resultado | null,
@@ -1231,45 +1377,83 @@ export async function cambiarEtapa(
   if (!sesion) return sinPermiso("admin");
 
   const id = Number(formulario.get("edicionId"));
-  const etapa = String(formulario.get("etapa"));
-  if (!Number.isInteger(id) || id <= 0 || !ETAPAS.includes(etapa as Etapa)) {
+  const etapa = formulario.get("etapa");
+  if (!Number.isInteger(id) || id <= 0 || !esEtapa(etapa)) {
     return { ok: false, error: "Etapa inválida." };
   }
-  const destino = etapa as Etapa;
+  const destino: Etapa = etapa;
 
-  const [edicion] = await db
-    .select({ anio: ediciones.anio, etapa: ediciones.etapa })
-    .from(ediciones)
-    .where(eq(ediciones.id, id))
-    .limit(1);
-  if (!edicion) return { ok: false, error: "La edición no existe." };
+  let resultado:
+    | { tipo: "inexistente" }
+    | { tipo: "sin_cambio"; anio: number }
+    | { tipo: "rechazado"; motivo: string }
+    | { tipo: "hecho"; anio: number };
+  try {
+    resultado = await db.transaction(async (tx) => {
+      const [edicion] = await tx
+        .select({ anio: ediciones.anio, etapa: ediciones.etapa })
+        .from(ediciones)
+        .where(eq(ediciones.id, id))
+        .for("update");
+      if (!edicion) return { tipo: "inexistente" as const };
 
-  // Sin cambio no se escribe: una fila de bitacora que dice "de X a X" no
-  // audita nada. La pantalla ya deshabilita el boton en este caso.
-  if (edicion.etapa === destino) {
-    return {
-      ok: true,
-      mensaje: `La edición ${edicion.anio} ya estaba en la etapa “${destino}”.`,
-    };
+      // Sin cambio no se escribe: una fila de bitacora que dice "de X a X" no
+      // audita nada. La pantalla ya deshabilita el boton en este caso.
+      if (edicion.etapa === destino) return { tipo: "sin_cambio" as const, anio: edicion.anio };
+
+      // Las dos cuentas de los votos, porque una edicion migrada tiene sus votos
+      // solo en el contador de las ideas (ver votosDeLaEdicion).
+      const [emitidos] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(votos)
+        .where(eq(votos.edicionId, id));
+      const [enIdeas] = await tx
+        .select({
+          votos: sql<number>`coalesce(sum(${ideas.votos}), 0)::int`,
+          ganadores: sql<number>`count(*) FILTER (WHERE ${ideas.ganador})::int`,
+        })
+        .from(ideas)
+        .where(eq(ideas.edicionId, id));
+
+      const veredicto = puedeCambiarEtapa(edicion.etapa, destino, {
+        votos: votosDeLaEdicion(Number(emitidos?.total ?? 0), Number(enIdeas?.votos ?? 0)),
+        ganadores: Number(enIdeas?.ganadores ?? 0),
+      });
+      if (!veredicto.permitido) return { tipo: "rechazado" as const, motivo: veredicto.motivo };
+
+      await tx.update(ediciones).set({ etapa: destino }).where(eq(ediciones.id, id));
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "cambio_etapa",
+          entidad: "edicion",
+          entidadId: id,
+          etiqueta: `Edición ${edicion.anio}`,
+          antes: `Etapa ${edicion.etapa}`,
+          despues: `Etapa ${destino}`,
+        }),
+      );
+      return { tipo: "hecho" as const, anio: edicion.anio };
+    });
+  } catch (causa) {
+    console.error("[admin] cambiarEtapa fallo", causa);
+    return { ok: false, error: "No se pudo cambiar la etapa. Probá de nuevo en un momento." };
   }
 
-  await db.transaction(async (tx) => {
-    await tx.update(ediciones).set({ etapa: destino }).where(eq(ediciones.id, id));
-    await tx.insert(bitacoraSistema).values(
-      filaSistema({
-        sesion,
-        accion: "cambio_etapa",
-        entidad: "edicion",
-        entidadId: id,
-        etiqueta: `Edición ${edicion.anio}`,
-        antes: `Etapa ${edicion.etapa}`,
-        despues: `Etapa ${destino}`,
-      }),
-    );
-  });
-
-  revalidatePath("/", "layout");
-  return { ok: true, mensaje: `Edición ${edicion.anio}: etapa “${destino}”.` };
+  switch (resultado.tipo) {
+    case "inexistente":
+      return { ok: false, error: "La edición no existe." };
+    case "sin_cambio":
+      return {
+        ok: true,
+        mensaje: `La edición ${resultado.anio} ya estaba en la etapa “${destino}”.`,
+      };
+    case "rechazado":
+      return { ok: false, error: resultado.motivo };
+    case "hecho":
+      revalidatePath("/", "layout");
+      return { ok: true, mensaje: `Edición ${resultado.anio}: etapa “${destino}”.` };
+  }
 }
 
 export async function crearEdicion(
@@ -1427,6 +1611,13 @@ export async function guardarEdicion(
  * Activa una edicion y desactiva las demas EN LA MISMA TRANSACCION: el indice
  * unico parcial `ediciones_una_activa_idx` rechaza dos filas con activa = true,
  * asi que el orden (primero apagar, despues prender) no es opcional.
+ *
+ * No se activa otra edicion si la activa esta en votacion
+ * (`puedeActivarOtraEdicion`): /api/votos solo mira la edicion activa, asi que
+ * seria cortar la votacion sin pasar por el cambio de etapa ni avisarle a nadie.
+ * La etapa de la saliente se lee con su fila bloqueada FOR UPDATE, el mismo
+ * bloqueo que toma `cambiarEtapa`: nadie puede abrir la votacion de la saliente
+ * entre esta lectura y el cambio.
  */
 export async function activarEdicion(
   _previo: Resultado | null,
@@ -1449,15 +1640,20 @@ export async function activarEdicion(
     return { ok: true, mensaje: `Edición ${edicion.anio} activa.` };
   }
 
+  let bloqueo: string | null;
   try {
-    await db.transaction(async (tx) => {
+    bloqueo = await db.transaction(async (tx) => {
       // Cual se apaga se lee DENTRO de la transaccion y antes del UPDATE: es el
       // ANTES del registro y despues del primer UPDATE ya no hay ninguna activa.
       const [saliente] = await tx
-        .select({ anio: ediciones.anio })
+        .select({ anio: ediciones.anio, etapa: ediciones.etapa })
         .from(ediciones)
         .where(eq(ediciones.activa, true))
-        .limit(1);
+        .limit(1)
+        .for("update");
+
+      const veredicto = puedeActivarOtraEdicion(saliente ?? null);
+      if (!veredicto.permitido) return veredicto.motivo;
 
       await tx.update(ediciones).set({ activa: false }).where(ne(ediciones.id, id));
       await tx.update(ediciones).set({ activa: true }).where(eq(ediciones.id, id));
@@ -1475,6 +1671,7 @@ export async function activarEdicion(
           despues: `Edición activa: ${edicion.anio}`,
         }),
       );
+      return null;
     });
   } catch (causa) {
     console.error("[admin] activarEdicion fallo", causa);
@@ -1486,6 +1683,7 @@ export async function activarEdicion(
     }
     return { ok: false, error: "No se pudo activar la edición." };
   }
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true, mensaje: `Edición ${edicion.anio} activa.` };

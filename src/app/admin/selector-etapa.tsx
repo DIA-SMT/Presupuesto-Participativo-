@@ -11,12 +11,17 @@
  * La confirmacion no es un "estas seguro": dice en palabras que abre y que
  * cierra la etapa destino, porque el equipo no tiene por que recordar de memoria
  * que "votacion" abre la votacion publica.
+ *
+ * Las etapas a las que no se puede pasar (`puedeCambiarEtapa`, en
+ * src/lib/etapas.ts) aparecen deshabilitadas en el select, y abajo se dice por
+ * que. Sin eso el equipo se enteraba recien al confirmar, despues de leer todo
+ * lo que el cambio iba a hacer. La accion igual lo vuelve a decidir con los
+ * numeros de la base.
  */
 import { useActionState, useState } from "react";
 import { cambiarEtapa } from "./acciones";
+import { ETAPAS, puedeCambiarEtapa, type ContextoEdicion, type Etapa } from "@/lib/etapas";
 import { ETIQUETA_ETAPA } from "@/lib/formato";
-
-const ETAPAS = ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const;
 
 /**
  * Que significa cada etapa en el sitio publico. `ahora` describe el estado en
@@ -50,6 +55,7 @@ const EFECTO: Record<string, { ahora: string; alPasar: string[] }> = {
       "Se abre la votación pública: cualquier vecino empadronado entra a votar un proyecto de su distrito y el botón “Votar” aparece en la cabecera del sitio.",
       "El formulario para presentar ideas queda cerrado.",
       "Los votos que entren son los que después definen el proyecto ganador de cada distrito.",
+      "Mientras dure, los proyectos que se votan quedan fijos: en “Propuestas” no se pueden evaluar distinto, despublicar ni reabrir, y ninguna idea nueva entra a la votación. Los ganadores se proclaman recién cuando cierre.",
     ],
   },
   /*
@@ -81,13 +87,16 @@ export default function SelectorEtapa({
   edicionId,
   etapa,
   rol,
+  contexto,
 }: {
   edicionId: number;
-  etapa: string;
+  etapa: Etapa;
   rol: "admin" | "moderador" | "lector";
+  /** Votos y ganadores de esta edicion: deciden a que etapas se puede volver. */
+  contexto: ContextoEdicion;
 }) {
   const [estado, accion, pendiente] = useActionState(cambiarEtapa, null);
-  const [destino, setDestino] = useState<string>(etapa);
+  const [destino, setDestino] = useState<Etapa>(etapa);
   const [confirmando, setConfirmando] = useState(false);
 
   const actual = ETIQUETA_ETAPA[etapa] ?? etapa;
@@ -96,6 +105,13 @@ export default function SelectorEtapa({
   // Cuando la accion sale bien, la pantalla se relee y `etapa` ya viene con el
   // valor nuevo: el bloque de confirmacion se cierra solo.
   const cambia = destino !== etapa;
+
+  // Las etapas a las que hoy no se puede pasar, con el motivo de cada una.
+  const bloqueadas = ETAPAS.flatMap((valor) => {
+    const veredicto = puedeCambiarEtapa(etapa, valor, contexto);
+    return veredicto.permitido ? [] : [{ etapa: valor, motivo: veredicto.motivo }];
+  });
+  const estaBloqueada = (valor: Etapa) => bloqueadas.some((fila) => fila.etapa === valor);
 
   return (
     <div
@@ -122,7 +138,7 @@ export default function SelectorEtapa({
                 id={`etapa-${edicionId}`}
                 value={destino}
                 onChange={(evento) => {
-                  setDestino(evento.target.value);
+                  setDestino(evento.target.value as Etapa);
                   setConfirmando(false);
                 }}
                 className="rounded-xl px-3 py-2 text-sm"
@@ -133,9 +149,13 @@ export default function SelectorEtapa({
                 }}
               >
                 {ETAPAS.map((valor) => (
-                  <option key={valor} value={valor}>
+                  <option key={valor} value={valor} disabled={estaBloqueada(valor)}>
                     {ETIQUETA_ETAPA[valor] ?? valor}
-                    {valor === etapa ? " (etapa actual)" : ""}
+                    {valor === etapa
+                      ? " (etapa actual)"
+                      : estaBloqueada(valor)
+                        ? " (no disponible)"
+                        : ""}
                   </option>
                 ))}
               </select>
@@ -170,6 +190,29 @@ export default function SelectorEtapa({
               </span>
             )}
           </div>
+
+          {/* Los nombres a la vista y los motivos a un click: con votos y
+              ganadores son tres parrafos casi iguales, y el selector no tiene
+              que quedar enterrado abajo de ellos. */}
+          {bloqueadas.length > 0 && (
+            <details className="mt-3 text-xs" style={{ color: "var(--texto-suave)" }}>
+              <summary className="cursor-pointer">
+                No disponibles desde esta etapa:{" "}
+                {bloqueadas.map((fila) => ETIQUETA_ETAPA[fila.etapa] ?? fila.etapa).join(", ")}.
+                Por qué
+              </summary>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {bloqueadas.map((fila) => (
+                  <li key={fila.etapa}>
+                    <strong style={{ color: "var(--texto)" }}>
+                      {ETIQUETA_ETAPA[fila.etapa] ?? fila.etapa}
+                    </strong>
+                    : {fila.motivo}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           {confirmando && cambia && (
             <BloqueConfirmacion
@@ -232,9 +275,15 @@ function BloqueConfirmacion({
           <li key={indice}>{linea}</li>
         ))}
       </ul>
+      {/*
+        Antes decia que siempre se podia volver atras. Ya no es cierto (ver
+        puedeCambiarEtapa): se dice aca cuando todavia se puede elegir, no
+        despues de que entro el primer voto.
+      */}
       <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
-        Se puede volver atrás con este mismo selector, pero lo que pase mientras tanto —ideas
-        presentadas, votos emitidos— no se borra.
+        Lo que pase mientras tanto —ideas presentadas, votos emitidos— no se borra. Y volver atrás
+        tiene límites: con un solo voto emitido la edición ya no vuelve a una etapa anterior a la
+        votación, y con un ganador proclamado la votación no se reabre.
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
