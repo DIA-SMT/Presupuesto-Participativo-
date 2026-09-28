@@ -10,6 +10,10 @@
  * que importa con dos ediciones cargadas: un año en la pregunta ("ganadores
  * 2025") la cambia de edicion; si la vigente todavia no voto, ofrece los
  * ganadores de la ultima que si; y un barrio se ubica con la capa oficial.
+ *
+ * Lo que explica el sitio (como votar, como presentar, fechas, reglamento,
+ * montos, preguntas frecuentes) lo contesta chat-sin-ia-sitio.ts con el mismo
+ * contexto que lee el modelo, antes de buscar datos.
  */
 import {
   buscarBarriosEnIdeas,
@@ -23,12 +27,15 @@ import {
   type EdicionDelArchivo,
 } from "@/db/queries";
 import { ideasDelBarrio, ubicarBarriosEnFrase, type BarrioUbicado } from "./barrios";
+import { contextoDelSitio } from "./chat-contexto";
+import { responderSobreElSitio } from "./chat-sin-ia-sitio";
 import { conEdicion, votacionTerminada } from "./ediciones";
 import {
   ETIQUETA_ESTADO,
   ETIQUETA_ETAPA,
   ETIQUETA_PRESUPUESTO,
   formatearNumero,
+  hoyEnTucuman,
 } from "./formato";
 import { normalizar } from "./texto";
 
@@ -84,35 +91,21 @@ export async function responderSinIA(
   // "obra" cuenta como pedir ganadores: las obras son los proyectos que ganaron.
   const pideGanador = /\bgan|mas votad|ganador|elegid|\bobras?\b/.test(q);
   const pideTotales = /\bcuant|total|estadistic|resumen|cuanta|votos en total/.test(q);
-  // "presentar" y "votar" van como palabra entera. Como prefijo agarraban
-  // "presentaron" y "votaron": "¿Cuántas ideas se presentaron?", que es una de
-  // las sugerencias del propio widget, se contestaba con "Hay dos formas de
-  // participar" en lugar de con los totales. Y "presento" no estaba, asi que
-  // otra de las sugerencias, "¿Cómo presento una idea?", no encontraba nada.
-  const pideParticipar = /\bcomo (puedo )?(participo|participar)|\bpresent(o|ar|arla|arlo)\b|cargar (mi |una )?idea|\bvotar\b|empadron|cidituc/.test(
-    q,
-  );
 
-  // --- Como participar -----------------------------------------------------
-  // Siempre sobre la vigente: como se participa es una pregunta sobre hoy.
-  if (pideParticipar) {
-    return {
-      texto: [
-        "Hay dos formas de participar:",
-        "",
-        "**Presentando una idea.** Contás qué problema querés resolver en tu barrio y cómo lo resolverías. Marcás el lugar en el mapa y el distrito se completa solo.",
-        "",
-        "**Votando.** Tenés un voto y lo usás en un proyecto del distrito donde vivís. Para votar necesitás estar empadronado como ciudadano digital (CIDITUC), de manera virtual desde la página de la Municipalidad o presencial en las asambleas participativas.",
-        "",
-        // Bug: imprimia el valor crudo del enum ("**seguimiento**", "**cerrada**")
-        // en lugar de la etiqueta que usa el resto del sitio.
-        `Hoy la edición ${vigente.anio} está en la etapa **${etiquetaEtapa(vigente)}**.`,
-      ].join("\n"),
-      referencias: [
-        { titulo: "Presentá tu idea", url: "/ideas/nueva" },
-        { titulo: "Preguntas frecuentes", url: "/acerca-de" },
-      ],
-    };
+  // --- Lo que explica el sitio, y las preguntas frecuentes -----------------
+  // Antes que los datos: "¿qué pasa con las ideas que no ganan?" tiene "gan" y
+  // se contestaba con la lista de ganadores. Es sobre la vigente, que es la que
+  // se vota y la que recibe ideas: con otro año en la pregunta ("¿cuándo fue la
+  // votación de 2025?") sigue el buscador de datos.
+  const anioMencionado = Number(q.match(/\b(20\d{2})\b/)?.[1] ?? NaN);
+  if (!Number.isInteger(anioMencionado) || anioMencionado === vigente.anio) {
+    const sobreElSitio = responderSobreElSitio(
+      pregunta,
+      vigente,
+      await contextoDelSitio(vigente),
+      hoyEnTucuman(),
+    );
+    if (sobreElSitio) return sobreElSitio;
   }
 
   // --- Edicion pedida por año ----------------------------------------------
@@ -428,7 +421,8 @@ export async function responderSinIA(
       "- el nombre de tu barrio: *Villa Urquiza*",
       "- *proyectos ganadores*",
       "- *cuántas ideas se presentaron*",
-      "- *cómo participo*",
+      "- *cómo voto*",
+      "- *cómo presento una idea*",
     ].join("\n"),
     // Con un año en la pregunta, las vistas de esa edicion.
     referencias: [

@@ -133,6 +133,13 @@ export const MAXIMO_TEXTO_DESCONOCIDO = 20_000;
 const LAYOUT = "src/app/layout.tsx";
 const PORTADA = "src/app/page.tsx";
 
+/**
+ * Donde lee Migue (el chat) los textos del sitio. Un texto que esta aca tambien
+ * cambia lo que contesta el chat, y el panel lo avisa con LO_LEE_MIGUE.
+ */
+const CHAT = "src/lib/chat-contexto.ts";
+const LO_LEE_MIGUE = "Migue también lo usa para contestar en el chat.";
+
 /** Los datos del organismo se leen en el pie y en tres paginas mas. */
 const CONTACTO = [
   LAYOUT,
@@ -151,45 +158,51 @@ export const CATALOGO: EntradaCatalogo[] = [
     nombre: "Título del bloque 1 de “Cómo funciona”",
     grupo: "portada",
     tipo: "linea",
-    archivos: [PORTADA],
+    archivos: [PORTADA, CHAT],
     obligatorio: SIN_TITULO_PORTADA,
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "home-bloque1-texto",
     nombre: "Texto del bloque 1 de “Cómo funciona”",
     grupo: "portada",
     tipo: "parrafo",
-    archivos: [PORTADA],
+    archivos: [PORTADA, CHAT],
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "home-bloque2-titulo",
     nombre: "Título del bloque 2 de “Cómo funciona”",
     grupo: "portada",
     tipo: "linea",
-    archivos: [PORTADA],
+    archivos: [PORTADA, CHAT],
     obligatorio: SIN_TITULO_PORTADA,
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "home-bloque2-texto",
     nombre: "Texto del bloque 2 de “Cómo funciona”",
     grupo: "portada",
     tipo: "parrafo",
-    archivos: [PORTADA],
+    archivos: [PORTADA, CHAT],
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "home-bloque3-titulo",
     nombre: "Título del bloque 3 de “Cómo funciona”",
     grupo: "portada",
     tipo: "linea",
-    archivos: [PORTADA],
+    archivos: [PORTADA, CHAT],
     obligatorio: SIN_TITULO_PORTADA,
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "home-bloque3-texto",
     nombre: "Texto del bloque 3 de “Cómo funciona”",
     grupo: "portada",
     tipo: "parrafo",
-    archivos: [PORTADA],
+    archivos: [PORTADA, CHAT],
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "home-mapa-titulo",
@@ -266,7 +279,8 @@ export const CATALOGO: EntradaCatalogo[] = [
     nombre: "Bajada, debajo del título",
     grupo: "votacion",
     tipo: "parrafo",
-    archivos: ["src/app/votar/page.tsx"],
+    archivos: ["src/app/votar/page.tsx", CHAT],
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "ideas-nueva-titulo",
@@ -281,7 +295,8 @@ export const CATALOGO: EntradaCatalogo[] = [
     nombre: "Bajada, debajo del título",
     grupo: "ideas",
     tipo: "parrafo",
-    archivos: ["src/app/ideas/nueva/page.tsx"],
+    archivos: ["src/app/ideas/nueva/page.tsx", CHAT],
+    nota: LO_LEE_MIGUE,
   },
 
   // --- Lo que esta en todas las paginas ---------------------------------------
@@ -290,25 +305,28 @@ export const CATALOGO: EntradaCatalogo[] = [
     nombre: "Organismo responsable",
     grupo: "todo-el-sitio",
     tipo: "linea",
-    archivos: CONTACTO,
+    archivos: [...CONTACTO, CHAT],
     donde: DONDE_CONTACTO,
     obligatorio: "va dentro de frases del aviso legal y de la política de privacidad, que quedarían cortadas.",
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "contacto-direccion",
     nombre: "Dirección de la oficina",
     grupo: "todo-el-sitio",
     tipo: "linea",
-    archivos: CONTACTO_Y_SEGUIMIENTO,
+    archivos: [...CONTACTO_Y_SEGUIMIENTO, CHAT],
     donde: `${DONDE_CONTACTO} También en “Seguí tu idea”, para quien perdió el código.`,
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "contacto-telefono",
     nombre: "Teléfono de contacto",
     grupo: "todo-el-sitio",
     tipo: "linea",
-    archivos: CONTACTO_Y_SEGUIMIENTO,
+    archivos: [...CONTACTO_Y_SEGUIMIENTO, CHAT],
     donde: `${DONDE_CONTACTO} También en “Seguí tu idea”, para quien perdió el código.`,
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: "chat-bienvenida",
@@ -316,7 +334,7 @@ export const CATALOGO: EntradaCatalogo[] = [
     grupo: "todo-el-sitio",
     tipo: "parrafo",
     archivos: [LAYOUT],
-    donde: "El primer mensaje del chat “Consultas”, en todas las páginas.",
+    donde: "El primer mensaje de Migue, el chat de consultas, en todas las páginas.",
     nota: "Se dibuja como una respuesta del chat: cada renglón es un párrafo, y funcionan las **negritas**, las listas con guion y los enlaces a páginas del sitio escritos [así](/votar).",
     formato: "chat",
     obligatorio: "el chat abriría con un mensaje en blanco.",
@@ -328,15 +346,16 @@ export const CATALOGO: EntradaCatalogo[] = [
     nombre: "Texto completo del reglamento",
     grupo: "reglamento",
     tipo: "largo",
-    archivos: ["src/app/reglamento/page.tsx"],
+    archivos: ["src/app/reglamento/page.tsx", CHAT],
+    nota: LO_LEE_MIGUE,
   },
   {
     clave: CLAVE_REGLAMENTO_AVISO,
     nombre: "Aviso mientras no haya reglamento",
     grupo: "reglamento",
     tipo: "parrafo",
-    archivos: ["src/app/reglamento/page.tsx"],
-    nota: "Solo se ve mientras el texto del reglamento esté vacío.",
+    archivos: ["src/app/reglamento/page.tsx", CHAT],
+    nota: `Solo se ve mientras el texto del reglamento esté vacío. ${LO_LEE_MIGUE}`,
     obligatorio: "mientras no haya reglamento, /reglamento mostraría un recuadro vacío.",
   },
   {
@@ -345,9 +364,10 @@ export const CATALOGO: EntradaCatalogo[] = [
     grupo: "aviso",
     // Una banda de un renglon o dos: se guarda sin saltos de linea.
     tipo: "linea",
-    archivos: [LAYOUT],
+    archivos: [LAYOUT, CHAT],
     maximo: MAXIMO_AVISO_URGENTE,
     formato: "aviso",
+    nota: LO_LEE_MIGUE,
   },
 
   // --- En la base, pero ninguna pagina los lee --------------------------------

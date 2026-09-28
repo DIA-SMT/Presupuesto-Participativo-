@@ -277,18 +277,30 @@ function SinResolver({
         Esto es <strong>contenido que le falta al sitio</strong>, escrito con las palabras del
         vecino. Migue no inventa: cuando el dato no está cargado lo dice y la consulta queda acá.
         Leelas de arriba abajo y preguntate dónde debería estar la respuesta. Migue contesta con
-        tres cosas: las{" "}
-        {/* Los textos del sitio y las novedades NO: el chat no los lee. Decia
-            "un texto del sitio" y mandaba a cargar algo que Migue nunca iba a usar. */}
+        lo que publica el sitio: las{" "}
+        {/* La lista es la de src/lib/chat-contexto.ts: si Migue empieza a leer
+            otra cosa, se suma aca. Los enlaces a Contenido solo para quien lo
+            puede usar (es solo para admin). */}
         {puedeCargarPreguntas ? (
           <Link href="/admin/contenido?seccion=preguntas" className="underline">
             preguntas frecuentes
           </Link>
         ) : (
-          <>preguntas frecuentes (las carga un administrador)</>
+          <>preguntas frecuentes</>
         )}
-        , el cronograma de la edición y los datos de cada idea. Cuando lo que falta esté cargado
-        en alguna de las tres, Migue lo contesta solo.
+        , el{" "}
+        {puedeCargarPreguntas ? (
+          <Link href="/admin/contenido?seccion=reglamento" className="underline">
+            reglamento
+          </Link>
+        ) : (
+          <>reglamento</>
+        )}
+        , las fechas y el cronograma de la edición, las novedades, el aviso urgente, los textos de
+        “Cómo funciona” y los datos de cada idea.{" "}
+        {puedeCargarPreguntas
+          ? "Cuando lo que falta esté cargado, Migue lo contesta solo."
+          : "Cuando lo que falta esté cargado (lo carga un administrador), Migue lo contesta solo."}
       </p>
 
       <div

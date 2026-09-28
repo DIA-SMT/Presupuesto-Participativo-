@@ -6,6 +6,7 @@ import BotonTema from "@/components/BotonTema";
 import AvisoLegal from "@/components/AvisoLegal";
 import AvisoUrgente from "@/components/AvisoUrgente";
 import Chat from "@/components/Chat";
+import { sugerenciasDelChat } from "@/lib/chat-sugerencias";
 import VentanaAvisoLegal from "@/components/VentanaAvisoLegal";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
 import { getEdicionActiva, getTextos } from "@/db/queries";
@@ -349,8 +350,9 @@ export default async function RootLayout({
         <Chat
           bienvenida={
             textos["chat-bienvenida"] ??
-            "Hola. Puedo responderte sobre los proyectos del Presupuesto Participativo."
+            "¡Hola! Soy Migue. Te ayudo con el Presupuesto Participativo: cómo participar, cómo votar y qué proyectos hay en tu distrito."
           }
+          sugerencias={sugerenciasDelChat(edicion?.etapa)}
         />
       </body>
     </html>

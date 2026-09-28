@@ -24,9 +24,12 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   `src/db/queries.ts`. No escribir SQL suelto en componentes ni rutas: agregar
   la consulta ahí, tipada.
 - El chatbot (`src/app/api/chat/route.ts`) solo accede a datos por sus
-  herramientas (`src/lib/chat-herramientas.ts`). Nunca darle acceso directo a
-  tablas ni agregarle conocimiento hardcodeado: si un dato falta, debe decir
-  que falta.
+  herramientas (`src/lib/chat-herramientas.ts`), y al contenido del sitio por
+  `src/lib/chat-contexto.ts`, que lee lo mismo que las páginas. Nunca darle
+  acceso directo a tablas ni escribirle datos del programa en las
+  instrucciones: si un dato falta, debe decir que falta. El texto fijo que el
+  sitio y el chat dicen igual (reglas confirmadas, pasos para votar) vive en
+  `src/lib/contenido-del-programa.ts`, no en cada página.
 - La respuesta del modelo se renderiza sin `dangerouslySetInnerHTML`
   (`src/components/Chat.tsx` construye nodos React). Mantener eso.
 - Datos de personas: DNI e IP siempre hasheados (`src/lib/empadronamiento.ts`,

@@ -299,8 +299,10 @@ test("sin IA: las sugerencias del widget siguen contestando lo suyo con dos edic
   assert.doesNotMatch(totales.texto, /Sin proyecto ganador/, "antes de votar no es un resultado");
   assert.ok(totales.referencias.some((r) => r.url === "/transparencia?edicion=2025"));
 
+  // Con la 2026 en etapa de ideas, dice que la carga esta abierta y adonde ir.
   const participar = await sinIA.responderSinIA("¿Cómo presento una idea?", vigente);
-  assert.match(participar.texto, /formas de participar/);
+  assert.match(participar.texto, /presentación de ideas de la edición 2026 está abierta/);
+  assert.ok(participar.referencias.some((r) => r.url === "/ideas/nueva"));
 });
 
 test("sin IA: el distrito antes de votar no dice 'sin ganador' y nombra el de 2025", async () => {

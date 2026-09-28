@@ -34,6 +34,7 @@ import {
   type IdeaVista,
 } from "@/db/queries";
 import { ideasDelBarrio, ubicarBarrio } from "./barrios";
+import { consultarReglamento } from "./chat-contexto";
 import { conEdicion, votacionTerminada } from "./ediciones";
 import {
   ETIQUETA_ESTADO,
@@ -86,12 +87,13 @@ const esquemaDistrito = z.object({
 });
 const esquemaUbicar = z.object({ barrio: z.string().min(2).max(120), edicion: edicionOpcional });
 const esquemaEstadisticas = z.object({ edicion: edicionOpcional });
+const esquemaReglamento = z.object({ consulta: z.string().min(2).max(200) });
 
 // ---------------------------------------------------------------------------
 // Definiciones que ve el modelo
 // ---------------------------------------------------------------------------
 
-/** El parametro `edicion`, igual en las cinco herramientas. */
+/** El parametro `edicion`, igual en las cinco herramientas de datos. */
 const PROPIEDAD_EDICION = {
   type: "integer",
   minimum: 1000,
@@ -227,6 +229,25 @@ export const HERRAMIENTAS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "consultar_reglamento",
+      description:
+        "Busca en el reglamento del programa, tal como esta publicado en /reglamento. Usar ante cualquier pregunta sobre reglas: quien puede votar o presentar una idea, requisitos, plazos, desempates, reclamos. Devuelve los parrafos que tienen que ver (o el reglamento entero si es corto), o avisa que el reglamento oficial todavia no esta publicado y trae las reglas confirmadas.",
+      parameters: {
+        type: "object",
+        properties: {
+          consulta: {
+            type: "string",
+            description: "De que trata la pregunta, con las palabras de la persona. Por ejemplo: edad para votar.",
+          },
+        },
+        additionalProperties: false,
+        required: ["consulta"],
+      },
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -346,6 +367,47 @@ export async function ejecutarHerramienta(
   edicionVigente: Edicion,
 ): Promise<ResultadoHerramienta> {
   switch (nombre) {
+    case "consultar_reglamento": {
+      // No depende de la edicion: el reglamento es del programa.
+      const { consulta } = esquemaReglamento.parse(entrada);
+      const respuesta = await consultarReglamento(consulta);
+      const referencias = [{ titulo: "Reglamento", url: "/reglamento" }];
+      if (!respuesta.publicado) {
+        return {
+          contenido: JSON.stringify({
+            publicado: false,
+            aviso: `${respuesta.aviso} Lo que no este en las reglas confirmadas de abajo, el sitio no lo tiene definido: no deducirlo.`,
+            reglas_confirmadas: respuesta.reglasConfirmadas,
+          }),
+          referencias,
+          // La regla puntual que se pregunto puede no estar entre las
+          // confirmadas: es contenido que le falta al sitio (ver chat-temas.ts).
+          sinDatos: true,
+        };
+      }
+      if (!respuesta.parrafos.length) {
+        return {
+          contenido: JSON.stringify({
+            publicado: true,
+            encontrado: false,
+            aviso:
+              "Ningun parrafo del reglamento habla de eso. Decir que el reglamento no lo menciona y ofrecer /reglamento.",
+          }),
+          referencias,
+          sinDatos: true,
+        };
+      }
+      return {
+        contenido: JSON.stringify({
+          publicado: true,
+          reglamento_entero: respuesta.entero,
+          total_parrafos: respuesta.totalParrafos,
+          parrafos: respuesta.parrafos,
+        }),
+        referencias,
+      };
+    }
+
     case "buscar_proyectos": {
       const args = esquemaBuscar.parse(entrada);
       const llamada = await edicionDeLaLlamada(args.edicion, edicionVigente);

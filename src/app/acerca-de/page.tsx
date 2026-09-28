@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Boton } from "@/components/ui";
 import { getEdicionActiva, getFaq, getHitos, getTextos } from "@/db/queries";
+import { PASOS_PARA_VOTAR, POR_QUE_NO_HAY_MONTOS } from "@/lib/contenido-del-programa";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 
 export const metadata: Metadata = {
@@ -104,11 +105,7 @@ export default async function AcercaDe() {
           */}
           <h2 className="mt-12 text-xl font-bold">Por qué no hay montos publicados</h2>
           <p className="mt-3 text-[0.9375rem] leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-            Los proyectos ganadores todavía no tienen publicado cuánto cuestan. No es un dato que
-            falte cargar: el sistema anterior guardaba el presupuesto de cada idea con el valor 1,
-            que era un relleno y no un importe, así que al traer los datos no se migró ningún monto
-            en lugar de inventarlo. La estructura para publicarlos —el total de cada obra y el monto
-            por etapa, con su historial— está hecha y espera que el municipio informe las cifras.
+            {POR_QUE_NO_HAY_MONTOS}
           </p>
         </section>
 
@@ -116,22 +113,46 @@ export default async function AcercaDe() {
           <div className="superficie rounded-2xl p-6">
             <h2 className="text-lg font-bold">Presentá tu idea</h2>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+              {/* Decia "podés dejar tu propuesta para la próxima", pero con la
+                  etapa cerrada el formulario no envia nada: deja armarla y
+                  bajarla en PDF, y eso es lo que se dice. */}
               {edicion?.etapa === "ideas"
                 ? "La etapa de ideas está abierta. Contanos qué problema querés resolver en tu barrio."
-                : "La etapa de ideas de esta edición está cerrada, pero podés dejar tu propuesta para la próxima."}
+                : "La etapa de ideas de esta edición está cerrada. Mientras tanto podés armar tu propuesta y descargarla en PDF; la vas a poder enviar cuando se abra la próxima."}
             </p>
             <div className="mt-4">
-              <Boton href="/ideas/nueva">Cargar una idea</Boton>
+              <Boton href="/ideas/nueva">
+                {edicion?.etapa === "ideas" ? "Cargar una idea" : "Armar mi propuesta"}
+              </Boton>
             </div>
           </div>
 
+          {/* Decia solo "Empadronate para votar": el sitio no explicaba en
+              ningun lado como se vota. Los pasos son los mismos que dice
+              Migue (src/lib/contenido-del-programa.ts). */}
           <div className="superficie rounded-2xl p-6">
-            <h2 className="text-lg font-bold">Empadronate para votar</h2>
-            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-              Para votar necesitás la ciudadanía digital CIDITUC. Te la podés hacer de manera virtual
-              desde la página de la Municipalidad, o presencial en las asambleas participativas de tu
-              barrio.
-            </p>
+            <h2 className="text-lg font-bold">Cómo se vota</h2>
+            <ol className="mt-3 space-y-3">
+              {PASOS_PARA_VOTAR.map((paso, indice) => (
+                <li key={paso.titulo} className="flex gap-3">
+                  <span
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
+                    style={{ background: "var(--color-marca-700)" }}
+                    aria-hidden="true"
+                  >
+                    {indice + 1}
+                  </span>
+                  <p className="text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+                    <strong style={{ color: "var(--texto)" }}>{paso.titulo}.</strong> {paso.texto}
+                  </p>
+                </li>
+              ))}
+            </ol>
+            {edicion?.etapa === "votacion" && (
+              <div className="mt-4">
+                <Boton href="/votar">Votar</Boton>
+              </div>
+            )}
           </div>
 
           <div className="superficie rounded-2xl p-6">
@@ -144,7 +165,7 @@ export default async function AcercaDe() {
               {textos["contacto-telefono"]}
             </p>
             <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
-              También podés usar el chat de consultas, abajo a la derecha.
+              También le podés preguntar a Migue, el chat de consultas de abajo a la derecha.
             </p>
           </div>
 

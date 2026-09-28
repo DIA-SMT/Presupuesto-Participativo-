@@ -73,6 +73,7 @@ export const TEMA_POR_HERRAMIENTA: Record<string, TemaConsulta> = {
   detalle_proyecto: "proyectos",
   buscar_proyectos: "proyectos",
   estadisticas: "proyectos",
+  consultar_reglamento: "votar",
 };
 
 /**
@@ -80,8 +81,12 @@ export const TEMA_POR_HERRAMIENTA: Record<string, TemaConsulta> = {
  * totales de la edicion, y con eso se contesta tanto "cuantas ideas hay" como
  * "cuanta plata se puso". Cuando la unica senal es una de estas, deciden las
  * palabras de la pregunta; solo si las palabras no dicen nada se usa su tema.
+ *
+ * `consultar_reglamento` tambien: el reglamento contesta como presentar una
+ * idea, como votar y que pasa con los montos. Sin otra senal, cuenta como
+ * votacion, que es de lo que mas se le pregunta (quien puede votar, requisitos).
  */
-const HERRAMIENTAS_AMBIGUAS = new Set(["estadisticas"]);
+const HERRAMIENTAS_AMBIGUAS = new Set(["estadisticas", "consultar_reglamento"]);
 
 /**
  * Orden de especificidad. Si Migue uso varias herramientas en la misma

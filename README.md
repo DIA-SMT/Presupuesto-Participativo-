@@ -29,7 +29,7 @@ desplegarse en **Vercel**.
 | Ediciones anteriores | `/archivo` y `?edicion=2025` | Proyectos, fichas, distritos y transparencia de cualquier edición, con un aviso cuando no es la vigente |
 | Carga de ideas | `/ideas/nueva` | Formulario con selector de punto en el mapa; el distrito se deriva solo |
 | Votación | `/votar` | Empadronamiento con CIDITUC, un voto por persona en su distrito |
-| Chatbot | botón flotante | Consultas en lenguaje natural sobre los datos reales del programa |
+| Chatbot (Migue) | botón flotante | Consultas sobre los proyectos, cómo presentar una idea y cómo votar, fechas, reglamento y novedades, con lo que publica el sitio |
 | Backoffice | `/admin` | Leer las propuestas, evaluarlas, exportarlas en PDF y mover la etapa; cargar las que llegan por otro canal, corregirlas o descartarlas; y, solo admin, el equipo y el contenido del sitio |
 | Datos abiertos | `/api/proyectos`, `/geo/distritos.geojson` | JSON/CSV de la edición vigente (u otra con `?edicion=AAAA`) y geometría oficial reutilizables |
 
@@ -302,21 +302,32 @@ proyecto Landing Elecop (Dirección de IA).
   **OpenRouter** (API compatible con OpenAI) y elige el modelo por entorno. Ese
   módulo concentra el cliente, el timeout, la traducción de errores y la cuenta
   de tokens; ninguna función arma el suyo.
-- **Chatbot**: `POST /api/chat` (streaming SSE). Usa *tool use*: el modelo no
-  recibe la base entera sino cinco herramientas
-  (`buscar_proyectos`, `detalle_proyecto`, `resumen_distrito`, `ubicar_barrio`,
-  `estadisticas`) que llaman exactamente a las mismas consultas que las
-  páginas. Todas aceptan `edicion` (sin ella, la vigente); si la vigente
-  todavía no votó, la búsqueda, el resumen de distrito y las estadísticas traen
-  también los ganadores de la última que sí votó, marcados como de esa edición. Si un dato no está cargado, la herramienta lo
+- **Chatbot (Migue)**: `POST /api/chat` (streaming SSE). Usa *tool use*: el
+  modelo no recibe la base entera sino herramientas que llaman exactamente a las
+  mismas consultas que las páginas: `buscar_proyectos`, `detalle_proyecto`,
+  `resumen_distrito`, `ubicar_barrio` y `estadisticas` para los datos de las
+  ideas (todas aceptan `edicion`; sin ella, la vigente, y si la vigente
+  todavía no votó traen también los ganadores de la última que sí votó, marcados
+  como de esa edición), y `consultar_reglamento`, que busca en el reglamento
+  publicado sin mandarlo entero. Lo que sabe del sitio (la etapa y qué se puede
+  hacer hoy, las fechas, el cronograma, las novedades, el aviso urgente, las
+  preguntas frecuentes, "Cómo funciona" y el contacto) lo lee
+  `src/lib/chat-contexto.ts` de las mismas fuentes que las páginas; el texto fijo
+  del programa (las reglas confirmadas, los pasos para votar, por qué no hay
+  montos) vive en `src/lib/contenido-del-programa.ts` y lo dibujan también
+  `/reglamento` y `/acerca-de`. Las preguntas sugeridas cambian con la etapa
+  (`src/lib/chat-sugerencias.ts`). Si un dato no está cargado, la herramienta lo
   dice y el asistente lo repite en lugar de inventarlo. La clave de API nunca llega al navegador.
   Sin clave configurada, con el tope diario pasado o si el proveedor falla (sin
   crédito, modelo mal escrito, caído, colgado a mitad de la respuesta), el
-  endpoint responde con un buscador determinístico (`src/lib/chat-sin-ia.ts`). Cada consulta queda registrada (pregunta,
-  herramientas usadas, tokens, latencia, IP hasheada) en `chat_consultas`. El
-  panel **no** tiene pantalla para leer esa tabla: la tenía (`/admin/consultas`)
-  y se borró porque mostraba sobre todo las llamadas del asistente de carga, con
-  el JSON crudo de cada propuesta. Para consultarla hay que ir a la base.
+  endpoint responde con un buscador determinístico (`src/lib/chat-sin-ia.ts`,
+  que contesta lo del sitio con el mismo contexto en `src/lib/chat-sin-ia-sitio.ts`).
+  Cada consulta queda registrada (pregunta, herramientas usadas, tokens,
+  latencia, IP hasheada) en `chat_consultas`, y el panel la muestra en
+  `/admin/migue`: qué pregunta la gente, por tema, y qué quedó sin resolver.
+  La burbuja del chat es Migue saliendo de un círculo:
+  `public/images/presupuesto-participativo/migue-burbuja.webp` se genera con
+  `node scripts/migue-burbuja.mjs` a partir de `migue-saludo.webp`.
 - **Votación**: sesión JWT en cookie httpOnly; un voto por persona garantizado
   por restricción UNIQUE en la base (no solo por lógica de aplicación); el DNI
   se guarda hasheado con `DNI_PEPPER`, nunca en claro. La boleta sale en orden

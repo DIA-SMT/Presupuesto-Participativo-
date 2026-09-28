@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Aviso } from "@/components/ui";
 import { getEdicionActiva, getTextos } from "@/db/queries";
+import { REGLAS_CONFIRMADAS } from "@/lib/contenido-del-programa";
 import { formatearRango } from "@/lib/formato";
 import CuerpoReglamento, { parrafosDelReglamento } from "./cuerpo";
 
@@ -42,42 +43,9 @@ export default async function Reglamento() {
               programa según la información del sitio.
             </p>
 
+            {/* Las mismas que dice Migue: src/lib/contenido-del-programa.ts. */}
             <ul className="mt-5 space-y-4">
-              {[
-                {
-                  titulo: "Un voto por persona",
-                  texto:
-                    "Cada persona empadronada tiene un solo voto y lo usa en un único proyecto. El sistema lo verifica: no se puede votar dos veces.",
-                },
-                {
-                  titulo: "Se vota en el distrito donde se vive",
-                  texto:
-                    "El voto solo puede aplicarse a un proyecto del distrito de residencia de la persona. La ciudad tiene 20 distritos y cada uno elige su propio proyecto.",
-                },
-                {
-                  titulo: "Empadronamiento con CIDITUC",
-                  texto:
-                    "La habilitación para votar se hace con la ciudadanía digital CIDITUC, de manera virtual desde la web municipal o presencial en las asambleas participativas.",
-                },
-                {
-                  titulo: "Tres categorías de proyecto",
-                  texto:
-                    "Las propuestas se encuadran en espacio socio ambiental, espacio cultural deportivo o espacio de innovación urbana.",
-                },
-                {
-                  titulo: "Evaluación técnica previa a la votación",
-                  texto:
-                    "Toda idea pasa por una evaluación técnica y presupuestaria. Puede quedar como factible, no factible, o integrarse con otra propuesta parecida. Solo las factibles se votan.",
-                },
-                {
-                  titulo: "El proyecto ganador entra al presupuesto municipal",
-                  texto:
-                    // Decia ademas "y su ejecución se publica en este sitio". Es
-                    // una regla presentada como confirmada, y hoy el sitio no
-                    // publica ninguna ejecucion.
-                    "El proyecto más votado de cada distrito se incorpora al presupuesto municipal del año siguiente.",
-                },
-              ].map((regla) => (
+              {REGLAS_CONFIRMADAS.map((regla) => (
                 <li key={regla.titulo} className="superficie rounded-2xl p-5">
                   <h3 className="text-base font-semibold">{regla.titulo}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>

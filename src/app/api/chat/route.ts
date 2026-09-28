@@ -29,22 +29,16 @@ import type OpenAI from "openai";
 import { z } from "zod";
 import { db } from "@/db";
 import { chatConsultas } from "@/db/schema";
-import {
-  getEdicionActiva,
-  getEstadisticas,
-  getFaq,
-  getHitos,
-  getTokensUsadosHoy,
-  type Edicion,
-} from "@/db/queries";
+import { getEdicionActiva, getEstadisticas, getTokensUsadosHoy, type Edicion } from "@/db/queries";
 import { HERRAMIENTAS, ejecutarHerramienta } from "@/lib/chat-herramientas";
 import { responderSinIA } from "@/lib/chat-sin-ia";
 import { firmaValida, firmarRespuesta } from "@/lib/chat-firma";
 import { recortarHistorial } from "@/lib/chat-historial";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 import { exigirMismoOrigen } from "@/lib/origen";
+import { contextoDelSitio, contextoParaElModelo } from "@/lib/chat-contexto";
 import { votacionTerminada } from "@/lib/ediciones";
-import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
+import { ETIQUETA_ETAPA } from "@/lib/formato";
 import { claveDePregunta } from "@/lib/texto";
 import { clasificarConsulta } from "@/lib/chat-temas";
 import {
@@ -166,13 +160,12 @@ async function construirSistema(): Promise<string> {
   const edicion = await getEdicionActiva();
   if (!edicion) return "";
 
-  const [stats, faq, hitos] = await Promise.all([
-    getEstadisticas(edicion),
-    getFaq(),
-    getHitos(edicion.id),
-  ]);
+  // Todo lo que Migue sabe del sitio sale de contextoDelSitio: las mismas
+  // fuentes que las paginas (ver src/lib/chat-contexto.ts). Aca no se escribe
+  // ningun dato del programa.
+  const [stats, contexto] = await Promise.all([getEstadisticas(edicion), contextoDelSitio(edicion)]);
 
-  return `Sos el asistente del sitio del Presupuesto Participativo de la Municipalidad de San Miguel de Tucumán, Argentina. Ayudás a vecinos y vecinas a entender el programa y a encontrar los proyectos de su barrio.
+  return `Sos Migue, el asistente del sitio del Presupuesto Participativo de la Municipalidad de San Miguel de Tucumán, Argentina. Ayudás a vecinos y vecinas a entender el programa, a participar (presentar una idea, votar) y a encontrar los proyectos de su barrio.
 
 # Alcance
 
@@ -192,13 +185,15 @@ TODA la información concreta sale de las herramientas. No tenés memoria de pro
 
 - Nunca inventes ni estimes un número, un monto, una fecha o un nombre de proyecto. Si la herramienta dice que un dato "no está cargado" o "no publicado todavía", decilo con esas palabras. Es información pública en construcción y decir la verdad sobre lo que falta es parte del trabajo.
 - Si la búsqueda no devuelve nada, decí que no encontraste y ofrecé otra forma de buscar. No completes con algo parecido.
-- Cuando nombres un proyecto, mencioná su distrito. Cuando la herramienta devuelva una url, enlazala en markdown con el título del proyecto.
+- Cuando nombres un proyecto, mencioná su distrito. Cuando la herramienta devuelva una url, enlazala en markdown con el título del proyecto, con la url tal como viene: una ruta del sitio que empieza con /, sin agregarle ningún dominio.
 - Si alguien pregunta por su barrio y no sabés a qué distrito pertenece, usá ubicar_barrio. Si no aparece, mandalo al mapa en /distritos en lugar de adivinar.
-- Si la ubicación de una idea es "aproximada", aclaralo: significa que la idea se cargó sin coordenada y el punto es el centro del distrito.
+- Si la ubicación de una idea es "aproximada", aclaralo: el punto del mapa no marca el lugar exacto de la obra.
 - Las herramientas consultan la edición vigente. Si la persona pregunta por otra (un año, "la edición pasada"), pasales \`edicion\` con el año.
 - Si preguntan por ganadores u obras, usá las herramientas aunque la edición vigente todavía no tenga ganadores: traen los de la última edición que votó. Cuando una herramienta devuelve datos de otra edición, decí de qué edición son.
+- Sobre cómo funciona el sitio, las fechas, el reglamento, las novedades o cómo votar, respondé solo con lo que dicen las secciones de abajo (y consultar_reglamento). Son lo que publica el sitio hoy: si algo no figura, decí que el sitio no lo tiene publicado y ofrecé la página que corresponda o el contacto del programa.
+- Nunca digas que votaste, que registraste algo ni que podés hacer un trámite por la persona: vos solo informás. Para votar o presentar una idea, mandala a la página.
 
-# Estado del programa (contexto fijo)
+# Estado del programa (datos del sitio en este momento)
 
 Edición vigente: ${stats.anio}. Etapa actual: ${ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}.
 Ideas presentadas: ${stats.ideas}. Proyectos ganadores: ${stats.ganadores}. Votos registrados en los ganadores: ${stats.votos}.
@@ -211,23 +206,21 @@ La ciudad tiene 20 distritos y cada uno elige su propio proyecto.${
   }
 
 Categorías: ${stats.porCategoria.map((c) => `${c.nombre} (${c.ideas} ideas)`).join("; ")}.
+${contextoParaElModelo(contexto)}
 
-Reglas de votación: 1 voto por persona, únicamente en un proyecto del distrito donde vive. El empadronamiento es con ciudadanía digital CIDITUC, virtual desde la web municipal o presencial en las asambleas participativas.
+# Páginas del sitio (para derivar, siempre con su enlace)
 
-Cronograma:
-${hitos.map((h) => `- ${h.titulo}: ${formatearRango(h.desde, h.hasta) || "sin fecha"}. ${h.detalle ?? ""}`).join("\n")}
-
-Preguntas frecuentes del sitio:
-${faq.map((f) => `P: ${f.pregunta}\nR: ${f.respuesta}`).join("\n\n")}
-
-# Páginas a las que podés derivar
-
-- /distritos — mapa de los 20 distritos
-- /proyectos — listado con filtros por distrito, categoría y estado
+- / — la portada: en qué etapa está el programa y qué se puede hacer
+- /distritos — mapa de los 20 distritos; /distritos/7, la página de cada uno
+- /proyectos — listado de ideas y proyectos, con filtros por distrito, categoría y estado
 - /transparencia — qué proyecto ganó en cada distrito y con cuántos votos
-- /archivo — las ediciones anteriores, con sus proyectos
-- /ideas/nueva — formulario para presentar una idea
-- /acerca-de — preguntas frecuentes`;
+- /archivo — las ediciones anteriores; cualquier página acepta ?edicion=2025
+- /ideas/nueva — presentar una idea (solo en la etapa de presentación de ideas)
+- /ideas/seguimiento — ver cómo sigue una idea, con su número y su código de seguimiento
+- /votar — votar (solo durante la votación, ingresando con CIDITUC)
+- /acerca-de — cómo participar: preguntas frecuentes, cronograma y cómo se vota
+- /reglamento — el reglamento del programa
+- /privacidad — qué datos guarda el sitio y para qué`;
 }
 
 // ---------------------------------------------------------------------------
