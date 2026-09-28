@@ -18,6 +18,7 @@ import {
   puedeCambiarEtapa,
   puedeCambiarIdea,
   puedeCargarIdea,
+  puedeDeclararDistrito,
   puedeDescartarse,
   puedeProclamar,
   seVota,
@@ -505,5 +506,16 @@ test("con la activa en cualquier otra etapa, o sin activa, se puede activar otra
   permitido(puedeActivarOtraEdicion(null));
   for (const etapa of ["ideas", "evaluacion", "seguimiento", "cerrada"] as const) {
     permitido(puedeActivarOtraEdicion({ anio: 2025, etapa }), etapa);
+  }
+});
+
+test("el distrito se declara solo con la votacion abierta, y hasta votar", () => {
+  assert.equal(puedeDeclararDistrito("votacion", false).permitido, true);
+  // Con el voto, el distrito queda atado al de la idea votada.
+  const yaVoto = puedeDeclararDistrito("votacion", true);
+  assert.equal(yaVoto.permitido, false);
+  assert.match(!yaVoto.permitido ? yaVoto.motivo : "", /Ya votaste/);
+  for (const etapa of ["ideas", "evaluacion", "seguimiento", "cerrada"] as const) {
+    assert.equal(puedeDeclararDistrito(etapa, false).permitido, false, etapa);
   }
 });

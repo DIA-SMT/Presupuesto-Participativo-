@@ -138,14 +138,16 @@ navegador dejan de viajar como contexto (ahora van firmadas).
 
 ### Primer deploy con la Fase 2 (en este orden)
 
-1. **La migración `0012` antes que el código.** `npm run db:migrate -- --produccion`
+1. **Las migraciones `0012` y `0013` antes que el código.** `npm run db:migrate -- --produccion`
    (ver [Tocar producción desde la terminal](#tocar-producción-desde-la-terminal)).
    Solo suma dos columnas con valor por defecto (`admins.version_sesion`,
    `ideas.canal_detalle`) y valores nuevos a cuatro enums, así que el código de
    la Fase 1 sigue andando con ella aplicada. Al revés no: el código nuevo lee
    `version_sesion` al ingresar y en cada página del panel, y sin la columna no
-   entra nadie. Si la Fase 1 todavía no se desplegó, sus pasos van primero y el
-   runner aplica las pendientes juntas.
+   entra nadie. La `0013` suma `votantes.distrito_declarado_en` (el distrito que
+   declara la persona al votar), que el código nuevo escribe. Si la Fase 1
+   todavía no se desplegó, sus pasos van primero y el runner aplica las
+   pendientes juntas.
 2. **Desplegar.** Se cierran todas las sesiones del panel, una vez: los tokens
    viejos no llevan la versión de la sesión. Cada persona vuelve a entrar con su
    contraseña.
@@ -441,10 +443,15 @@ archivo nuevo en `drizzle/`.
 - **CIDITUC**: el flujo está implementado y probado contra el backend real
   (token falso → 401 → error propio), pero falta lo que no depende de este repo:
   que DITEC registre la app en el Derivador y lo **despliegue**. Hasta entonces
-  `CIDITUC_INGRESO_HABILITADO` queda en `false`. Falta además decidir **de dónde
-  sale el distrito** de cada votante: CIDITUC devuelve documento, nombre y
-  contacto, no domicilio, así que hoy quien ingresa cae en la pantalla "Falta tu
-  distrito" salvo que el padrón ya lo tenga cargado.
+  `CIDITUC_INGRESO_HABILITADO` queda en `false`. **El distrito** lo declara la
+  persona, porque CIDITUC no informa el domicilio: en `/votar` busca su barrio o
+  marca su casa en el mapa (el cálculo se hace en su navegador; ni la dirección
+  ni el punto llegan al servidor), tilda "Declaro que vivo en el distrito N" y
+  confirma. Si el barrio de su cuenta de CIDITUC cae en un solo distrito, se le
+  sugiere. Lo puede cambiar hasta votar, y `votantes.distrito_declarado_en`
+  registra cuándo lo declaró, para el informe de la votación. Que el distrito
+  sea declarado tendría que decirlo el reglamento: es una declaración de la
+  persona, no un dato verificado.
 - **Reglamento**: la página existe con las reglas confirmadas, pero el texto
   oficial completo hay que conseguirlo. Se carga desde `/admin/contenido`,
   solapa "Reglamento" (solo admin), con vista previa igual a `/reglamento`.

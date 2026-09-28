@@ -492,6 +492,16 @@ export const votantes = pgTable(
     /** Id de la persona en el proveedor (CIDITUC: `persona.id`). Null en "dev". */
     proveedorSub: text("proveedor_sub"),
     verificado: boolean("verificado").notNull().default(false),
+    /**
+     * Cuando la persona DECLARO su distrito en /votar, tildando "Declaro que
+     * vivo en el distrito N". Null si el distrito vino de otro lado (el login
+     * de prueba, un padron precargado) o si todavia no lo eligio. Es lo que
+     * permite contar, en el informe de la votacion, cuantos votos salieron de
+     * un distrito declarado por la persona. Si lo cambia antes de votar, vale
+     * la ultima declaracion. Del domicilio no se guarda nada: ni la direccion
+     * ni el punto del mapa salen del navegador. Agregada en 0013.
+     */
+    distritoDeclaradoEn: timestamp("distrito_declarado_en", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

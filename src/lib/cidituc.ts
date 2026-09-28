@@ -148,6 +148,12 @@ export type PersonaCidituc = {
   /** documento_persona, ya limpio de puntos y espacios. */
   documento: string;
   nombre: string | null;
+  /**
+   * nombre_barrio de la cuenta, tal como viene. Sirve SOLO para sugerirle el
+   * distrito a la persona (sugerenciaDeDistrito, en src/lib/barrios.ts): no se
+   * guarda en el padron ni en ningun registro.
+   */
+  barrio: string | null;
 };
 
 /**
@@ -171,9 +177,9 @@ export function texto(valor: unknown): string | null {
  * y tambien la forma plana, por si el backend cambia.
  *
  * De todo lo que trae la respuesta, que incluye permisos sobre otros sistemas,
- * se toma unicamente lo que el padron necesita: documento, nombre e id. El
- * email y el telefono NO se leen: el sitio no los usa, y lo que no se guarda no
- * se puede filtrar.
+ * se toma unicamente lo que el padron necesita: documento, nombre e id; y el
+ * barrio, para sugerirle el distrito (no se guarda). El email y el telefono NO
+ * se leen: el sitio no los usa, y lo que no se guarda no se puede filtrar.
  */
 export function personaDeRespuesta(cuerpo: unknown): PersonaCidituc | null {
   if (!cuerpo || typeof cuerpo !== "object") return null;
@@ -192,7 +198,7 @@ export function personaDeRespuesta(cuerpo: unknown): PersonaCidituc | null {
       .filter((parte): parte is string => parte !== null)
       .join(" ") || null;
 
-  return { id: texto(persona.id_persona), documento, nombre };
+  return { id: texto(persona.id_persona), documento, nombre, barrio: texto(persona.nombre_barrio) };
 }
 
 // ---------------------------------------------------------------------------

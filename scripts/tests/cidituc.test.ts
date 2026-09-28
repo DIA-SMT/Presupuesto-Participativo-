@@ -114,18 +114,23 @@ const PERSONA = {
   apellido_persona: "Pérez",
   email_persona: "ana@example.com",
   telefono_persona: "3815550000",
+  nombre_barrio: "VILLA URQUIZA",
+  domicilio_persona: "Calle Falsa 123",
 };
 
 test("desenvuelve usuarioSinContraseña, user y la forma plana", () => {
-  const esperado = { id: "4321", documento: "12345678", nombre: "Ana Pérez" };
+  const esperado = { id: "4321", documento: "12345678", nombre: "Ana Pérez", barrio: "VILLA URQUIZA" };
   assert.deepEqual(personaDeRespuesta({ usuarioSinContraseña: PERSONA }), esperado);
   assert.deepEqual(personaDeRespuesta({ user: PERSONA }), esperado);
   assert.deepEqual(personaDeRespuesta(PERSONA), esperado);
 });
 
-test("no se lleva el contacto: solo documento, nombre e id", () => {
+test("no se lleva el contacto ni el domicilio: solo documento, nombre, id y barrio", () => {
+  // El barrio es solo para sugerirle el distrito (sugerenciaDeDistrito): no se
+  // guarda. La direccion no se lee.
   const persona = personaDeRespuesta({ usuarioSinContraseña: PERSONA });
-  assert.deepEqual(Object.keys(persona ?? {}).sort(), ["documento", "id", "nombre"]);
+  assert.deepEqual(Object.keys(persona ?? {}).sort(), ["barrio", "documento", "id", "nombre"]);
+  assert.equal(personaDeRespuesta({ ...PERSONA, nombre_barrio: null })?.barrio, null);
 });
 
 test("el documento se limpia de puntos y espacios", () => {

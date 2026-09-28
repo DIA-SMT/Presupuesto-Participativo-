@@ -13,9 +13,10 @@
  * sitio no contiene DNIs en claro.
  */
 import { createHash } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, esBaseRemota } from "@/db";
-import { votantes } from "@/db/schema";
+import { distritos, ediciones, votantes, votos } from "@/db/schema";
+import { puedeDeclararDistrito } from "./etapas";
 
 /**
  * Si este proceso tiene que comportarse como produccion: un build de
@@ -210,6 +211,93 @@ function errorSinDatosPersonales(causa: unknown): Error {
       `${restriccion ? `, ${restriccion}` : ""}).`,
     { cause: causa },
   );
+}
+
+// ---------------------------------------------------------------------------
+// El distrito que declara la persona
+// ---------------------------------------------------------------------------
+
+export type ResultadoDeclaracion =
+  | { ok: true; distrito: number }
+  | {
+      ok: false;
+      motivo: "fuera-de-etapa" | "ya-voto" | "sin-votante" | "distrito-invalido";
+      /** El texto para la persona. */
+      mensaje: string;
+    };
+
+/**
+ * Guarda el distrito que la persona declaro vivir, y cuando lo declaro.
+ *
+ * Todo en una transaccion y releyendo de la base, como el voto (ver
+ * src/app/api/votos/registrar.ts): la etapa de la edicion activa y si ya voto.
+ * La fila del votante se bloquea para escribir y el voto la bloquea para leer,
+ * asi un cambio de distrito y un voto de la misma persona no se cruzan: si el
+ * voto llego primero, el cambio rebota; si el cambio llego primero, el voto
+ * relee el distrito nuevo.
+ *
+ * Solo se guarda el numero de distrito: la direccion o el punto que uso la
+ * persona para encontrarlo no salen de su navegador.
+ */
+export async function declararDistrito(
+  votanteId: number,
+  numero: number,
+): Promise<ResultadoDeclaracion> {
+  return db.transaction(async (tx): Promise<ResultadoDeclaracion> => {
+    const [edicion] = await tx
+      .select({ id: ediciones.id, etapa: ediciones.etapa })
+      .from(ediciones)
+      .where(eq(ediciones.activa, true))
+      .for("share", { of: ediciones });
+    if (!edicion) {
+      return { ok: false, motivo: "fuera-de-etapa", mensaje: "No hay una edición activa." };
+    }
+
+    const [votante] = await tx
+      .select({ id: votantes.id })
+      .from(votantes)
+      .where(eq(votantes.id, votanteId))
+      .for("update", { of: votantes });
+    if (!votante) {
+      return {
+        ok: false,
+        motivo: "sin-votante",
+        mensaje: "No encontramos tu empadronamiento. Ingresá de nuevo.",
+      };
+    }
+
+    const [voto] = await tx
+      .select({ id: votos.id })
+      .from(votos)
+      .where(and(eq(votos.edicionId, edicion.id), eq(votos.votanteId, votanteId)))
+      .limit(1);
+    const veredicto = puedeDeclararDistrito(edicion.etapa, Boolean(voto));
+    if (!veredicto.permitido) {
+      return {
+        ok: false,
+        motivo: voto ? "ya-voto" : "fuera-de-etapa",
+        mensaje: veredicto.motivo,
+      };
+    }
+
+    const [distrito] = await tx
+      .select({ id: distritos.id })
+      .from(distritos)
+      .where(eq(distritos.numero, numero));
+    if (!distrito) {
+      return {
+        ok: false,
+        motivo: "distrito-invalido",
+        mensaje: "Ese distrito no existe: la ciudad tiene 20.",
+      };
+    }
+
+    await tx
+      .update(votantes)
+      .set({ distritoId: distrito.id, distritoDeclaradoEn: new Date() })
+      .where(eq(votantes.id, votanteId));
+    return { ok: true, distrito: numero };
+  });
 }
 
 /**

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import PanelVotacion from "@/components/PanelVotacion";
+import { indiceDeBarrios } from "@/lib/barrios";
 import { Aviso } from "@/components/ui";
 import { db } from "@/db";
 import { votos } from "@/db/schema";
@@ -83,7 +84,17 @@ export default async function Votar() {
 
       {abierta && sesion ? (
         <PanelVotacion
-          sesion={{ distrito: sesion.distrito, nombre: sesion.nombre }}
+          // Con otro distrito la boleta es otra: el panel arranca de cero (y
+          // deja de mostrar el cambio de distrito que lo trajo hasta aca).
+          key={sesion.distrito ?? 0}
+          sesion={{
+            distrito: sesion.distrito,
+            nombre: sesion.nombre,
+            sugerido: sesion.sugerido ?? null,
+          }}
+          // Solo si todavia puede elegir o cambiar el distrito: unos KB de
+          // nombres de barrio, sin geometria (ver indiceDeBarrios).
+          barrios={yaVoto ? [] : indiceDeBarrios()}
           proyectos={proyectos.map((p) => ({
             slug: p.slug,
             titulo: p.titulo,

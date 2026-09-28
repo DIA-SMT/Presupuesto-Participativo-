@@ -92,6 +92,13 @@
       "when": 1790341442035,
       "tag": "0012_panel_equipo_contenido_ideas",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790611848942,
+      "tag": "0013_distrito_declarado",
+      "breakpoints": true
     }
   ]
 }

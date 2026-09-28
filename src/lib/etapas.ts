@@ -486,6 +486,29 @@ export function puedeCargarIdea(etapa: Etapa): Veredicto {
 }
 
 /**
+ * Si la persona puede declarar (o cambiar) el distrito donde vive. Solo con la
+ * votacion abierta, que es cuando existe su sesion de votante y cuando el
+ * distrito sirve para algo, y solo mientras no haya votado en la edicion: el
+ * voto queda atado al distrito de la idea, y cambiarlo despues dejaria un voto
+ * de un distrito en una persona de otro.
+ *
+ * Que se pueda cambiar hasta votar es a proposito: el distrito es declarado,
+ * asi que fijarlo en la primera eleccion no suma ningun control y deja sin
+ * salida a quien se equivoco. La ultima declaracion es la que vale.
+ */
+export function puedeDeclararDistrito(etapa: Etapa, yaVoto: boolean): Veredicto {
+  if (etapa !== "votacion") {
+    return rechazo("La votación no está abierta en este momento: el distrito se elige para votar.");
+  }
+  if (yaVoto) {
+    return rechazo(
+      "Ya votaste en esta edición: tu distrito quedó fijo con el voto y no se puede cambiar.",
+    );
+  }
+  return PERMITIDO;
+}
+
+/**
  * Si se puede proclamar un ganador en una edicion en `etapa`: solo con la
  * votacion terminada, en "seguimiento" o "cerrada". Proclamar con la votacion
  * abierta es coronar un conteo que todavia se mueve; antes de la votacion no

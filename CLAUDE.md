@@ -34,7 +34,9 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   (`src/components/Chat.tsx` construye nodos React). Mantener eso.
 - Datos de personas: DNI e IP siempre hasheados (`src/lib/empadronamiento.ts`,
   `src/lib/rate-limit.ts`). No agregar campos que guarden identificadores en
-  claro. El DNI se hashea con `DNI_PEPPER`, no con `SESSION_SECRET`, y esa
+  claro. Del domicilio solo se guarda el distrito que declara la persona: el
+  barrio y el punto del mapa con que lo encuentra se resuelven en su navegador
+  (`src/components/ElegirDistrito.tsx`) y no se mandan al servidor, ni por URL. El DNI se hashea con `DNI_PEPPER`, no con `SESSION_SECRET`, y esa
   pimienta **no se rota nunca durante una edición** (cambiarla vacía el padrón).
 - Todo `POST` nuevo llama a `exigirMismoOrigen` (`src/lib/origen.ts`) antes
   que nada, incluso antes del rate limit.

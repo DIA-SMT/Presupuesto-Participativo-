@@ -12,6 +12,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
 import { borradoCookie } from "@/lib/cookies";
+import { sugerenciaDeDistrito } from "@/lib/barrios";
 import { empadronar } from "@/lib/empadronamiento";
 import { crearSesionVotante } from "@/lib/sesion";
 import { getEdicionActiva } from "@/db/queries";
@@ -91,7 +92,8 @@ export async function GET(request: Request) {
        * esa fila estaba verificada: `empadronar` ignora el null al actualizar,
        * pero no hereda el distrito de una fila sin verificar, que pudo haberlo
        * elegido quien la cargo (el login de prueba lo pide a mano). Si no queda
-       * un distrito que conservar, /votar le explica que le falta.
+       * un distrito que conservar, /votar le pide que declare el suyo, con
+       * el barrio de la cuenta como sugerencia si queda en un solo distrito.
        */
       distrito: null,
       proveedor: "cidituc",
@@ -103,6 +105,11 @@ export async function GET(request: Request) {
       votanteId: empadronado.votanteId,
       distrito: empadronado.distrito,
       nombre: empadronado.nombre,
+      // Solo si todavia no tiene distrito: a quien ya lo declaro no se le
+      // propone otro.
+      sugerido: empadronado.distrito
+        ? null
+        : sugerenciaDeDistrito(resultado.persona.barrio),
     });
   } catch (causa) {
     // Resumen siempre: sin esto, una base caida se ve igual que un token

@@ -22,31 +22,15 @@ import {
   type Punto,
 } from "./geo";
 import { getBarriosGeo, getDistritosGeo } from "./geo-servidor";
-import { normalizar, normalizarBarrio } from "./texto";
+import { claveDeBarrio, limpiarNombre as limpiar, normalizarBarrio } from "./texto";
 
 // ---------------------------------------------------------------------------
 // Nombres
 // ---------------------------------------------------------------------------
 
-/** Minusculas, sin tildes, sin puntos, con cualquier otro signo como espacio. */
-function limpiar(texto: string): string {
-  return normalizar(texto)
-    .replace(/\./g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-/**
- * Clave para comparar nombres de barrio.
- *
- * Los puntos se sacan (la capa escribe "Y.P.F." y "S.M.A.T.A. II"; la gente,
- * "YPF" y "Smata II"), cualquier otro signo cuenta como espacio ("1°  DE JULIO"
- * es "1 de julio") y se saca el "barrio" o "B°" de adelante, que la gente
- * escribe y la capa no.
- */
-export function claveDeBarrio(texto: string): string {
-  return limpiar(texto).replace(/^(?:barrio|b|bo)\s+/, "");
-}
+// La clave de un nombre de barrio esta en texto.ts, porque la usa tambien el
+// navegador. Se reexporta para quien la buscaba aca.
+export { claveDeBarrio };
 
 /** Si `texto` contiene a `buscado` como palabras enteras y seguidas. */
 function contienePalabras(texto: string, buscado: string): boolean {
@@ -368,4 +352,56 @@ export function ubicarBarriosEnFrase(frase: string, limite = 3): BarrioUbicado[]
   return barriosEnFrase(frase, getBarriosGeo(), limite)
     .map(aUbicado)
     .filter((barrio): barrio is BarrioUbicado => barrio !== null);
+}
+
+/** Un barrio de la capa, reducido a lo que necesita el buscador de /votar. */
+export type BarrioDelIndice = {
+  /** Para mostrar ("Villa Urquiza"). */
+  nombre: string;
+  /** `claveDeBarrio` del nombre oficial, para comparar sin tildes ni signos. */
+  clave: string;
+  /** Los distritos en que cae, del de mas superficie al de menos. */
+  distritos: number[];
+};
+
+let indice: BarrioDelIndice[] | null = null;
+
+/**
+ * Los 322 barrios de la capa con sus distritos, para que quien vota encuentre
+ * el suyo en el navegador sin mandar lo que escribe a ningun lado. Pesa unos
+ * pocos KB (sin geometria) y se calcula una vez por proceso.
+ */
+export function indiceDeBarrios(): BarrioDelIndice[] {
+  if (indice) return indice;
+  indice = getBarriosGeo()
+    .features.map(aUbicado)
+    .filter((barrio): barrio is BarrioUbicado => barrio !== null)
+    .map((barrio) => ({
+      nombre: barrio.nombre,
+      clave: claveDeBarrio(barrio.nombreOficial),
+      distritos: barrio.distritos.map((parte) => parte.distrito),
+    }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  return indice;
+}
+
+/**
+ * El distrito que se le sugiere a quien tiene ese barrio en su cuenta de
+ * CIDITUC. Solo si el nombre coincide EXACTO con un barrio de la capa y ese
+ * barrio queda en un solo distrito: un barrio repartido (diez de la capa) o un
+ * nombre que no se reconoce no sugieren nada, y la persona elige como
+ * cualquiera. Igual lo confirma ella: es una sugerencia, no una asignacion.
+ */
+export function sugerenciaDeDistrito(
+  barrio: string | null,
+): { distrito: number; barrio: string } | null {
+  if (!barrio) return null;
+  const clave = claveDeBarrio(barrio);
+  if (!clave) return null;
+  const exactos = buscarBarrios(barrio, getBarriosGeo(), 10)
+    .filter((feature) => claveDeBarrio(feature.properties.nombre) === clave)
+    .map(aUbicado)
+    .filter((ubicado): ubicado is BarrioUbicado => ubicado !== null);
+  if (exactos.length !== 1 || exactos[0].distritos.length !== 1) return null;
+  return { distrito: exactos[0].distritos[0].distrito, barrio: exactos[0].nombre };
 }

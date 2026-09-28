@@ -29,7 +29,7 @@ export const REGLAS_CONFIRMADAS: Explicacion[] = [
   {
     titulo: "Se vota en el distrito donde se vive",
     texto:
-      "El voto solo puede aplicarse a un proyecto del distrito de residencia de la persona. La ciudad tiene 20 distritos y cada uno elige su propio proyecto.",
+      "El voto solo puede aplicarse a un proyecto del distrito de residencia de la persona, que ella misma declara la primera vez que entra a votar. La ciudad tiene 20 distritos y cada uno elige su propio proyecto.",
   },
   {
     titulo: "Empadronamiento con CIDITUC",
@@ -67,14 +67,14 @@ export const PASOS_PARA_VOTAR: Explicacion[] = [
       "Mientras la votación está abierta, entrá a Votar e ingresá con tu cuenta de ciudadanía digital CIDITUC. Si todavía no la tenés, la podés hacer desde la página de la Municipalidad o en una asamblea participativa.",
   },
   {
-    titulo: "Mirá los proyectos de tu distrito",
+    titulo: "Declará en qué distrito vivís",
     texto:
-      "La boleta muestra, en orden alfabético, los proyectos factibles del distrito donde estás empadronado. Si tu empadronamiento no tiene un distrito asignado, el sitio te lo avisa: se completa en una asamblea participativa.",
+      "La primera vez, buscás tu barrio o marcás tu casa en el mapa, y confirmás que vivís en ese distrito. Solo se guarda el número de distrito, y lo podés cambiar hasta que votes.",
   },
   {
-    titulo: "Elegí uno y confirmá",
+    titulo: "Elegí un proyecto y confirmá",
     texto:
-      "Tenés un solo voto. Una vez confirmado queda registrado y no se puede votar otra vez en la misma edición.",
+      "La boleta muestra, en orden alfabético, los proyectos factibles de tu distrito. Tenés un solo voto: una vez confirmado queda registrado y no se puede votar otra vez en la misma edición.",
   },
 ];
 

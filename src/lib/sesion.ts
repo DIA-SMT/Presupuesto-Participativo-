@@ -37,6 +37,13 @@ export type SesionVotante = {
   votanteId: number;
   distrito: number | null;
   nombre: string | null;
+  /**
+   * El distrito que se le propone a quien todavia no declaro el suyo, sacado
+   * del barrio de su cuenta de CIDITUC (sugerenciaDeDistrito). Viaja solo en
+   * esta cookie, que es de la persona y dura horas: el barrio no se guarda en
+   * la base. Null o ausente si no hay sugerencia.
+   */
+  sugerido?: { distrito: number; barrio: string } | null;
 };
 
 async function firmar(datos: object, duracion: number): Promise<string> {

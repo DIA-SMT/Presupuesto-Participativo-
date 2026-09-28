@@ -15,7 +15,9 @@ import {
   claveDeBarrio,
   distritosDelBarrio,
   ideasDelBarrio,
+  indiceDeBarrios,
   puntoEnBarrio,
+  sugerenciaDeDistrito,
   ubicarBarrio,
   ubicarBarriosEnFrase,
 } from "../../src/lib/barrios";
@@ -180,4 +182,29 @@ test("con las capas del sitio, ubicarBarrio arma el nombre para mostrar", () => 
     ubicarBarriosEnFrase("en que distrito queda villa 9 de julio").map((b) => b.nombreOficial),
     ["VILLA 9 DE JULIO"],
   );
+});
+
+test("la sugerencia de distrito sale del barrio de CIDITUC solo si no hay dudas", () => {
+  // Un barrio entero en un distrito: se sugiere, con el nombre para mostrar.
+  assert.deepEqual(sugerenciaDeDistrito("VILLA URQUIZA"), { distrito: 5, barrio: "Villa Urquiza" });
+  assert.deepEqual(sugerenciaDeDistrito("B° Jardín"), { distrito: 3, barrio: "Jardín" });
+  // Repartido entre distritos, homonimo o desconocido: nada, elige la persona.
+  assert.equal(sugerenciaDeDistrito("Villa 9 de Julio"), null);
+  assert.equal(sugerenciaDeDistrito("San Martín"), null);
+  assert.equal(sugerenciaDeDistrito("barrio que no existe"), null);
+  // Solo el nombre exacto: "Ciudadela" no sugiere el de "Ciudadela Sur".
+  const ciudadela = sugerenciaDeDistrito("Ciudadela");
+  assert.ok(ciudadela === null || ciudadela.barrio === "Ciudadela");
+  assert.equal(sugerenciaDeDistrito(null), null);
+  assert.equal(sugerenciaDeDistrito(""), null);
+});
+
+test("el indice del buscador de /votar tiene todos los barrios, sin geometria", () => {
+  const indice = indiceDeBarrios();
+  assert.equal(indice.length, 322);
+  assert.equal(indice.filter((b) => b.distritos.length > 1).length, 10);
+  const urquiza = indice.find((b) => b.clave === claveDeBarrio("Villa Urquiza"));
+  assert.deepEqual(urquiza, { nombre: "Villa Urquiza", clave: "villa urquiza", distritos: [5] });
+  // Es lo que viaja a la pagina: nombres y distritos, nada mas.
+  assert.ok(indice.every((b) => Object.keys(b).sort().join() === "clave,distritos,nombre"));
 });

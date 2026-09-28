@@ -8,7 +8,11 @@
  * Los proyectos llegan en orden alfabetico (lo pide /votar a listarIdeas) y
  * aca no se reordenan: cualquier otro orden le da ventaja a alguien.
  *
- * En los tres estados con sesion —boleta, falta el distrito y ya voto— hay un
+ * Sin distrito (quien entra con CIDITUC, que no informa el domicilio) la
+ * persona lo declara en esta misma pantalla (ElegirDistrito), y con la boleta a
+ * la vista lo puede cambiar hasta votar.
+ *
+ * En los tres estados con sesion —boleta, elegir el distrito y ya voto— hay un
  * boton "Salir". La sesion dura horas y sobrevive a cerrar el navegador: en una
  * tablet de asamblea, sin ese boton la persona que sigue votaba con la
  * identidad de la anterior. Al votar la sesion se cierra sola en el servidor
@@ -17,7 +21,9 @@
  * de la persona que sigue.
  */
 import { useState } from "react";
+import type { BarrioDelIndice } from "@/lib/barrios";
 import { colorCategoria } from "@/lib/formato";
+import ElegirDistrito from "./ElegirDistrito";
 
 /** La ruta que cierra la sesion (src/app/api/auth/salir/route.ts). */
 const RUTA_SALIR = "/api/auth/salir";
@@ -32,17 +38,25 @@ type Proyecto = {
 };
 
 type Props = {
-  sesion: { distrito: number | null; nombre: string | null };
+  sesion: {
+    distrito: number | null;
+    nombre: string | null;
+    sugerido: { distrito: number; barrio: string } | null;
+  };
   proyectos: Proyecto[];
   yaVoto: boolean;
+  /** Para encontrar el distrito por el barrio. Vacio si ya voto. */
+  barrios: BarrioDelIndice[];
 };
 
 export default function PanelVotacion({
   sesion,
   proyectos,
   yaVoto,
+  barrios,
 }: Props) {
   const [elegido, setElegido] = useState<Proyecto | null>(null);
+  const [cambiandoDistrito, setCambiandoDistrito] = useState(false);
   const [estado, setEstado] = useState<
     | { tipo: "inicial" }
     | { tipo: "confirmando" }
@@ -145,15 +159,18 @@ export default function PanelVotacion({
     );
   }
 
-  // --- Con sesion pero sin distrito ------------------------------------------
-  if (!sesion.distrito) {
+  // --- Con sesion pero sin distrito: lo declara, o lo cambia -----------------
+  // Decia "Falta tu distrito. Acercate a una asamblea", y el equipo no tenia
+  // como cargarlo: con CIDITUC nadie podia votar.
+  if (!sesion.distrito || cambiandoDistrito) {
     return (
-      <div className="superficie mt-8 max-w-xl rounded-2xl p-8">
-        <h2 className="text-xl font-bold">Falta tu distrito</h2>
-        <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-          Tu empadronamiento no tiene un distrito asignado, y el voto se emite en el distrito donde
-          vivís. Acercate a una asamblea participativa para completarlo.
-        </p>
+      <div className="max-w-2xl">
+        <ElegirDistrito
+          actual={sesion.distrito}
+          sugerido={sesion.distrito ? null : sesion.sugerido}
+          barrios={barrios}
+          onCancelar={sesion.distrito ? () => setCambiandoDistrito(false) : undefined}
+        />
         <div className="mt-5">
           <BotonSalir pregunta={preguntaSalir} />
         </div>
@@ -166,9 +183,18 @@ export default function PanelVotacion({
     <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <p className="max-w-2xl text-sm" style={{ color: "var(--texto-suave)" }}>
-          {sesion.nombre ? `Hola, ${sesion.nombre}. ` : ""}Estás empadronado en el{" "}
+          {sesion.nombre ? `Hola, ${sesion.nombre}. ` : ""}Votás en el{" "}
           <strong>Distrito {sesion.distrito}</strong>. Estos son los proyectos factibles de tu
-          distrito, en orden alfabético; elegí uno.
+          distrito, en orden alfabético; elegí uno.{" "}
+          {/* Hasta que vota: con el voto, el distrito queda fijo. */}
+          <button
+            type="button"
+            onClick={() => setCambiandoDistrito(true)}
+            className="font-semibold underline"
+            style={{ color: "var(--marca-texto)" }}
+          >
+            ¿No es tu distrito? Cambialo
+          </button>
         </p>
         <BotonSalir pregunta="¿No sos vos?" />
       </div>

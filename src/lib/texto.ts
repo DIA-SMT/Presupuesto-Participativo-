@@ -267,3 +267,26 @@ export function similitud(a: string, b: string): number {
   for (const token of ta) if (tb.has(token)) comunes += 1;
   return comunes / (ta.size + tb.size - comunes);
 }
+
+/** Minusculas, sin tildes, sin puntos, con cualquier otro signo como espacio. */
+export function limpiarNombre(texto: string): string {
+  return normalizar(texto)
+    .replace(/\./g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Clave para comparar nombres de barrio.
+ *
+ * Los puntos se sacan (la capa escribe "Y.P.F." y "S.M.A.T.A. II"; la gente,
+ * "YPF" y "Smata II"), cualquier otro signo cuenta como espacio ("1°  DE JULIO"
+ * es "1 de julio") y se saca el "barrio" o "B°" de adelante, que la gente
+ * escribe y la capa no.
+ *
+ * Vive aca y no en src/lib/barrios.ts porque la usa tambien el navegador (el
+ * buscador de barrios de /votar), y barrios.ts lee las capas del disco.
+ */
+export function claveDeBarrio(texto: string): string {
+  return limpiarNombre(texto).replace(/^(?:barrio|b|bo)\s+/, "");
+}
