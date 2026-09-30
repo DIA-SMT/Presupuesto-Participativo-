@@ -26,6 +26,7 @@
  * del pedido (400) o del sitio (sin edicion activa, 503).
  */
 import type OpenAI from "openai";
+import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { chatConsultas } from "@/db/schema";
@@ -40,7 +41,8 @@ import { contextoDelSitio, contextoParaElModelo } from "@/lib/chat-contexto";
 import { votacionTerminada } from "@/lib/ediciones";
 import { ETIQUETA_ETAPA } from "@/lib/formato";
 import { claveDePregunta } from "@/lib/texto";
-import { clasificarConsulta } from "@/lib/chat-temas";
+import { clasificarConsulta, type TemaConsulta } from "@/lib/chat-temas";
+import { armarReporte, enviarReporte, reporteConfigurado } from "@/lib/migue-reporte";
 import {
   CONSUMO_VACIO,
   cortarSiSeCalla,
@@ -708,6 +710,18 @@ async function registrar(datos: {
     huboError: datos.vioError ?? !datos.ok,
   });
 
+  // Solo lo necesario para las metricas: el hash de IP no sale de este sitio.
+  // Para el dashboard, una falla es lo que el vecino vio como error: si cayo al buscador
+  // y se fue con una respuesta, la consulta se cuenta por lo que dice esa respuesta.
+  reportarAMigue({
+    pregunta: datos.pregunta,
+    tema,
+    resuelta,
+    ok: !(datos.vioError ?? !datos.ok),
+    consumo: datos.consumo,
+    ms: datos.ms,
+  });
+
   try {
     await db.insert(chatConsultas).values({
       origen: "chat",
@@ -731,5 +745,35 @@ async function registrar(datos: {
   } catch (causa) {
     // El registro es para estadistica interna: si falla, no rompe la respuesta.
     console.error("[chat] no se pudo registrar la consulta", causa);
+  }
+}
+
+/**
+ * Manda la consulta al dashboard de la Direccion de IA (ver src/lib/migue-reporte.ts).
+ * Apagado sin MIGUE_API_KEY. Se programa con after() para que corra cuando la
+ * respuesta ya salio: nunca demora ni corta al vecino.
+ */
+function reportarAMigue(datos: {
+  pregunta: string;
+  tema: TemaConsulta;
+  resuelta: boolean;
+  ok: boolean;
+  consumo: Consumo;
+  ms: number;
+}) {
+  try {
+    const config = reporteConfigurado();
+    if (!config) return;
+    const reporte = armarReporte(datos, crypto.randomUUID(), Date.now(), { enviarPreguntas: config.enviarPreguntas });
+    const tarea = () => enviarReporte(reporte, config);
+    try {
+      after(tarea);
+    } catch {
+      // Fuera del contexto del pedido after() no esta disponible: se manda igual,
+      // sin esperar (enviarReporte nunca tira).
+      void tarea();
+    }
+  } catch (causa) {
+    console.warn("[migue] no se pudo preparar el reporte", causa);
   }
 }
