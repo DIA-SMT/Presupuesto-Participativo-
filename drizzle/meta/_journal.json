@@ -71,6 +71,34 @@
       "when": 1788795321186,
       "tag": "0009_tema_y_resuelta",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790178980513,
+      "tag": "0010_habilitar_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790180149516,
+      "tag": "0011_votante_unico_por_cuenta",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790341442035,
+      "tag": "0012_panel_equipo_contenido_ideas",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790611848942,
+      "tag": "0013_distrito_declarado",
+      "breakpoints": true
     }
   ]
 }

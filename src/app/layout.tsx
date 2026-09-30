@@ -4,7 +4,9 @@ import "./globals.css";
 import AccesoPanel from "@/components/AccesoPanel";
 import BotonTema from "@/components/BotonTema";
 import AvisoLegal from "@/components/AvisoLegal";
+import AvisoUrgente from "@/components/AvisoUrgente";
 import Chat from "@/components/Chat";
+import { sugerenciasDelChat } from "@/lib/chat-sugerencias";
 import VentanaAvisoLegal from "@/components/VentanaAvisoLegal";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
 import { getEdicionActiva, getTextos } from "@/db/queries";
@@ -56,6 +58,21 @@ const NAVEGACION = [
   { href: "/acerca-de", texto: "Cómo participar" },
 ];
 
+/**
+ * El llamado de la etapa: lo que el sitio le pide hoy al vecino. Solo existe en
+ * las dos etapas en que hay algo para hacer; en las otras no hay boton.
+ *
+ * Esta definido una vez y se dibuja dos (menu de escritorio y barra del
+ * telefono) para que las dos versiones no puedan decir cosas distintas.
+ */
+function llamadoDeEtapa(
+  etapa: string | undefined,
+): { href: string; texto: string } | null {
+  if (etapa === "ideas") return { href: "/ideas/nueva", texto: "Presentá tu idea" };
+  if (etapa === "votacion") return { href: "/votar", texto: "Votar" };
+  return null;
+}
+
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -68,11 +85,13 @@ export default async function RootLayout({
    * (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/cookies.md),
    * que es exactamente donde ya estaba.
    *
-   * El `.catch` no es decoracion: `getSesionAdmin()` tira si falta
-   * SESSION_SECRET o es corto, y este es el layout raiz de TODO el sitio. Sin
-   * el, una variable de entorno mal puesta apaga hasta la portada. Igual que
-   * las dos consultas de al lado: si el dato no viene, el sitio sigue en pie
-   * sin el acceso.
+   * El `.catch` no es decoracion. Con la cookie del panel, `getSesionAdmin()`
+   * valida la sesion contra la base (una fila por clave primaria; sin la
+   * cookie no consulta nada), asi que tira si la base no contesta, y este es
+   * el layout raiz de TODO el sitio. Igual que las dos consultas de al lado:
+   * si el dato no viene, el sitio sigue en pie sin el acceso. Tambien se traga
+   * la redireccion a /admin/password de una cuenta con la contrasena
+   * provisoria sin cambiar, que asi no ve el atajo (ver src/lib/sesion.ts).
    */
   const [textos, edicion, sesionEquipo] = await Promise.all([
     getTextos().catch(() => ({}) as Record<string, string>),
@@ -81,11 +100,12 @@ export default async function RootLayout({
   ]);
 
   /*
-   * Solo el correo, que ya viene firmado en la cookie. El nombre completo
-   * obligaria a consultar la base en cada pagina publica para una etiqueta
-   * decorativa; el panel, adentro, ya muestra nombre, correo y rol.
+   * Solo el correo, de la misma fila con la que se valido la sesion: la
+   * cookie ya no lo trae. Al atajo le alcanza para decir con que cuenta se
+   * entra; el panel, adentro, muestra nombre, correo y rol.
    */
   const cuentaEquipo = sesionEquipo?.email ?? null;
+  const llamado = llamadoDeEtapa(edicion?.etapa);
 
   return (
     /*
@@ -137,6 +157,7 @@ export default async function RootLayout({
         <a href="#contenido" className="salto-contenido">
           Saltar al contenido
         </a>
+        <AvisoUrgente texto={textos["aviso-urgente"]} />
 
         <header
           className="sticky top-0 z-30 backdrop-blur"
@@ -173,22 +194,13 @@ export default async function RootLayout({
                     {item.texto}
                   </Link>
                 ))}
-                {edicion?.etapa === "ideas" && (
+                {llamado && (
                   <Link
-                    href="/ideas/nueva"
+                    href={llamado.href}
                     className="ml-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
                     style={{ background: "var(--color-acento-600)" }}
                   >
-                    Presentá tu idea
-                  </Link>
-                )}
-                {edicion?.etapa === "votacion" && (
-                  <Link
-                    href="/votar"
-                    className="ml-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
-                    style={{ background: "var(--color-acento-600)" }}
-                  >
-                    Votar
+                    {llamado.texto}
                   </Link>
                 )}
               </nav>
@@ -198,21 +210,47 @@ export default async function RootLayout({
             </div>
           </div>
 
-          {/* Navegacion en telefono: barra desplazable, sin menu hamburguesa. */}
-          <nav
-            aria-label="Secciones del sitio"
-            className="flex gap-1 overflow-x-auto px-4 pb-2.5 md:hidden"
-          >
-            {NAVEGACION.map((item) => (
+          {/*
+            Navegacion en telefono: barra desplazable, sin menu hamburguesa.
+
+            El llamado de la etapa ("Presentá tu idea", "Votar") antes estaba
+            solo en el menu de escritorio: en el telefono, desde cualquier
+            pagina que no fuera la portada, no habia un boton para ir a votar. No
+            va en la fila del logo: a 375 px esa fila ya lleva el logo con dos
+            lineas de texto (unos 260 px) y el boton de tema, y un boton mas la
+            desbordaba. Va aca, primero y FUERA de la parte que se desplaza
+            (shrink-0), asi queda siempre a la vista aunque la persona corra la
+            barra. Mismo alto que las otras pastillas (py-1.5 y borde de 1px)
+            para que la fila no salte. El pb-2.5 va en la parte que se desplaza
+            y no en el <nav>: ahi se dibuja la barra de desplazamiento cuando el
+            navegador la muestra, y sin ese margen quedaba pegada a las
+            pastillas.
+          */}
+          <nav aria-label="Secciones del sitio" className="flex items-start gap-2 px-4 md:hidden">
+            {llamado && (
               <Link
-                key={item.href}
-                href={item.href}
-                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium"
-                style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+                href={llamado.href}
+                className="mb-2.5 shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold text-white"
+                style={{
+                  background: "var(--color-acento-600)",
+                  border: "1px solid var(--color-acento-600)",
+                }}
               >
-                {item.texto}
+                {llamado.texto}
               </Link>
-            ))}
+            )}
+            <div className="flex min-w-0 gap-1 overflow-x-auto pb-2.5">
+              {NAVEGACION.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium"
+                  style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+                >
+                  {item.texto}
+                </Link>
+              ))}
+            </div>
           </nav>
         </header>
 
@@ -312,8 +350,9 @@ export default async function RootLayout({
         <Chat
           bienvenida={
             textos["chat-bienvenida"] ??
-            "Hola. Puedo responderte sobre los proyectos del Presupuesto Participativo."
+            "¡Hola! Soy Migue. Te ayudo con el Presupuesto Participativo: cómo participar, cómo votar y qué proyectos hay en tu distrito."
           }
+          sugerencias={sugerenciasDelChat(edicion?.etapa)}
         />
       </body>
     </html>

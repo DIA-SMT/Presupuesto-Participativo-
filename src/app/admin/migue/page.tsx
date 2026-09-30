@@ -84,6 +84,9 @@ export default async function AdminMigue({ searchParams }: Props) {
       ultimas={ultimas}
       limiteSinResolver={LIMITE_SIN_RESOLVER}
       limiteUltimas={LIMITE_ULTIMAS}
+      // Las preguntas frecuentes se cargan en /admin/contenido, que es solo
+      // para admin: a los demas roles no se les ofrece un enlace que no pueden usar.
+      puedeCargarPreguntas={sesion.rol === "admin"}
     />
   );
 }

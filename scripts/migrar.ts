@@ -8,6 +8,13 @@
  *
  * Funciona con los dos drivers, igual que src/db/index.ts: PGlite embebido en
  * desarrollo y Postgres (Supabase) cuando hay DATABASE_URL.
+ *
+ * Es el script que se corre contra produccion como parte del trabajo normal:
+ * cada migracion nueva se lleva a Supabase con el. Por eso el candado de
+ * scripts/produccion.ts no lo prohibe, le exige el pedido explicito:
+ *
+ *   npm run db:migrate                                          (PGlite local)
+ *   DATABASE_URL="<url de Supabase>" npm run db:migrate -- --produccion
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
 import "./cargar-env";
@@ -17,11 +24,15 @@ import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import { migrate as migrarNodePg } from "drizzle-orm/node-postgres/migrator";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { migrate as migrarPglite } from "drizzle-orm/pglite/migrator";
-import { RUTA_PGLITE } from "../src/db";
+import { opcionesDePool, RUTA_PGLITE } from "../src/db";
+import { exigirPermisoDeEscritura } from "./produccion";
 
 const CARPETA = "./drizzle";
 
 async function main() {
+  // Antes de abrir ninguna conexion: contra una base remota hace falta el flag.
+  await exigirPermisoDeEscritura("npm run db:migrate");
+
   const url = process.env.DATABASE_URL?.trim() ?? "";
   const usaPostgres = url.startsWith("postgres://") || url.startsWith("postgresql://");
 
@@ -29,8 +40,11 @@ async function main() {
     const { host, port } = new URL(url);
     console.log(`Migrando Postgres en ${host}${port ? "" : " (puerto por defecto)"}`);
     // Una sola conexion: el DDL es secuencial y no hay que ocupar el pooler.
+    // La URL y el TLS salen de `opcionesDePool`, igual que en la aplicacion:
+    // con la URL cruda la migracion contra Supabase viajaba en claro, clave del
+    // pooler incluida, y un `?sslmode=` en la URL volvia a pisar la opcion ssl.
     const pool = new Pool({
-      connectionString: url,
+      ...opcionesDePool(url),
       max: 1,
       connectionTimeoutMillis: 20_000,
     });

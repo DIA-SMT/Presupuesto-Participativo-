@@ -19,11 +19,18 @@
  *
  * Sin --confirmar no escribe nada: es un borrado definitivo y conviene mirarlo
  * antes de correrlo.
+ *
+ * En produccion es donde este script tiene sentido (ahi estan los contactos),
+ * asi que se corre contra Supabase a proposito: con la URL en DATABASE_URL solo
+ * para esa corrida y `--produccion` junto a `--confirmar`. Sin el flag, la
+ * vista previa funciona igual, pero la purga se niega a escribir en una base
+ * remota (scripts/produccion.ts).
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
 import "./cargar-env";
 import { sql } from "drizzle-orm";
-import { consultar, db } from "../src/db";
+import { consultar } from "../src/db";
+import { destinoDeLaBase, exigirPermisoDeEscritura, sinFlagProduccion } from "./produccion";
 
 type Pendiente = {
   anio: number;
@@ -32,7 +39,7 @@ type Pendiente = {
 };
 
 async function main() {
-  const argumentos = process.argv.slice(2);
+  const argumentos = sinFlagProduccion(process.argv.slice(2));
   const confirmar = argumentos.includes("--confirmar");
   const indiceAnio = argumentos.indexOf("--anio");
   const anio = indiceAnio >= 0 ? Number(argumentos[indiceAnio + 1]) : null;
@@ -41,6 +48,15 @@ async function main() {
     console.error("El valor de --anio tiene que ser un año, por ejemplo: --anio 2025");
     process.exit(1);
   }
+
+  // La vista previa solo lee: corre contra cualquier base y dice cual es, para
+  // que nadie confunda los numeros de PGlite con los de produccion. La purga
+  // pasa por el candado antes de la primera consulta.
+  const destino = confirmar
+    ? (await exigirPermisoDeEscritura(`npm run purgar-contactos -- ${argumentos.join(" ")}`))
+        .destino
+    : destinoDeLaBase(process.env.DATABASE_URL);
+  console.log(`Base: ${destino.descripcion}\n`);
 
   // Universo: por defecto las ediciones cerradas; con --anio, esa edicion sin
   // importar la etapa (sirve para cumplir un pedido de supresion puntual).

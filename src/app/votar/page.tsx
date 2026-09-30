@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import PanelVotacion from "@/components/PanelVotacion";
+import { indiceDeBarrios } from "@/lib/barrios";
 import { Aviso } from "@/components/ui";
 import { db } from "@/db";
 import { votos } from "@/db/schema";
 import { getEdicionActiva, getTextos, listarIdeas } from "@/db/queries";
-import { proveedorActivo } from "@/lib/empadronamiento";
 import { getSesionVotante } from "@/lib/sesion";
 import { formatearRango } from "@/lib/formato";
 
@@ -32,19 +33,27 @@ export default async function Votar() {
   const abierta = edicion.etapa === "votacion";
   const sesion = abierta ? await getSesionVotante() : null;
 
-  let proveedor: "cidituc" | "dev" = "dev";
-  try {
-    proveedor = proveedorActivo();
-  } catch {
-    proveedor = "cidituc";
-  }
+  /*
+   * Para votar hay que haber entrado con CIDITUC. Sin sesion la boleta no se
+   * muestra: se manda a /ingresar, que explica el ingreso y tiene el boton.
+   * Con la votacion cerrada no se manda a ningun lado: no hay nada que
+   * ingresar, y el aviso de abajo dice cuando se vota.
+   */
+  if (abierta && !sesion) redirect("/ingresar");
 
+  /*
+   * La boleta va en orden alfabetico, siempre. El orden por defecto de
+   * listarIdeas es por votos: en cada distrito el que iba ganando aparecia
+   * primero —y el primer lugar de una boleta suma votos por estar ahi— y quien
+   * votaba veia el ranking en vivo sin que nadie lo publicara.
+   */
   const proyectos =
     abierta && sesion?.distrito
       ? await listarIdeas({
           edicionId: edicion.id,
           distrito: sesion.distrito,
           estado: "factible",
+          orden: "alfabetico",
         })
       : [];
 
@@ -73,14 +82,24 @@ export default async function Votar() {
         </p>
       </header>
 
-      {abierta ? (
+      {abierta && sesion ? (
         <PanelVotacion
-          proveedor={proveedor}
-          sesion={sesion ? { distrito: sesion.distrito, nombre: sesion.nombre } : null}
+          // Con otro distrito la boleta es otra: el panel arranca de cero (y
+          // deja de mostrar el cambio de distrito que lo trajo hasta aca).
+          key={sesion.distrito ?? 0}
+          sesion={{
+            distrito: sesion.distrito,
+            nombre: sesion.nombre,
+            sugerido: sesion.sugerido ?? null,
+          }}
+          // Solo si todavia puede elegir o cambiar el distrito: unos KB de
+          // nombres de barrio, sin geometria (ver indiceDeBarrios).
+          barrios={yaVoto ? [] : indiceDeBarrios()}
           proyectos={proyectos.map((p) => ({
             slug: p.slug,
             titulo: p.titulo,
             barrio: p.barrio,
+            categoriaSlug: p.categoriaSlug,
             categoriaNombre: p.categoriaNombre,
             categoriaColor: p.categoriaColor,
           }))}

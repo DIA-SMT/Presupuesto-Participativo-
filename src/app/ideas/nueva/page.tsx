@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import FormularioIdea from "@/components/FormularioIdea";
 import { Aviso } from "@/components/ui";
-import { getCategorias, getEdicionActiva, getTextos } from "@/db/queries";
+import { getCategorias, getEdicionActiva, getTextos, getTokensUsadosHoy } from "@/db/queries";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
-import { hayClave } from "@/lib/modelo";
+import { gastoDelDiaAgotado, hayClave } from "@/lib/modelo";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 
 export const metadata: Metadata = {
@@ -68,11 +68,13 @@ export default async function NuevaIdea() {
         dos funciones simplemente no aparecen", y un boton que siempre devuelve
         error dejaba a ese texto mintiendo. Se evalua en el servidor porque la
         clave es del servidor y no tiene por que viajar al navegador.
+        Con el tope diario de gasto pasado (CHAT_TOPE_TOKENS_DIA) pasa lo
+        mismo: el asistente contestaria "no disponible", asi que no se ofrece.
       */}
       <FormularioIdea
         categorias={categorias}
         abierta={abierta}
-        conIA={hayClave()}
+        conIA={hayClave() && !(await gastoDelDiaAgotado(getTokensUsadosHoy))}
         anio={edicion?.anio ?? new Date().getFullYear()}
       />
     </div>

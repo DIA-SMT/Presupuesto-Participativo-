@@ -26,6 +26,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from "reac
 import { Chip, ChipEstado } from "@/components/ui";
 import type {
   AccionRevision,
+  CandidataIntegracion,
   DireccionOrden,
   EstadoIdea,
   FilaBandeja,
@@ -36,7 +37,13 @@ import type {
   ResumenBandeja,
   RolAdmin,
 } from "@/db/queries";
-import { ETIQUETA_ESTADO, formatearNumero, formatearPesos } from "@/lib/formato";
+import { puedeCambiarIdea, puedeProclamar, type Etapa, type Veredicto } from "@/lib/etapas";
+import {
+  ETIQUETA_ESTADO,
+  formatearFechaCorta,
+  formatearNumero,
+  formatearPesos,
+} from "@/lib/formato";
 import {
   despublicarIdea,
   evaluarIdea,
@@ -45,6 +52,10 @@ import {
   publicarIdea,
   reabrirRevision,
 } from "../acciones";
+import UbicacionFicha from "../ideas/ficha-ubicacion";
+import BloqueCorreccion from "../ideas/formulario-correccion";
+import { BloqueDescarte, BloqueRestaurar } from "../ideas/formulario-descarte";
+import type { Limites } from "../ideas/limites";
 
 /** La bandeja es la pantalla principal del panel. */
 const RUTA = "/admin";
@@ -57,7 +68,12 @@ const MINIMO_MOTIVO = 10;
 /** Los cuatro estados que se pueden fijar evaluando: "ganador" se proclama. */
 const ESTADOS_EVALUACION: EstadoIdea[] = ["pendiente", "factible", "no_factible", "integrado"];
 
-/** Estados del filtro, en el orden en que se trabajan. */
+/**
+ * Estados del filtro, en el orden en que se trabajan. Las descartadas van al
+ * final y solo aparecen si se piden: sin filtro de estado la bandeja no las
+ * trae (ver `listarIdeasBandeja`), para que una prueba o un spam no se mezcle
+ * con el trabajo del equipo.
+ */
 const ESTADOS_FILTRO: EstadoIdea[] = [
   "pendiente",
   "factible",
@@ -65,7 +81,14 @@ const ESTADOS_FILTRO: EstadoIdea[] = [
   "integrado",
   "ganador",
   "borrador",
+  "descartado",
 ];
+
+/**
+ * Las solapas que solo se muestran si tienen algo (o si estan elegidas): casi
+ * nunca hay borradores, y las descartadas son la excepcion.
+ */
+const SOLAPAS_OCASIONALES: EstadoIdea[] = ["borrador", "descartado"];
 
 /**
  * Etiquetas de la fila de solapas. Son mas cortas y en plural que las de
@@ -81,6 +104,7 @@ const ETIQUETA_SOLAPA: Record<EstadoIdea, string> = {
   integrado: "Integradas",
   ganador: "Ganadoras",
   borrador: "Borradores",
+  descartado: "Descartadas",
 };
 
 const ETIQUETA_ACCION: Record<AccionRevision, string> = {
@@ -91,6 +115,9 @@ const ETIQUETA_ACCION: Record<AccionRevision, string> = {
   reapertura: "Reapertura",
   presupuesto: "Presupuesto",
   informe: "Informe de impacto",
+  alta: "Carga desde el panel",
+  correccion: "Corrección",
+  descarte: "Descarte",
 };
 
 const ETIQUETA_CANAL: Record<IdeaAdmin["canal"], string> = {
@@ -333,8 +360,19 @@ function ventanaPaginas(pagina: number, paginas: number): (number | null)[] {
   return salida;
 }
 
+/** Lo que la ficha necesita para corregir la idea y mostrar donde queda. */
+export type ExtrasFicha = {
+  categorias: { slug: string; nombre: string }[];
+  /** Las ideas en las que se puede integrar la abierta. */
+  candidatas: CandidataIntegracion[];
+  /** En que distrito cae el punto guardado, segun la geometria oficial. */
+  distritoDelPunto: number | null;
+  limites: Limites;
+};
+
 export default function PanelBandeja({
   anio,
+  etapa,
   resumen,
   filas,
   total,
@@ -345,10 +383,13 @@ export default function PanelBandeja({
   ficha,
   historial,
   informe,
+  extras,
   rol,
   ahora,
 }: {
   anio: number;
+  /** Etapa de la edicion activa, que es la de todas las ideas de la bandeja. */
+  etapa: Etapa;
   resumen: ResumenBandeja;
   filas: FilaBandeja[];
   /** Ideas que matchean el filtro, sin límite: es el total del paginador. */
@@ -361,6 +402,8 @@ export default function PanelBandeja({
   historial: FilaRevision[];
   /** Informe de impacto de la idea abierta, si alguien ya lo generó. */
   informe: InformeImpacto | null;
+  /** Solo con una ficha abierta: lo de la ubicacion y la correccion. */
+  extras: ExtrasFicha | null;
   rol: RolAdmin;
   ahora: number;
 }) {
@@ -396,7 +439,23 @@ export default function PanelBandeja({
   return (
     <div>
       <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h1 className="text-2xl font-bold">Ideas · Edición {anio}</h1>
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+          <h1 className="text-2xl font-bold">Ideas · Edición {anio}</h1>
+          {/*
+            Lo que llega de una asamblea, por mail o en papel. Solo para quien
+            puede escribir; si la etapa no deja cargar, la pantalla lo explica
+            (y la accion igual lo rechaza).
+          */}
+          {!soloLectura && (
+            <Link
+              href="/admin/ideas/nueva"
+              className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white"
+              style={{ background: "var(--color-marca-700)" }}
+            >
+              Cargar una idea
+            </Link>
+          )}
+        </div>
         {/*
           "emitidos desde esta plataforma" y no "registrados por este sitio":
           esta cuenta mira la tabla `votos`, donde solo entran los votos que se
@@ -486,9 +545,16 @@ export default function PanelBandeja({
               activo={!vista.estado && !vista.sinDevolucion}
             />
           </li>
-          {/* "Borrador" solo se muestra si existe: casi nunca hay ideas asi. */}
+          {/*
+            "Borradores" y "Descartadas" solo se muestran si existen (o si
+            estan elegidas): casi nunca hay ideas asi. "Todas" no suma las
+            descartadas; la de "Descartadas" las cuenta aparte.
+          */}
           {ESTADOS_FILTRO.filter(
-            (estado) => estado !== "borrador" || resumen.porEstado.borrador > 0,
+            (estado) =>
+              !SOLAPAS_OCASIONALES.includes(estado) ||
+              resumen.porEstado[estado] > 0 ||
+              vista.estado === estado,
           ).map((estado) => (
             <li key={estado}>
               <SolapaFiltro
@@ -624,6 +690,21 @@ export default function PanelBandeja({
                   : `Mostrando ${formatearNumero(desde)}–${formatearNumero(hasta)} de ${formatearNumero(total)} ${
                       total === 1 ? "idea" : "ideas"
                     }`}
+              {/* Sin filtro de estado las descartadas no vienen: se avisa, para
+                  que una busqueda que no encuentra un spam no parezca un error. */}
+              {!filtros.pendiente && !vista.estado && resumen.porEstado.descartado > 0 && (
+                <>
+                  {" · "}
+                  <Link
+                    href={enlaceFiltro({ estado: "descartado", sinDevolucion: false })}
+                    className="underline"
+                  >
+                    {resumen.porEstado.descartado === 1
+                      ? "sin la descartada"
+                      : `sin las ${formatearNumero(resumen.porEstado.descartado)} descartadas`}
+                  </Link>
+                </>
+              )}
             </p>
             {vista.orden === "prioridad" ? (
               // La unica explicacion del orden en toda la pantalla. Antes lo
@@ -704,7 +785,7 @@ export default function PanelBandeja({
                               href={enlaceOrden(columna.clave)}
                               scroll={false}
                               className="inline-flex items-center gap-1 hover:underline"
-                              style={{ color: activa ? "var(--color-marca-600)" : "var(--texto)" }}
+                              style={{ color: activa ? "var(--marca-texto)" : "var(--texto)" }}
                             >
                               {columna.etiqueta}
                               <span aria-hidden="true" style={{ opacity: activa ? 1 : 0.35 }}>
@@ -727,7 +808,11 @@ export default function PanelBandeja({
                         style={{
                           borderBottom: "1px solid var(--borde)",
                           // Marca al costado: azul la fila abierta, ámbar la que
-                          // le debe una devolución a un vecino.
+                          // le debe una devolución a un vecino. Acá van las rampas
+                          // y no los tokens de texto (--marca-texto, --acento-texto)
+                          // que usan las pastillas de estas mismas filas: como
+                          // borde alcanza con el 3:1 que pide WCAG, y la rampa lo
+                          // cumple en los dos temas.
                           borderLeft: `3px solid ${
                             abierta
                               ? "var(--color-marca-500)"
@@ -749,7 +834,7 @@ export default function PanelBandeja({
                             href={`${armarEnlace(vista, { idea: String(fila.id) })}#ficha`}
                             aria-current={abierta ? "true" : undefined}
                             className="font-medium hover:underline"
-                            style={{ color: abierta ? "var(--color-marca-600)" : "var(--texto)" }}
+                            style={{ color: abierta ? "var(--marca-texto)" : "var(--texto)" }}
                           >
                             {fila.titulo}
                           </Link>
@@ -766,13 +851,13 @@ export default function PanelBandeja({
                           <span className="flex flex-col items-start gap-1">
                             <ChipEstado estado={fila.estado} />
                             {!fila.publicada && (
-                              <Chip color="var(--color-acento-600)">sin publicar</Chip>
+                              <Chip color="var(--acento-texto)">sin publicar</Chip>
                             )}
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
                           {falta ? (
-                            <Chip color="var(--color-acento-600)">falta</Chip>
+                            <Chip color="var(--acento-texto)">falta</Chip>
                           ) : fila.tieneDevolucion ? (
                             <Chip color="var(--color-cat-ambiental)">escrita</Chip>
                           ) : (
@@ -785,7 +870,7 @@ export default function PanelBandeja({
                           {/* Solo el booleano: el mail del autor no sale de la base. */}
                           {fila.tieneContacto ? (
                             <span title="El autor dejó un mail para recibir avisos. El panel nunca muestra el dato.">
-                              <Chip color="var(--color-marca-600)">
+                              <Chip color="var(--marca-texto)">
                                 <span aria-hidden="true">✉</span> sí
                               </Chip>
                             </span>
@@ -877,8 +962,10 @@ export default function PanelBandeja({
             <Ficha
               key={ficha.id}
               ficha={ficha}
+              etapa={etapa}
               historial={historial}
               informe={informe}
+              extras={extras}
               rol={rol}
               soloLectura={soloLectura}
             />
@@ -990,17 +1077,26 @@ function EnlacePagina({
 
 function Ficha({
   ficha,
+  etapa,
   historial,
   informe,
+  extras,
   rol,
   soloLectura,
 }: {
   ficha: IdeaAdmin;
+  etapa: Etapa;
   historial: FilaRevision[];
   informe: InformeImpacto | null;
+  extras: ExtrasFicha | null;
   rol: RolAdmin;
   soloLectura: boolean;
 }) {
+  const descartada = ficha.estado === "descartado";
+  // El historial viene del mas nuevo al mas viejo: el primer descarte es el
+  // vigente.
+  const descarte = historial.find((fila) => fila.accion === "descarte");
+
   return (
     <div className="superficie rounded-2xl p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1008,12 +1104,14 @@ function Ficha({
           <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
             {ficha.numero === null ? "Sin número asignado" : `Idea #${ficha.numero}`} ·{" "}
             {ETIQUETA_CANAL[ficha.canal]}
+            {/* De que asamblea o por que via: no es publico, el equipo si lo ve. */}
+            {ficha.canalDetalle && ` · ${ficha.canalDetalle}`}
           </p>
           <h2 className="mt-0.5 text-lg font-bold">{ficha.titulo}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <ChipEstado estado={ficha.estado} />
-          <Chip color={ficha.publicada ? "var(--color-cat-ambiental)" : "var(--color-acento-600)"}>
+          <Chip color={ficha.publicada ? "var(--color-cat-ambiental)" : "var(--acento-texto)"}>
             {ficha.publicada ? "publicada" : "sin publicar"}
           </Chip>
         </div>
@@ -1037,11 +1135,37 @@ function Ficha({
         <DatoFicha etiqueta="Presupuesto cargado">
           {formatearPesos(ficha.presupuestoTotal)}
         </DatoFicha>
+        {/*
+          "Presentada" es la fecha que declara la idea (la del papel, si la
+          cargo el equipo) e "Ingresó" es cuando entro a este sistema: en una
+          carga del panel pueden estar a semanas de distancia.
+        */}
+        {ficha.fecha && (
+          <DatoFicha etiqueta="Presentada">{formatearFechaCorta(ficha.fecha)}</DatoFicha>
+        )}
         <DatoFicha etiqueta="Ingresó">{fechaHora.format(ficha.createdAt)}</DatoFicha>
+        {ficha.cargadoPor && <DatoFicha etiqueta="La cargó">{ficha.cargadoPor}</DatoFicha>}
         <DatoFicha etiqueta="Último cambio de estado">
           {ficha.estadoActualizadoEn ? fechaHora.format(ficha.estadoActualizadoEn) : "Nunca"}
         </DatoFicha>
         <DatoFicha etiqueta="Revisó">{ficha.revisadoPor ?? "Nadie todavía"}</DatoFicha>
+        {ficha.integradaEn && (
+          <DatoFicha etiqueta="Integrada en">
+            <Link
+              href={`/admin?idea=${ficha.integradaEn.id}#ficha`}
+              className="underline"
+              style={{ color: "var(--marca-texto)" }}
+            >
+              {ficha.integradaEn.numero === null ? "" : `#${ficha.integradaEn.numero} · `}
+              {ficha.integradaEn.titulo}
+            </Link>
+          </DatoFicha>
+        )}
+        {ficha.integradas > 0 && (
+          <DatoFicha etiqueta="Ideas integradas en esta">
+            {formatearNumero(ficha.integradas)}
+          </DatoFicha>
+        )}
       </dl>
 
       <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
@@ -1071,6 +1195,8 @@ function Ficha({
         </details>
       )}
 
+      <UbicacionFicha ficha={ficha} distritoDelPunto={extras?.distritoDelPunto ?? null} />
+
       {ficha.notasMigracion.length > 0 && (
         <details className="mt-3">
           <summary className="cursor-pointer text-sm font-medium">
@@ -1088,6 +1214,60 @@ function Ficha({
         </details>
       )}
 
+      {descartada ? (
+        // Una descartada no se evalua ni se publica (src/lib/etapas.ts): la
+        // ficha muestra por que se descarto y como deshacerlo, y nada mas.
+        <BloqueRestaurar
+          ficha={ficha}
+          etapa={etapa}
+          soloLectura={soloLectura}
+          motivoDescarte={
+            descarte
+              ? {
+                  nota: descarte.nota,
+                  quien: descarte.adminNombre,
+                  cuando: fechaHora.format(descarte.createdAt),
+                }
+              : null
+          }
+        />
+      ) : (
+        <FichaEnTrabajo
+          ficha={ficha}
+          etapa={etapa}
+          informe={informe}
+          extras={extras}
+          rol={rol}
+          soloLectura={soloLectura}
+        />
+      )}
+
+      <Historial historial={historial} />
+    </div>
+  );
+}
+
+/**
+ * La ficha de una idea que no esta descartada: su devolucion, el enlace publico,
+ * el informe y todos los formularios del equipo.
+ */
+function FichaEnTrabajo({
+  ficha,
+  etapa,
+  informe,
+  extras,
+  rol,
+  soloLectura,
+}: {
+  ficha: IdeaAdmin;
+  etapa: Etapa;
+  informe: InformeImpacto | null;
+  extras: ExtrasFicha | null;
+  rol: RolAdmin;
+  soloLectura: boolean;
+}) {
+  return (
+    <>
       <div className="mt-4 rounded-xl px-4 py-3" style={{ background: "var(--fondo-suave)" }}>
         <p className="text-xs font-medium">Devolución que se publica hoy</p>
         <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
@@ -1095,14 +1275,24 @@ function Ficha({
         </p>
       </div>
 
-      <a
-        href={`/proyectos/${ficha.slug}`}
-        className="mt-3 inline-block text-sm underline"
-        target="_blank"
-        rel="noreferrer"
-      >
-        Ver la ficha pública
-      </a>
+      {/*
+        La ficha publica existe solo si la idea esta publicada: getIdea la
+        filtra, y el enlace llevaba a un 404 justo mientras se evaluaba.
+      */}
+      {ficha.publicada ? (
+        <a
+          href={`/proyectos/${ficha.slug}`}
+          className="mt-3 inline-block text-sm underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Ver la ficha pública
+        </a>
+      ) : (
+        <p className="mt-3 text-xs" style={{ color: "var(--texto-suave)" }}>
+          Sin publicar: todavía no tiene ficha pública.
+        </p>
+      )}
 
       <BloqueInforme ficha={ficha} informe={informe} soloLectura={soloLectura} />
 
@@ -1124,19 +1314,31 @@ function Ficha({
               revisión primero, y eso lo puede hacer solo un administrador.
             </div>
           ) : (
-            <FormularioEvaluacion ficha={ficha} />
+            <FormularioEvaluacion ficha={ficha} etapa={etapa} />
           )}
 
-          <FormularioPublicacion ficha={ficha} />
+          <FormularioPublicacion ficha={ficha} etapa={etapa} />
 
-          {rol === "admin" && !ficha.ganador && <FormularioProclamacion ficha={ficha} />}
+          {rol === "admin" && !ficha.ganador && (
+            <FormularioProclamacion ficha={ficha} etapa={etapa} />
+          )}
 
-          <FormularioReapertura ficha={ficha} rol={rol} />
+          <FormularioReapertura ficha={ficha} rol={rol} etapa={etapa} />
+
+          {extras && (
+            <BloqueCorreccion
+              ficha={ficha}
+              etapa={etapa}
+              categorias={extras.categorias}
+              candidatas={extras.candidatas}
+              limites={extras.limites}
+            />
+          )}
+
+          <BloqueDescarte ficha={ficha} etapa={etapa} />
         </div>
       )}
-
-      <Historial historial={historial} />
-    </div>
+    </>
   );
 }
 
@@ -1151,7 +1353,7 @@ function DatoFicha({ etiqueta, children }: { etiqueta: string; children: React.R
   );
 }
 
-function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
+function FormularioEvaluacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa }) {
   const [resultado, accion, pendiente] = useActionState(evaluarIdea, null);
   const inicial: EstadoIdea = ESTADOS_EVALUACION.includes(ficha.estado)
     ? ficha.estado
@@ -1162,6 +1364,17 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
   const exige = estado === "no_factible" || estado === "integrado";
   const escritos = devolucion.trim().length;
   const falta = exige && escritos < MINIMO_DEVOLUCION;
+
+  // Con la votacion abierta algunos estados no se ofrecen: los que sacarian a
+  // la idea de la votacion o la meterian. El estado actual siempre queda
+  // habilitado (no mueve nada), asi que la devolucion se puede seguir editando.
+  const permitidos = new Map(
+    ESTADOS_EVALUACION.map((valor) => [
+      valor,
+      puedeCambiarIdea(etapa, ficha, { accion: "evaluar", estado: valor }),
+    ]),
+  );
+  const motivoBloqueo = primerMotivo([...permitidos.values()]);
 
   return (
     <form action={accion} className="grid gap-3">
@@ -1177,12 +1390,17 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
           style={estiloCampo}
           className="rounded-xl px-3 py-2"
         >
-          {ESTADOS_EVALUACION.map((valor) => (
-            <option key={valor} value={valor}>
-              {ETIQUETA_ESTADO[valor] ?? valor}
-            </option>
-          ))}
+          {ESTADOS_EVALUACION.map((valor) => {
+            const habilitado = permitidos.get(valor)?.permitido ?? true;
+            return (
+              <option key={valor} value={valor} disabled={!habilitado}>
+                {ETIQUETA_ESTADO[valor] ?? valor}
+                {habilitado ? "" : " (no disponible en votación)"}
+              </option>
+            );
+          })}
         </select>
+        {motivoBloqueo && <AvisoEtapa motivo={motivoBloqueo} />}
       </label>
 
       <label className="grid gap-1 text-sm">
@@ -1201,7 +1419,7 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
         />
         <span
           className="text-xs"
-          style={{ color: falta ? "var(--color-acento-700)" : "var(--texto-suave)" }}
+          style={{ color: falta ? "var(--acento-texto)" : "var(--texto-suave)" }}
         >
           {exige
             ? `“${ETIQUETA_ESTADO[estado]}” exige devolución: mínimo ${MINIMO_DEVOLUCION} caracteres (escribiste ${escritos}).`
@@ -1224,11 +1442,15 @@ function FormularioEvaluacion({ ficha }: { ficha: IdeaAdmin }) {
   );
 }
 
-function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
+function FormularioPublicacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa }) {
   const [resultado, accion, pendiente] = useActionState(
     ficha.publicada ? despublicarIdea : publicarIdea,
     null,
   );
+  const veredicto = puedeCambiarIdea(etapa, ficha, {
+    accion: ficha.publicada ? "despublicar" : "publicar",
+  });
+  const bloqueado = !veredicto.permitido;
 
   return (
     <form action={accion} className="grid gap-3" style={{ borderTop: "1px solid var(--borde)" }}>
@@ -1236,6 +1458,7 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
       <h3 className="mt-4 text-sm font-bold">
         {ficha.publicada ? "Sacar del sitio público" : "Publicar en el sitio"}
       </h3>
+      {!veredicto.permitido && <AvisoEtapa motivo={veredicto.motivo} />}
 
       <label className="grid gap-1 text-sm">
         <span className="font-medium">
@@ -1248,6 +1471,7 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
           maxLength={5000}
           minLength={ficha.publicada ? MINIMO_MOTIVO : undefined}
           required={ficha.publicada}
+          disabled={bloqueado}
           placeholder={
             ficha.publicada
               ? "Por qué se saca algo que los vecinos ya vieron publicado."
@@ -1261,7 +1485,7 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pendiente}
+          disabled={pendiente || bloqueado}
           className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           style={{
             background: ficha.publicada ? "var(--color-acento-600)" : "var(--color-marca-700)",
@@ -1277,24 +1501,31 @@ function FormularioPublicacion({ ficha }: { ficha: IdeaAdmin }) {
   );
 }
 
-function FormularioProclamacion({ ficha }: { ficha: IdeaAdmin }) {
+function FormularioProclamacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa }) {
   const [resultado, accion, pendiente] = useActionState(proclamarGanador, null);
+  const veredicto = puedeProclamar(etapa);
+  const bloqueado = !veredicto.permitido;
 
   return (
     <form action={accion} className="grid gap-3" style={{ borderTop: "1px solid var(--borde)" }}>
       <input type="hidden" name="id" value={ficha.id} />
       <h3 className="mt-4 text-sm font-bold">Proclamar proyecto ganador</h3>
-      <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-        Solo se puede proclamar la idea más votada del distrito entre las factibles y publicadas. Si
-        no es la más votada, si hay empate en el primer puesto o si el distrito ya tiene ganador, la
-        acción lo explica y no cambia nada.
-      </p>
+      {veredicto.permitido ? (
+        <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
+          Solo se puede proclamar la idea más votada del distrito entre las factibles y publicadas.
+          Si no es la más votada, si hay empate en el primer puesto o si el distrito ya tiene
+          ganador, la acción lo explica y no cambia nada.
+        </p>
+      ) : (
+        <AvisoEtapa motivo={veredicto.motivo} />
+      )}
 
       <label className="grid gap-1 text-sm">
         <span className="font-medium">Nota para el historial (opcional)</span>
         <input
           name="nota"
           maxLength={5000}
+          disabled={bloqueado}
           placeholder="Si la dejás vacía se guarda el distrito y la cantidad de votos."
           style={estiloCampo}
           className="rounded-xl px-3 py-2"
@@ -1304,7 +1535,7 @@ function FormularioProclamacion({ ficha }: { ficha: IdeaAdmin }) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pendiente}
+          disabled={pendiente || bloqueado}
           className="rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
           style={{ background: "var(--color-estado-ganador)", color: "#fff" }}
         >
@@ -1316,8 +1547,18 @@ function FormularioProclamacion({ ficha }: { ficha: IdeaAdmin }) {
   );
 }
 
-function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin }) {
+function FormularioReapertura({
+  ficha,
+  rol,
+  etapa,
+}: {
+  ficha: IdeaAdmin;
+  rol: RolAdmin;
+  etapa: Etapa;
+}) {
   const [resultado, accion, pendiente] = useActionState(reabrirRevision, null);
+  const veredicto = puedeCambiarIdea(etapa, ficha, { accion: "reabrir" });
+  const bloqueado = !veredicto.permitido;
 
   return (
     <form action={accion} className="grid gap-3" style={{ borderTop: "1px solid var(--borde)" }}>
@@ -1330,6 +1571,7 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
           rol !== "admin" &&
           " Esta idea está proclamada: dar marcha atrás lo puede hacer solo un administrador."}
       </p>
+      {!veredicto.permitido && <AvisoEtapa motivo={veredicto.motivo} />}
 
       <label className="grid gap-1 text-sm">
         <span className="font-medium">Motivo (obligatorio, mínimo {MINIMO_MOTIVO} caracteres)</span>
@@ -1338,6 +1580,7 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
           required
           minLength={MINIMO_MOTIVO}
           maxLength={5000}
+          disabled={bloqueado}
           placeholder="Por qué se reabre."
           style={estiloCampo}
           className="rounded-xl px-3 py-2"
@@ -1347,7 +1590,7 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pendiente}
+          disabled={pendiente || bloqueado}
           className="rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
           style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
         >
@@ -1357,6 +1600,28 @@ function FormularioReapertura({ ficha, rol }: { ficha: IdeaAdmin; rol: RolAdmin 
       </div>
     </form>
   );
+}
+
+/**
+ * Por que la etapa de la edicion no deja usar un formulario, dicho ANTES de que
+ * alguien apriete el boton (que queda deshabilitado). El texto sale de
+ * src/lib/etapas.ts, el mismo que devolveria la accion si igual llegara: la
+ * pantalla avisa, pero quien decide es el servidor.
+ */
+function AvisoEtapa({ motivo }: { motivo: string }) {
+  return (
+    <span className="text-xs" style={{ color: "var(--acento-texto)" }}>
+      {motivo}
+    </span>
+  );
+}
+
+/** El motivo del primer veredicto que rechaza, o null si todos permiten. */
+function primerMotivo(veredictos: Veredicto[]): string | null {
+  for (const veredicto of veredictos) {
+    if (!veredicto.permitido) return veredicto.motivo;
+  }
+  return null;
 }
 
 function MensajeAccion({
@@ -1371,7 +1636,7 @@ function MensajeAccion({
     <span
       role="status"
       className="text-sm"
-      style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--color-acento-700)" }}
+      style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
     >
       {resultado.ok ? (resultado.mensaje ?? exito) : resultado.error}
     </span>
@@ -1403,7 +1668,12 @@ function Historial({ historial }: { historial: FilaRevision[] }) {
               <p className="mt-0.5 text-xs" style={{ color: "var(--texto-suave)" }}>
                 {fila.adminNombre} · {fechaHora.format(fila.createdAt)}
               </p>
-              {fila.nota && <p className="mt-1 text-sm">{fila.nota}</p>}
+              {/* pre-line: una correccion anota un cambio por renglon. */}
+              {fila.nota && (
+                <p className="mt-1 text-sm" style={{ whiteSpace: "pre-line" }}>
+                  {fila.nota}
+                </p>
+              )}
             </li>
           ))}
         </ol>

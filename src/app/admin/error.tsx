@@ -7,8 +7,8 @@
  * una consulta o una accion revienta de forma inesperada el equipo ve que paso,
  * puede reintentar y volver al panel, en vez de la pantalla de error generica de
  * Next. Lo que NO cubre es el layout.tsx de este mismo segmento: la cabecera del
- * panel tiene que aguantarse sola (por eso lee el nombre de la cuenta con
- * try/catch). Esta descripto en
+ * panel tiene que aguantarse sola (por eso su lectura de la sesion va con un
+ * `.catch`, y sin base se dibuja sin cabecera). Esta descripto en
  * node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md
  *
  * El detalle tecnico no se le muestra a nadie: los errores de un server

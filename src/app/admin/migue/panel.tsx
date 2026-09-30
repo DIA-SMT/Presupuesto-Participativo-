@@ -60,12 +60,16 @@ const BORDE_CONTROL = "var(--borde-control)";
 const COLOR_RESUELTA = "var(--color-marca-600)";
 const COLOR_SIN_RESOLVER = "var(--color-acento-600)";
 /**
- * El mismo naranja cuando es TEXTO. La rampa --color-acento-* esta oscurecida
- * para poner blanco encima, asi que como letra sobre el fondo oscuro del tema no
- * llegaba al 4.5:1 de WCAG (medido: 2.96:1 en el chip y 3.30:1 en la tabla).
- * --acento-texto cambia con el tema; ver el comentario en globals.css.
+ * Los mismos dos colores cuando son TEXTO. Las rampas --color-acento-* y
+ * --color-marca-* estan oscurecidas para poner blanco encima, asi que como letra
+ * sobre el fondo oscuro del tema no llegaban al 4.5:1 de WCAG (medido: el
+ * naranja 2.96:1 en el chip y 3.30:1 en la tabla; el azul 3.43:1 sobre la
+ * tarjeta). --acento-texto y --marca-texto cambian con el tema; ver el
+ * comentario en globals.css. Los dos de arriba se quedan como estan: ahi son
+ * relleno de barra y de pastilla, que es el rol para el que la rampa esta hecha.
  */
 const COLOR_SIN_RESOLVER_TEXTO = "var(--acento-texto)";
+const COLOR_RESUELTA_TEXTO = "var(--marca-texto)";
 
 /** Tinte del color sobre el fondo, proporcional a la intensidad. */
 function tinte(color: string, intensidad: number): string {
@@ -102,6 +106,7 @@ export type Props = {
   limiteSinResolver: number;
   /** Tope de la lista de las ultimas consultas. */
   limiteUltimas: number;
+  puedeCargarPreguntas: boolean;
 };
 
 export default function PanelMigue({
@@ -115,6 +120,7 @@ export default function PanelMigue({
   ultimas,
   limiteSinResolver,
   limiteUltimas,
+  puedeCargarPreguntas,
 }: Props) {
   // Nunca hubo una consulta: no hay nada que graficar ni que explicar por
   // bloque, asi que la pantalla es un solo cartel.
@@ -170,6 +176,7 @@ export default function PanelMigue({
             resumen={resumen}
             dias={dias}
             limite={limiteSinResolver}
+            puedeCargarPreguntas={puedeCargarPreguntas}
           />
 
           <QueBusca filas={repetidas} dias={dias} />
@@ -253,11 +260,13 @@ function SinResolver({
   resumen,
   dias,
   limite,
+  puedeCargarPreguntas,
 }: {
   filas: FilaConsultaChat[];
   resumen: ResumenChat;
   dias: number;
   limite: number;
+  puedeCargarPreguntas: boolean;
 }) {
   return (
     <section className="mt-8" aria-labelledby="titulo-sin-resolver">
@@ -267,12 +276,31 @@ function SinResolver({
       <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
         Esto es <strong>contenido que le falta al sitio</strong>, escrito con las palabras del
         vecino. Migue no inventa: cuando el dato no está cargado lo dice y la consulta queda acá.
-        Leelas de arriba abajo y preguntate dónde debería estar la respuesta: en un{" "}
-        <Link href="/admin/contenido" className="underline">
-          texto del sitio
-        </Link>
-        , en el cronograma de la edición, en una novedad, o en un dato de una idea que todavía nadie
-        cargó. Cuando eso esté cargado, Migue lo contesta solo.
+        Leelas de arriba abajo y preguntate dónde debería estar la respuesta. Migue contesta con
+        lo que publica el sitio: las{" "}
+        {/* La lista es la de src/lib/chat-contexto.ts: si Migue empieza a leer
+            otra cosa, se suma aca. Los enlaces a Contenido solo para quien lo
+            puede usar (es solo para admin). */}
+        {puedeCargarPreguntas ? (
+          <Link href="/admin/contenido?seccion=preguntas" className="underline">
+            preguntas frecuentes
+          </Link>
+        ) : (
+          <>preguntas frecuentes</>
+        )}
+        , el{" "}
+        {puedeCargarPreguntas ? (
+          <Link href="/admin/contenido?seccion=reglamento" className="underline">
+            reglamento
+          </Link>
+        ) : (
+          <>reglamento</>
+        )}
+        , las fechas y el cronograma de la edición, las novedades, el aviso urgente, los textos de
+        “Cómo funciona” y los datos de cada idea.{" "}
+        {puedeCargarPreguntas
+          ? "Cuando lo que falta esté cargado, Migue lo contesta solo."
+          : "Cuando lo que falta esté cargado (lo carga un administrador), Migue lo contesta solo."}
       </p>
 
       <div
@@ -369,7 +397,7 @@ export function TarjetaConsulta({
       <p className="mt-2 flex flex-wrap items-center gap-2">
         <Chip>{ETIQUETA_TEMA[fila.tema] ?? fila.tema}</Chip>
         {fila.resuelta ? (
-          <Chip color="var(--color-estado-factible)">
+          <Chip color={COLOR_RESUELTA_TEXTO}>
             <span aria-hidden="true">✓</span> Se pudo contestar
           </Chip>
         ) : (
@@ -558,7 +586,7 @@ function Numeros({ resumen, dias }: { resumen: ResumenChat; dias: number }) {
               ? "Sin consultas en esta ventana no hay porcentaje que calcular."
               : "Sobre el total de la ventana."
           }
-          color={COLOR_RESUELTA}
+          color={COLOR_RESUELTA_TEXTO}
         />
         <Tarjeta
           titulo="Tema más demandado"

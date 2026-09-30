@@ -126,7 +126,7 @@ test("una idea sin publicar no existe para el sitio publico ni para el chatbot",
     "getIdea no puede devolver una idea sin publicar: ese era el bug de la tanda 1",
   );
 
-  const paraElPanel = await consultas.getIdea("recien-enviada", {
+  const paraElPanel = await consultas.getIdea("recien-enviada", null, {
     incluirNoPublicadas: true,
   });
   assert.ok(paraElPanel, "el backoffice si la tiene que ver, pidiendolo explicitamente");

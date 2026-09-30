@@ -8,6 +8,19 @@
  *    en la tabla `avances`, para que el seguimiento de obra sea publicable.
  *  - `problema`, `solucion` y `beneficios` son campos separados y validados.
  *  - el DNI del padron se guarda hasheado; nunca en claro.
+ *
+ * TODAS las tablas llevan `.enableRLS()` y ninguna tiene politicas. Supabase
+ * publica el esquema `public` por su Data API (PostgREST) con los roles `anon`
+ * y `authenticated`, que reciben permisos sobre cada tabla nueva; sin RLS,
+ * cualquiera con la anon key (que es publica por diseno) leeria y escribiria
+ * `admins.password_hash`, el padron y los votos sin pasar por este sitio. Con
+ * RLS encendido y sin politicas, esos roles no ven ni una fila.
+ *
+ * A la aplicacion no la afecta: entra con el rol DUENO de las tablas, y el
+ * dueno se saltea RLS salvo que la tabla tenga FORCE ROW LEVEL SECURITY, que
+ * aca no se usa. Lo prueba scripts/tests/base-segura.test.ts, que ademas falla
+ * si aparece una tabla en `public` sin RLS: una tabla nueva sin
+ * `.enableRLS()` no pasa la prueba.
  */
 import { sql } from "drizzle-orm";
 import {
@@ -54,6 +67,12 @@ export const estadoIdea = pgEnum("estado_idea", [
   "no_factible",
   "integrado",
   "ganador",
+  /**
+   * Prueba, spam o carga repetida por error: no es una propuesta y no se
+   * evalua. Queda despublicada y fuera de las cuentas, pero no se borra: el
+   * descarte tiene motivo y deja fila en `revisiones`. Valor agregado en 0012.
+   */
+  "descartado",
 ]);
 
 export const estadoPresupuesto = pgEnum("estado_presupuesto", [
@@ -112,6 +131,13 @@ export const accionRevision = pgEnum("accion_revision", [
   // historial de la idea aunque no cambie nada: es plata publica y conviene
   // saber que hubo un analisis automatico de por medio. Valor agregado en 0006.
   "informe",
+  // Valores agregados en 0012, con la carga y la correccion desde el panel:
+  // `alta` es una idea que cargo el equipo (asamblea, oficina, mail);
+  // `correccion` un cambio de texto, categoria, ubicacion o integracion, con el
+  // antes y el despues; `descarte` el paso a "descartado", con su motivo.
+  "alta",
+  "correccion",
+  "descarte",
 ]);
 
 /** Cambios sobre las cuentas del backoffice (tabla `bitacora_equipo`). */
@@ -139,6 +165,10 @@ export const accionSistema = pgEnum("accion_sistema", [
   "novedad_creada",
   "avance_creado",
   "avance_borrado",
+  // Valores agregados en 0012, con la pantalla de contenido.
+  "novedad_editada",
+  "faq_guardada",
+  "faq_borrada",
 ]);
 
 /**
@@ -152,6 +182,8 @@ export const entidadSistema = pgEnum("entidad_sistema", [
   "texto",
   "novedad",
   "avance",
+  // Agregado en 0012: las preguntas frecuentes se editan desde el panel.
+  "faq",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -172,7 +204,7 @@ export const distritos = pgTable("distritos", {
   centroideLon: numeric("centroide_lon", { precision: 10, scale: 7 }).notNull(),
   /** Barrios de referencia, para que el vecino se ubique sin mirar el mapa. */
   referencia: text("referencia"),
-});
+}).enableRLS();
 
 export const categorias = pgTable("categorias", {
   id: serial("id").primaryKey(),
@@ -182,7 +214,7 @@ export const categorias = pgTable("categorias", {
   /** Color de la categoria en mapas y tarjetas (hex). */
   color: varchar("color", { length: 7 }).notNull(),
   orden: smallint("orden").notNull().default(0),
-});
+}).enableRLS();
 
 export const ediciones = pgTable(
   "ediciones",
@@ -201,7 +233,7 @@ export const ediciones = pgTable(
   // Invariante del sitio: hay como maximo una edicion activa. El indice
   // parcial lo garantiza en la base y no solo en el codigo que la activa.
   (t) => [uniqueIndex("ediciones_una_activa_idx").on(t.activa).where(sql`${t.activa}`)],
-);
+).enableRLS();
 
 // ---------------------------------------------------------------------------
 // Ideas y proyectos
@@ -272,6 +304,12 @@ export const ideas = pgTable(
     montoFinalizado: numeric("monto_finalizado", { precision: 14, scale: 2 }),
 
     canal: canalCarga("canal").notNull().default("web"),
+    /**
+     * De donde vino, cuando no fue el formulario web: "Asamblea del distrito 7,
+     * 12/10/2026", "Mesa de entradas", "Mail al programa". Lo escribe el equipo
+     * al cargarla desde el panel; no es publico. Agregado en 0012.
+     */
+    canalDetalle: text("canal_detalle"),
     autorNombre: text("autor_nombre"),
     /**
      * Contacto del autor. Se guarda SOLO si la persona marco la casilla de
@@ -333,7 +371,7 @@ export const ideas = pgTable(
       .on(t.edicionId, t.distritoId)
       .where(sql`${t.ganador}`),
   ],
-);
+).enableRLS();
 
 /**
  * Historial de la revision de cada idea. Es append-only: no se edita ni se
@@ -359,7 +397,7 @@ export const revisiones = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("revisiones_idea_idx").on(t.ideaId, t.createdAt)],
-);
+).enableRLS();
 
 /**
  * Informe de impacto de una idea, generado por el modelo a pedido del equipo.
@@ -407,7 +445,7 @@ export const informesImpacto = pgTable("informes_impacto", {
   }),
   pedidoPorNombre: text("pedido_por_nombre").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}).enableRLS();
 
 /** Historial publico de ejecucion de un proyecto ganador. */
 export const avances = pgTable(
@@ -430,7 +468,7 @@ export const avances = pgTable(
       .defaultNow(),
   },
   (t) => [index("avances_idea_idx").on(t.ideaId)],
-);
+).enableRLS();
 
 // ---------------------------------------------------------------------------
 // Padron y votacion
@@ -440,7 +478,10 @@ export const votantes = pgTable(
   "votantes",
   {
     id: serial("id").primaryKey(),
-    /** sha256(dni + pepper). El DNI en claro no se guarda nunca. */
+    /**
+     * sha256(dni + DNI_PEPPER), ver `hashearDni` en src/lib/empadronamiento.ts.
+     * El DNI en claro no se guarda nunca.
+     */
     dniHash: varchar("dni_hash", { length: 64 }).notNull().unique(),
     /** Ultimos 3 digitos, solo para que la mesa de ayuda pueda identificar. */
     dniCola: varchar("dni_cola", { length: 3 }),
@@ -448,14 +489,41 @@ export const votantes = pgTable(
     distritoId: integer("distrito_id").references(() => distritos.id),
     /** "cidituc" o "dev". */
     proveedor: varchar("proveedor", { length: 30 }).notNull(),
+    /** Id de la persona en el proveedor (CIDITUC: `persona.id`). Null en "dev". */
     proveedorSub: text("proveedor_sub"),
     verificado: boolean("verificado").notNull().default(false),
+    /**
+     * Cuando la persona DECLARO su distrito en /votar, tildando "Declaro que
+     * vivo en el distrito N". Null si el distrito vino de otro lado (el login
+     * de prueba, un padron precargado) o si todavia no lo eligio. Es lo que
+     * permite contar, en el informe de la votacion, cuantos votos salieron de
+     * un distrito declarado por la persona. Si lo cambia antes de votar, vale
+     * la ultima declaracion. Del domicilio no se guarda nada: ni la direccion
+     * ni el punto del mapa salen del navegador. Agregada en 0013.
+     */
+    distritoDeclaradoEn: timestamp("distrito_declarado_en", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("votantes_distrito_idx").on(t.distritoId)],
-);
+  (t) => [
+    index("votantes_distrito_idx").on(t.distritoId),
+    /**
+     * Una cuenta del proveedor, un votante. El unique de `dni_hash` no alcanza
+     * solo: si el hash del mismo DNI cambia (se cambio DNI_PEPPER, o CIDITUC
+     * corrigio el documento de la cuenta), la misma persona entraria como
+     * votante NUEVO y podria votar otra vez en la misma edicion. Con este
+     * indice ese alta rebota y `empadronar` lo informa, en lugar de abrir un
+     * segundo lugar en el padron.
+     *
+     * Parcial sobre `proveedor_sub IS NOT NULL` porque el login "dev" no tiene
+     * sub: sus filas no identifican a nadie y no entran en la regla.
+     */
+    uniqueIndex("votantes_proveedor_sub_idx")
+      .on(t.proveedor, t.proveedorSub)
+      .where(sql`${t.proveedorSub} IS NOT NULL`),
+  ],
+).enableRLS();
 
 export const votos = pgTable(
   "votos",
@@ -486,7 +554,7 @@ export const votos = pgTable(
     index("votos_edicion_fecha_idx").on(t.edicionId, t.createdAt),
     index("votos_edicion_distrito_idx").on(t.edicionId, t.distritoId),
   ],
-);
+).enableRLS();
 
 // ---------------------------------------------------------------------------
 // Backoffice y contenido editable
@@ -505,11 +573,20 @@ export const admins = pgTable("admins", {
    * panel obliga a cambiarla antes de dejar hacer cualquier otra cosa.
    */
   debeCambiarPassword: boolean("debe_cambiar_password").notNull().default(false),
+  /**
+   * Version de las sesiones de la cuenta. Va dentro del JWT y cada pedido del
+   * panel la compara con la de la base: subirla corta TODAS las sesiones
+   * abiertas de esa persona. Se sube al desactivar la cuenta, al cambiarle el
+   * rol y al cambiar la contrasena (la propia o una provisoria). Sin esto, una
+   * cuenta dada de baja seguia leyendo el panel hasta que vencia la cookie
+   * (12 h). Agregada en 0012.
+   */
+  versionSesion: integer("version_sesion").notNull().default(0),
   ultimoIngreso: timestamp("ultimo_ingreso", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}).enableRLS();
 
 /**
  * Bitacora de las cuentas del backoffice: quien dio de alta, cambio de rol o
@@ -532,7 +609,7 @@ export const bitacoraEquipo = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("bitacora_equipo_fecha_idx").on(t.createdAt)],
-);
+).enableRLS();
 
 /**
  * Tercera bitacora del backoffice: lo que se le hace al SISTEMA y al contenido
@@ -588,7 +665,7 @@ export const bitacoraSistema = pgTable(
   // filtros por accion y entidad se aplican sobre esa lectura: el volumen es de
   // unos cientos de filas por edicion, asi que no necesitan indice propio.
   (t) => [index("bitacora_sistema_fecha_idx").on(t.createdAt)],
-);
+).enableRLS();
 
 /** Textos editables del sitio, equivalente al /api/text del sitio anterior. */
 export const textos = pgTable("textos", {
@@ -598,7 +675,7 @@ export const textos = pgTable("textos", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}).enableRLS();
 
 export const faq = pgTable("faq", {
   id: serial("id").primaryKey(),
@@ -606,7 +683,7 @@ export const faq = pgTable("faq", {
   pregunta: text("pregunta").notNull(),
   respuesta: text("respuesta").notNull(),
   publicada: boolean("publicada").notNull().default(true),
-});
+}).enableRLS();
 
 export const novedades = pgTable("novedades", {
   id: serial("id").primaryKey(),
@@ -618,7 +695,7 @@ export const novedades = pgTable("novedades", {
   distritoId: integer("distrito_id").references(() => distritos.id),
   imagenUrl: text("imagen_url"),
   publicada: boolean("publicada").notNull().default(true),
-});
+}).enableRLS();
 
 /** Cronograma de la edicion, para la home y el chatbot. */
 export const hitos = pgTable("hitos", {
@@ -632,7 +709,7 @@ export const hitos = pgTable("hitos", {
   desde: date("desde"),
   hasta: date("hasta"),
   etapa: etapaEdicion("etapa"),
-});
+}).enableRLS();
 
 /**
  * Registro de consultas al chatbot. Sirve para dos cosas: medir que pregunta
@@ -703,7 +780,7 @@ export const chatConsultas = pgTable(
       .on(t.createdAt)
       .where(sql`NOT ${t.resuelta}`),
   ],
-);
+).enableRLS();
 
 /** Contador simple para limitar abuso por IP sin depender de Redis. */
 export const rateLimit = pgTable("rate_limit", {
@@ -712,4 +789,4 @@ export const rateLimit = pgTable("rate_limit", {
   ventanaDesde: timestamp("ventana_desde", { withTimezone: true })
     .notNull()
     .default(sql`now()`),
-});
+}).enableRLS();

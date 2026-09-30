@@ -16,10 +16,12 @@ import {
 
   isNull,
   like,
+  ne,
   or,
   sql,
   type SQLWrapper,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { consultar, db } from "./index";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import { hashearDni } from "@/lib/empadronamiento";
@@ -43,6 +45,10 @@ import {
   revisiones,
   textos,
   votantes,
+  accionRevision,
+  accionSistema,
+  entidadSistema,
+  estadoIdea,
 } from "./schema";
 
 /**
@@ -52,13 +58,25 @@ import {
  */
 export type CanalCarga = "web" | "asamblea" | "municipio" | "migracion";
 
-export type EstadoIdea =
-  | "borrador"
-  | "pendiente"
-  | "factible"
-  | "no_factible"
-  | "integrado"
-  | "ganador";
+/**
+ * Salen del enum del esquema, no de una lista escrita a mano: con la lista, la
+ * migracion 0012 (que sumo "descartado") dejo el tipo desincronizado de la
+ * base. Asi, un valor nuevo en schema.ts llega solo, y el compilador marca
+ * cada Record<EstadoIdea, ...> que no lo contempla.
+ */
+export type EstadoIdea = (typeof estadoIdea.enumValues)[number];
+
+/**
+ * Una idea descartada (prueba, spam, carga repetida) no es una propuesta: no
+ * cuenta en NINGUN numero, ni publico ni del panel, y no aparece en ninguna
+ * lista salvo la solapa "Descartadas" de la bandeja. El descarte la deja sin
+ * publicar, asi que las consultas publicas ya la dejaban afuera por
+ * `publicada`; este filtro va igual en ellas, como segunda barrera: si algun dia
+ * una descartada quedara publicada (una carga a mano en la base, un script),
+ * seguiria sin verse. En las del panel es la unica barrera, porque esas cuentan
+ * tambien lo que no esta publicado.
+ */
+const NO_DESCARTADA = ne(ideas.estado, "descartado");
 
 export type IdeaVista = {
   id: number;
@@ -193,7 +211,7 @@ export type EdicionListada = {
   ideasHasta: string | null;
   votacionDesde: string | null;
   votacionHasta: string | null;
-  /** Todas las ideas de la edicion, publicadas o no. */
+  /** Todas las ideas de la edicion, publicadas o no. Sin las descartadas. */
   ideas: number;
   /** Votos emitidos por este sitio (filas de la tabla `votos`). */
   votos: number;
@@ -222,7 +240,8 @@ export async function getEdiciones(): Promise<EdicionListada[]> {
            e.ideas_hasta::text     AS ideas_hasta,
            e.votacion_desde::text  AS votacion_desde,
            e.votacion_hasta::text  AS votacion_hasta,
-           (SELECT count(*) FROM ideas i WHERE i.edicion_id = e.id)::int AS ideas,
+           (SELECT count(*) FROM ideas i
+             WHERE i.edicion_id = e.id AND i.estado <> 'descartado')::int AS ideas,
            (SELECT count(*) FROM votos v WHERE v.edicion_id = e.id)::int AS votos
       FROM ediciones e
      ORDER BY e.anio DESC
@@ -319,7 +338,7 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
            d.referencia,
            d.centroide_lat,
            d.centroide_lon,
-           count(i.id) FILTER (WHERE i.publicada)::int AS ideas,
+           count(i.id) FILTER (WHERE i.publicada AND i.estado <> 'descartado')::int AS ideas,
            g.slug        AS g_slug,
            g.titulo      AS g_titulo,
            g.votos       AS g_votos,
@@ -357,7 +376,15 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
   }));
 }
 
-export async function getDistrito(numero: number, edicionId: number) {
+/**
+ * El distrito con sus ideas. `orden` pasa derecho a `listarIdeas`: la pagina
+ * del distrito pide "alfabetico" mientras se vota (ver `ordenDeIdeasPara`).
+ */
+export async function getDistrito(
+  numero: number,
+  edicionId: number,
+  opciones: { orden?: OrdenIdeas } = {},
+) {
   const [distrito] = await db
     .select({
       numero: distritos.numero,
@@ -371,7 +398,7 @@ export async function getDistrito(numero: number, edicionId: number) {
     .limit(1);
   if (!distrito) return null;
 
-  const lista = await listarIdeas({ edicionId, distrito: numero });
+  const lista = await listarIdeas({ edicionId, distrito: numero, orden: opciones.orden });
   return {
     numero: distrito.numero,
     nombre: distrito.nombre,
@@ -400,6 +427,20 @@ export async function distritoDeCoordenada(
 // Ideas
 // ---------------------------------------------------------------------------
 
+/**
+ * En que orden sale una lista de ideas.
+ *
+ *  - "votos" (el de siempre): ganadoras primero y despues las mas votadas. Es
+ *    el orden de un resultado, y fuera de la votacion es el que sirve.
+ *  - "alfabetico": por titulo, sin mirar los votos. Es el de la boleta.
+ *
+ * Mientras se vota, ordenar por votos hace dos daños: el que va ganando en
+ * cada distrito aparece primero —y el primer lugar de una boleta suma votos
+ * por estar ahi, no por el proyecto— y el orden mismo publica el ranking en
+ * vivo, aunque la pagina no muestre un solo numero.
+ */
+export type OrdenIdeas = "votos" | "alfabetico";
+
 export type FiltroIdeas = {
   edicionId: number;
   distrito?: number;
@@ -409,12 +450,62 @@ export type FiltroIdeas = {
   soloGanadores?: boolean;
   limite?: number;
   incluirNoPublicadas?: boolean;
+  /** Por defecto "votos", para no cambiarle el orden a nadie que no lo pida. */
+  orden?: OrdenIdeas;
 };
+
+/**
+ * El orden de las listas publicas de ideas segun la etapa: alfabetico mientras
+ * se vota, por votos el resto del tiempo. Lo usan /proyectos y
+ * /distritos/[numero]; la boleta de /votar va en alfabetico SIEMPRE, sin pasar
+ * por aca, porque ahi el orden neutral no depende de nada.
+ */
+export function ordenDeIdeasPara(etapa: EtapaEdicion): OrdenIdeas {
+  return etapa === "votacion" ? "alfabetico" : "votos";
+}
+
+/**
+ * Comparacion de titulos en castellano.
+ *
+ * No se ordena en SQL: el orden de Postgres depende de la collation con la que
+ * se creo la base (PGlite en desarrollo, Supabase en produccion) y el sitio no
+ * usa extensiones, asi que "Árbol" podia caer despues de "Zanja" en una y no en
+ * la otra. `Intl.Collator` con "es" da el orden de un diccionario: sin
+ * distinguir mayusculas ni tildes, la ñ despues de la n y "Plaza 2" antes que
+ * "Plaza 10".
+ *
+ * Las comillas y signos del PRINCIPIO del titulo se sacan a mano antes de
+ * comparar (`claveDeTitulo`), para que "“Club” del barrio" vaya con la C y
+ * "¿Qué hacemos?" con la Q. No se usa `ignorePunctuation` del Collator: ese
+ * ignora tambien los espacios, y el orden quedaba letra por letra ("Laguna"
+ * antes que "La Plaza"), que no es el de una lista en castellano.
+ */
+const COLACION_TITULOS = new Intl.Collator("es-AR", {
+  sensitivity: "base",
+  numeric: true,
+});
+
+/** El titulo sin los signos del principio (comillas, ¿, ¡, guiones). */
+function claveDeTitulo(titulo: string): string {
+  return titulo.replace(/^[^\p{L}\p{N}]+/u, "");
+}
+
+/** Titulo, y si empatan, distrito e id: el mismo orden en cada carga. */
+function compararAlfabetico(a: IdeaVista, b: IdeaVista): number {
+  return (
+    COLACION_TITULOS.compare(claveDeTitulo(a.titulo), claveDeTitulo(b.titulo)) ||
+    a.distrito - b.distrito ||
+    a.id - b.id
+  );
+}
 
 export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
   const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
 
-  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true));
+  // Lo publico no ve descartadas aunque alguna quedara publicada (ver
+  // NO_DESCARTADA). Va con el mismo interruptor que `publicada`: quien pide las
+  // no publicadas pide explicitamente lo que el sitio no muestra.
+  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true), NO_DESCARTADA);
   if (filtro.distrito) condiciones.push(eq(distritos.numero, filtro.distrito));
   if (filtro.categoria) condiciones.push(eq(categorias.slug, filtro.categoria));
   if (filtro.soloGanadores) condiciones.push(eq(ideas.ganador, true));
@@ -433,6 +524,8 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
     if (busqueda) condiciones.push(busqueda);
   }
 
+  const alfabetico = filtro.orden === "alfabetico";
+
   const consulta = db
     .select(camposIdea)
     .from(ideas)
@@ -440,23 +533,65 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(and(...condiciones))
-    .orderBy(desc(ideas.ganador), desc(ideas.votos), asc(distritos.numero), asc(ideas.titulo));
+    .orderBy(
+      ...(alfabetico
+        ? // El orden de verdad lo pone `compararAlfabetico`, abajo.
+          [asc(ideas.id)]
+        : [desc(ideas.ganador), desc(ideas.votos), asc(distritos.numero), asc(ideas.titulo)]),
+    );
 
-  const filas = await (filtro.limite ? consulta.limit(filtro.limite) : consulta);
-  return filas.map((f) => aVista(f as Record<string, unknown>));
+  if (!alfabetico) {
+    const filas = await (filtro.limite ? consulta.limit(filtro.limite) : consulta);
+    return filas.map((f) => aVista(f as Record<string, unknown>));
+  }
+
+  // En alfabetico el tope se aplica DESPUES de ordenar: con un LIMIT en SQL
+  // saldrian las primeras N por id, no las primeras N por titulo. Son las
+  // ideas de una edicion, cientos a lo sumo.
+  const ordenadas = (await consulta)
+    .map((f) => aVista(f as Record<string, unknown>))
+    .sort(compararAlfabetico);
+  return filtro.limite ? ordenadas.slice(0, filtro.limite) : ordenadas;
 }
 
+/**
+ * La ficha de una idea por su slug.
+ *
+ * El slug es unico DENTRO de una edicion (`ideas_edicion_slug_idx`), no entre
+ * ediciones: una idea 2026 puede repetir el titulo, y el slug, de una 2025. Por
+ * eso la edicion es parte de la busqueda:
+ *
+ *  - con `edicionId`: esa edicion y ninguna otra;
+ *  - sin `edicionId`: la edicion ACTIVA, y si el slug no esta ahi, la edicion
+ *    mas reciente que lo tenga. Asi los enlaces viejos (/proyectos/<slug>, sin
+ *    edicion, compartidos cuando la 2025 era la activa) siguen abriendo su
+ *    ficha despues de que se active otra.
+ *
+ * Antes no habia orden: con el slug repetido devolvia una cualquiera de las dos
+ * y la otra no se podia abrir de ninguna manera.
+ */
 export async function getIdea(
   slug: string,
-  filtro: { edicionId?: number; incluirNoPublicadas?: boolean } = {},
+  edicionId?: number | null,
+  opciones: { incluirNoPublicadas?: boolean } = {},
 ) {
   const condiciones = [eq(ideas.slug, slug)];
-  if (filtro.edicionId) condiciones.push(eq(ideas.edicionId, filtro.edicionId));
+  if (edicionId !== null && edicionId !== undefined) {
+    condiciones.push(eq(ideas.edicionId, edicionId));
+  }
   // Mismo criterio que listarIdeas: una idea sin publicar no existe para el
   // sitio ni para el chatbot. Sin este filtro, una idea recien enviada por el
   // formulario publico ya era visible en /proyectos/<slug>. El backoffice pide
   // incluirNoPublicadas de forma explicita.
-  if (!filtro.incluirNoPublicadas) condiciones.push(eq(ideas.publicada, true));
+  //
+  // Una descartada (prueba, spam, carga repetida) tampoco, aunque quedara
+  // publicada por error: el descarte la despublica, y esta es la segunda
+  // barrera (ver NO_DESCARTADA). Aca importa doble, porque la busqueda cruza
+  // ediciones: una descartada de la activa con el slug de un ganador 2025 no
+  // puede tapar al ganador, igual que una sin publicar.
+  if (!opciones.incluirNoPublicadas) {
+    condiciones.push(eq(ideas.publicada, true), NO_DESCARTADA);
+  }
 
   const [fila] = await db
     .select({ ...camposIdea, notasMigracion: ideas.notasMigracion })
@@ -465,6 +600,10 @@ export async function getIdea(
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(and(...condiciones))
+    // Con edicion pedida hay una sola fila posible. Sin ella: la activa primero
+    // y, si no esta ahi, la mas reciente. Los filtros de arriba van antes del
+    // orden: una idea sin publicar en la activa no tapa a la publicada de otra.
+    .orderBy(desc(ediciones.activa), desc(ediciones.anio))
     .limit(1);
 
   if (!fila) return null;
@@ -514,6 +653,12 @@ export type Estadisticas = {
   presupuestoPublicado: number;
 };
 
+/**
+ * Las cuentas PUBLICAS de una edicion: portada, /transparencia y el chat. Solo
+ * ideas publicadas y nunca descartadas (ver NO_DESCARTADA). Las del ganador no
+ * lo repiten: una descartada no puede ser ganadora (se descarta solo desde
+ * borrador o pendiente, y se proclama solo una factible).
+ */
 export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
   const [totales] = await consultar<{
     ideas: number;
@@ -526,13 +671,13 @@ export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
            coalesce(sum(votos) FILTER (WHERE ganador), 0)::int AS votos,
            sum(presupuesto_total) FILTER (WHERE ganador) AS presupuesto
       FROM ideas
-     WHERE edicion_id = ${edicion.id} AND publicada
+     WHERE edicion_id = ${edicion.id} AND publicada AND estado <> 'descartado'
   `);
 
   const estados = await consultar<{ estado: string; cantidad: number }>(sql`
     SELECT estado, count(*)::int AS cantidad
       FROM ideas
-     WHERE edicion_id = ${edicion.id} AND publicada
+     WHERE edicion_id = ${edicion.id} AND publicada AND estado <> 'descartado'
      GROUP BY estado
   `);
 
@@ -543,6 +688,7 @@ export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
       FROM categorias c
       LEFT JOIN ideas i
              ON i.categoria_id = c.id AND i.edicion_id = ${edicion.id} AND i.publicada
+            AND i.estado <> 'descartado'
      GROUP BY c.slug, c.nombre, c.color, c.orden
      ORDER BY c.orden
   `);
@@ -588,12 +734,19 @@ export async function getTextos(): Promise<Record<string, string>> {
   return Object.fromEntries(filas.map((f) => [f.clave, f.valor]));
 }
 
+/**
+ * Las preguntas frecuentes PUBLICADAS, en su orden. Es lo que muestra
+ * /acerca-de y lo que el chat recibe entero en cada consulta
+ * (src/app/api/chat/route.ts): una pregunta despublicada desde el panel no la
+ * ve ninguno de los dos. El id desempata: dos preguntas con el mismo orden
+ * salian en cualquier orden, y distinto entre la pagina y el chat.
+ */
 export async function getFaq() {
   return db
     .select({ id: faq.id, pregunta: faq.pregunta, respuesta: faq.respuesta })
     .from(faq)
     .where(eq(faq.publicada, true))
-    .orderBy(asc(faq.orden));
+    .orderBy(asc(faq.orden), asc(faq.id));
 }
 
 export async function getHitos(edicionId: number) {
@@ -612,6 +765,11 @@ export async function getHitos(edicionId: number) {
     .orderBy(asc(hitos.orden));
 }
 
+/**
+ * Las ultimas novedades publicadas, por fecha. El id desempata entre dos de la
+ * misma fecha (dos asambleas el mismo dia): sin eso cual entraba en la portada
+ * lo decidia la base, y el panel no podia decir cual se estaba viendo.
+ */
 export async function getNovedades(limite = 4) {
   return db
     .select({
@@ -625,7 +783,7 @@ export async function getNovedades(limite = 4) {
     })
     .from(novedades)
     .where(eq(novedades.publicada, true))
-    .orderBy(desc(novedades.fecha))
+    .orderBy(desc(novedades.fecha), desc(novedades.id))
     .limit(limite);
 }
 
@@ -660,6 +818,8 @@ export type IdeaComparable = {
  *
  * Quedan afuera las que ya se integraron a otra (`integrada_en_id`): su idea
  * principal ya esta en la lista, y contarlas seria mostrar dos veces lo mismo.
+ * Y las descartadas: una prueba o un spam no es "una idea parecida ya
+ * presentada", y avisarle eso al vecino lo desalentaria por nada.
  */
 export async function getIdeasParaComparar(
   edicionId: number,
@@ -680,6 +840,7 @@ export async function getIdeasParaComparar(
         eq(ideas.edicionId, edicionId),
         eq(distritos.numero, distrito),
         isNull(ideas.integradaEnId),
+        NO_DESCARTADA,
       ),
     )
     .limit(300);
@@ -722,6 +883,11 @@ export type DireccionOrden = "asc" | "desc";
 
 export type FiltroBandeja = {
   edicionId: number;
+  /**
+   * Sin estado, trae todas MENOS las descartadas: una prueba o un spam no se
+   * mezcla con el trabajo del equipo. Las descartadas salen solo si se piden
+   * por estado (la solapa "Descartadas").
+   */
   estado?: EstadoIdea | EstadoIdea[];
   distrito?: number;
   texto?: string;
@@ -834,10 +1000,12 @@ export async function listarIdeasBandeja(
 ): Promise<PaginaBandeja> {
   const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
 
-  if (filtro.estado) {
-    const estados = Array.isArray(filtro.estado) ? filtro.estado : [filtro.estado];
-    if (estados.length) condiciones.push(inArray(ideas.estado, estados));
-  }
+  const estados = !filtro.estado
+    ? []
+    : Array.isArray(filtro.estado)
+      ? filtro.estado
+      : [filtro.estado];
+  condiciones.push(estados.length ? inArray(ideas.estado, estados) : NO_DESCARTADA);
   if (filtro.distrito) condiciones.push(eq(distritos.numero, filtro.distrito));
   if (filtro.sinDevolucion) condiciones.push(SIN_DEVOLUCION);
   if (filtro.texto?.trim()) {
@@ -941,6 +1109,12 @@ export type IdeaAdmin = IdeaVista & {
   tituloOriginal: string | null;
   coordenadasOriginales: string | null;
   canal: CanalCarga;
+  /** De donde vino, si la cargo el equipo ("Asamblea del distrito 7, ..."). */
+  canalDetalle: string | null;
+  /** La idea final en la que se integro esta, si se integro en otra. */
+  integradaEn: { id: number; numero: number | null; titulo: string } | null;
+  /** Cuantas ideas se integraron en esta. */
+  integradas: number;
   cargadoPor: string | null;
   autorNombre: string | null;
   /** Nunca el mail: solo si hay contacto para avisarle al autor. */
@@ -953,6 +1127,9 @@ export type IdeaAdmin = IdeaVista & {
   updatedAt: Date;
 };
 
+/** La idea en la que se integro otra, para nombrarla en la ficha sin otra consulta. */
+const principal = alias(ideas, "principal");
+
 /** Ficha interna de una idea, con todo lo que el equipo necesita para revisar. */
 export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
   const [fila] = await db
@@ -963,6 +1140,12 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
       tituloOriginal: ideas.tituloOriginal,
       coordenadasOriginales: ideas.coordenadasOriginales,
       canal: ideas.canal,
+      canalDetalle: ideas.canalDetalle,
+      principalId: principal.id,
+      principalNumero: principal.numero,
+      principalTitulo: principal.titulo,
+      integradas: sql<number>`(SELECT count(*)::int FROM ideas otra
+        WHERE otra.integrada_en_id = ${ideas.id})`,
       cargadoPor: ideas.cargadoPor,
       autorNombre: ideas.autorNombre,
       tieneContacto: sql<number>`CASE
@@ -978,6 +1161,7 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .leftJoin(admins, eq(admins.id, ideas.revisadoPorId))
+    .leftJoin(principal, eq(principal.id, ideas.integradaEnId))
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .where(eq(ideas.id, id))
     .limit(1);
@@ -990,6 +1174,16 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     tituloOriginal: fila.tituloOriginal,
     coordenadasOriginales: fila.coordenadasOriginales,
     canal: fila.canal,
+    canalDetalle: fila.canalDetalle,
+    integradaEn:
+      fila.principalId === null
+        ? null
+        : {
+            id: Number(fila.principalId),
+            numero: fila.principalNumero === null ? null : Number(fila.principalNumero),
+            titulo: fila.principalTitulo ?? "",
+          },
+    integradas: Number(fila.integradas ?? 0),
     cargadoPor: fila.cargadoPor,
     autorNombre: fila.autorNombre,
     tieneContacto: Number(fila.tieneContacto) === 1,
@@ -1002,16 +1196,8 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
   };
 }
 
-export type AccionRevision =
-  | "evaluacion"
-  | "publicacion"
-  | "despublicacion"
-  | "proclamacion"
-  | "reapertura"
-  /** Cambio del presupuesto asignado al proyecto (migracion 0003). */
-  | "presupuesto"
-  /** Se pidio un informe de impacto para la idea (migracion 0006). */
-  | "informe";
+/** Del enum del esquema, como EstadoIdea: ahi estan comentados los valores. */
+export type AccionRevision = (typeof accionRevision.enumValues)[number];
 
 export type FilaRevision = {
   id: number;
@@ -1078,7 +1264,13 @@ export async function getRevisiones(ideaId: number): Promise<FilaRevision[]> {
 }
 
 export type ResumenBandeja = {
+  /** Las ideas de la edicion SIN las descartadas: es la solapa "Todas". */
   total: number;
+  /**
+   * Cuantas hay en cada estado, incluidas las descartadas en su propia clave
+   * (la solapa "Descartadas"). Por eso `total` es la suma de todas las claves
+   * menos `descartado`.
+   */
   porEstado: Record<EstadoIdea, number>;
   /**
    * No factibles sin devolucion escrita. Es la deuda del equipo: cada una es un
@@ -1115,12 +1307,13 @@ export async function getResumenBandeja(edicionId: number): Promise<ResumenBande
     no_factible: 0,
     integrado: 0,
     ganador: 0,
+    descartado: 0,
   };
   let total = 0;
   for (const fila of filas) {
     const cantidad = Number(fila.cantidad);
     porEstado[fila.estado] = cantidad;
-    total += cantidad;
+    if (fila.estado !== "descartado") total += cantidad;
   }
 
   return { total, porEstado, noFactiblesSinDevolucion: Number(deuda?.cantidad ?? 0) };
@@ -1130,10 +1323,16 @@ export async function getResumenBandeja(edicionId: number): Promise<ResumenBande
 // Tablero del backoffice
 // ---------------------------------------------------------------------------
 
+/**
+ * Los numeros del tablero. Ninguno cuenta las descartadas (prueba, spam, carga
+ * repetida): no son ideas presentadas. La unica excepcion es su propia clave en
+ * `porEstado`, que dice cuantas hay y que el tablero no dibuja.
+ */
 export type ResumenAdmin = {
   ideas: number;
   publicadas: number;
   sinPublicar: number;
+  /** Por estado; las descartadas solo en `porEstado.descartado`, fuera de `ideas`. */
   porEstado: Record<EstadoIdea, number>;
   /**
    * Ideas por canal de entrada. El tablero lo usa para decir en pantalla si la
@@ -1170,9 +1369,10 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
            coalesce(sum(votos), 0)::int AS votos_en_ideas,
            sum(presupuesto_total) FILTER (WHERE ganador) AS asignado
       FROM ideas
-     WHERE edicion_id = ${edicionId}
+     WHERE edicion_id = ${edicionId} AND estado <> 'descartado'
   `);
 
+  // Este SI trae las descartadas, en su propia clave: ver ResumenAdmin.
   const estados = await consultar<{ estado: EstadoIdea; cantidad: number }>(sql`
     SELECT estado, count(*)::int AS cantidad
       FROM ideas
@@ -1183,7 +1383,7 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
   const canales = await consultar<{ canal: CanalCarga; cantidad: number }>(sql`
     SELECT canal, count(*)::int AS cantidad
       FROM ideas
-     WHERE edicion_id = ${edicionId}
+     WHERE edicion_id = ${edicionId} AND estado <> 'descartado'
      GROUP BY canal
   `);
 
@@ -1200,6 +1400,7 @@ export async function getResumenAdmin(edicionId: number): Promise<ResumenAdmin> 
     no_factible: 0,
     integrado: 0,
     ganador: 0,
+    descartado: 0,
   };
   for (const fila of estados) porEstado[fila.estado] = Number(fila.cantidad);
 
@@ -1271,6 +1472,7 @@ export async function getEstadisticasPorDistrito(
              LIMIT 1) AS titulo_ganador
       FROM distritos d
       LEFT JOIN ideas i ON i.distrito_id = d.id AND i.edicion_id = ${edicionId}
+            AND i.estado <> 'descartado'
      GROUP BY d.id, d.numero, d.nombre
      ORDER BY d.numero
   `);
@@ -1311,7 +1513,8 @@ export async function getMatrizDistritoCategoria(
               FROM ideas i
              WHERE i.edicion_id = ${edicionId}
                AND i.distrito_id = d.id
-               AND i.categoria_id = c.id)::int AS ideas
+               AND i.categoria_id = c.id
+               AND i.estado <> 'descartado')::int AS ideas
       FROM distritos d
       CROSS JOIN categorias c
      ORDER BY d.numero, c.orden, c.slug
@@ -1343,12 +1546,14 @@ export async function getSerieVotos(edicionId: number): Promise<PuntoSerie[]> {
  * Ideas presentadas por dia. Se usa `fecha` (la de presentacion declarada) y
  * solo se cae en `created_at` si falta: en las ediciones migradas `created_at`
  * es el dia en que corrio el seed, no el dia en que el vecino presento la idea.
+ * Lo mismo con las que carga el equipo: `fecha` es el dia que dice el papel o
+ * la asamblea, no el dia en que se tipeo. Sin las descartadas.
  */
 export async function getSerieIdeas(edicionId: number): Promise<PuntoSerie[]> {
   const filas = await consultar<{ dia: string; cantidad: number }>(sql`
     SELECT (coalesce(fecha, created_at::date))::text AS dia, count(*)::int AS cantidad
       FROM ideas
-     WHERE edicion_id = ${edicionId}
+     WHERE edicion_id = ${edicionId} AND estado <> 'descartado'
      GROUP BY 1
      ORDER BY 1
   `);
@@ -1632,71 +1837,9 @@ export type FilaAdmin = {
   createdAt: Date;
 };
 
-/** Cuentas del backoffice. El `passwordHash` no sale nunca de la base. */
-export async function listarAdmins(): Promise<FilaAdmin[]> {
-  return db
-    .select({
-      id: admins.id,
-      email: admins.email,
-      nombre: admins.nombre,
-      rol: admins.rol,
-      activo: admins.activo,
-      ultimoIngreso: admins.ultimoIngreso,
-      createdAt: admins.createdAt,
-    })
-    .from(admins)
-    .orderBy(asc(admins.nombre));
-}
-
-/**
- * Una sola cuenta por id, para la cabecera del panel.
- *
- * Existe para no traer la tabla entera con `listarAdmins()` en cada render de
- * cada pantalla de /admin solo para mostrar el nombre de quien entro. Nunca
- * devuelve `passwordHash`.
- */
-export async function getAdminPorId(id: number): Promise<FilaAdmin | null> {
-  const [fila] = await db
-    .select({
-      id: admins.id,
-      email: admins.email,
-      nombre: admins.nombre,
-      rol: admins.rol,
-      activo: admins.activo,
-      ultimoIngreso: admins.ultimoIngreso,
-      createdAt: admins.createdAt,
-    })
-    .from(admins)
-    .where(eq(admins.id, id))
-    .limit(1);
-  return fila ?? null;
-}
-
-export type FilaBitacora = {
-  id: number;
-  adminNombre: string;
-  objetivoEmail: string;
-  accion: "alta" | "cambio_rol" | "desactivacion" | "reactivacion" | "cambio_password";
-  rolAnterior: RolAdmin | null;
-  rolNuevo: RolAdmin | null;
-  createdAt: Date;
-};
-
-export async function getBitacoraEquipo(limite = 100): Promise<FilaBitacora[]> {
-  return db
-    .select({
-      id: bitacoraEquipo.id,
-      adminNombre: bitacoraEquipo.adminNombre,
-      objetivoEmail: bitacoraEquipo.objetivoEmail,
-      accion: bitacoraEquipo.accion,
-      rolAnterior: bitacoraEquipo.rolAnterior,
-      rolNuevo: bitacoraEquipo.rolNuevo,
-      createdAt: bitacoraEquipo.createdAt,
-    })
-    .from(bitacoraEquipo)
-    .orderBy(desc(bitacoraEquipo.createdAt), desc(bitacoraEquipo.id))
-    .limit(limite);
-}
+// Las consultas de cuentas y de la bitacora del equipo viven con las de
+// /admin/equipo, mas abajo (`getCuentaDeSesion`, `listarCuentasEquipo`,
+// `listarBitacoraEquipo`).
 
 // ---------------------------------------------------------------------------
 // Bitacora del sistema y del contenido publico
@@ -1716,29 +1859,12 @@ export async function getBitacoraEquipo(limite = 100): Promise<FilaBitacora[]> {
  * que llega por querystring se busca aca (ver `accionSistemaValida`) y nunca se
  * interpola dentro del tag `sql`. Mismo orden que el enum `accion_sistema`.
  */
-export const ACCIONES_SISTEMA = [
-  "cambio_etapa",
-  "edicion_creada",
-  "edicion_editada",
-  "edicion_activada",
-  "hito_guardado",
-  "hito_borrado",
-  "texto_guardado",
-  "novedad_creada",
-  "avance_creado",
-  "avance_borrado",
-] as const;
+export const ACCIONES_SISTEMA = accionSistema.enumValues;
 
 export type AccionSistema = (typeof ACCIONES_SISTEMA)[number];
 
 /** Sobre que se actuo. Lista blanca, igual que `ACCIONES_SISTEMA`. */
-export const ENTIDADES_SISTEMA = [
-  "edicion",
-  "hito",
-  "texto",
-  "novedad",
-  "avance",
-] as const;
+export const ENTIDADES_SISTEMA = entidadSistema.enumValues;
 
 export type EntidadSistema = (typeof ENTIDADES_SISTEMA)[number];
 
@@ -1876,6 +2002,12 @@ export type SeguimientoIdea = {
   motivoEstado: string | null;
   /** Por donde entro: decide que se le dice si no hay devolucion escrita. */
   canal: CanalCarga;
+  /**
+   * Si vino del sitio anterior (tiene el rastro que deja el ETL). El canal solo
+   * no alcanza: "asamblea" es tambien lo que pone el panel a una idea que el
+   * equipo carga hoy, y esa SI se evalua en este sitio.
+   */
+  migrada: boolean;
   distrito: number | null;
   fecha: string | null;
   publicada: boolean;
@@ -1888,6 +2020,14 @@ export type SeguimientoIdea = {
  * a ver el estado de su propia idea aunque el equipo todavia no la haya
  * publicado. El acceso ya esta protegido por el codigo de seguimiento
  * (src/lib/avisos.ts), que quien llama valida con el `id` que devuelve esto.
+ *
+ * Las descartadas SI quedan afuera (ver NO_DESCARTADA): una prueba, un spam o
+ * una carga repetida no es una idea que siga ningun proceso. Con el numero y el
+ * codigo, la pantalla mostraba la pastilla "Descartada" junto a "el equipo esta
+ * trabajando sobre tu propuesta" y "cuando termine de evaluarla la vas a poder
+ * leer aca", que para una descartada es falso. Sin fila, responde lo mismo que
+ * a un codigo que no corresponde; si se descarto por error, el equipo lo
+ * deshace desde el panel y el mismo codigo vuelve a andar.
  */
 export async function getSeguimientoIdea(
   edicionId: number,
@@ -1902,19 +2042,21 @@ export async function getSeguimientoIdea(
       estado: ideas.estado,
       motivoEstado: ideas.motivoEstado,
       canal: ideas.canal,
+      migrada: sql<boolean>`${ideas.tituloOriginal} IS NOT NULL`,
       distrito: distritos.numero,
       fecha: ideas.fecha,
       publicada: ideas.publicada,
     })
     .from(ideas)
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
-    .where(and(eq(ideas.edicionId, edicionId), eq(ideas.numero, numero)))
+    .where(and(eq(ideas.edicionId, edicionId), eq(ideas.numero, numero), NO_DESCARTADA))
     .limit(1);
 
   if (!fila) return null;
   return {
     ...fila,
     numero: fila.numero === null ? null : Number(fila.numero),
+    migrada: Boolean(fila.migrada),
     distrito: fila.distrito === null ? null : Number(fila.distrito),
   };
 }
@@ -2222,3 +2364,629 @@ export async function getPreguntasRepetidasChat(
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Gasto del modelo de lenguaje
+// ---------------------------------------------------------------------------
+
+/**
+ * Tokens gastados HOY, sumando las tres funciones que usan el modelo: el chat,
+ * el asistente de carga y el informe de impacto. Las tres registran su consumo
+ * en `chat_consultas` (columna `origen`, migracion 0005), asi que aca NO va el
+ * filtro `soloDelChat()`: el tope de CHAT_TOPE_TOKENS_DIA es de plata, y la
+ * plata sale de la misma cuenta del proveedor sin importar quien la gaste.
+ *
+ * Entrada mas salida. La lectura de cache (`cache_lectura`) no se suma aparte:
+ * en la API compatible con OpenAI ya viene incluida en `tokens_entrada`. Se
+ * cuenta a precio lleno, que es pasarse para el lado seguro. Tambien cuentan
+ * las filas con `ok = false`: una consulta que fallo a mitad de camino gasto
+ * lo que llego a gastar.
+ *
+ * El dia es el calendario de TUCUMAN, por lo mismo que `getUsoChatPorDia`: la
+ * sesion de Supabase esta en UTC y un `now()::date` cortaria el dia a las 21:00
+ * locales. La medianoche local se calcula una vez y se compara `created_at`
+ * contra ella, en lugar de convertir cada fila: asi la consulta puede usar el
+ * indice por fecha (`chat_consultas_fecha_idx`) y leer solo las filas de hoy.
+ */
+export async function getTokensUsadosHoy(): Promise<number> {
+  const [fila] = await consultar<{ tokens: string | number | null }>(sql`
+    SELECT coalesce(sum(coalesce(tokens_entrada, 0) + coalesce(tokens_salida, 0)), 0)::bigint AS tokens
+      FROM chat_consultas
+     WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Argentina/Tucuman')
+                          AT TIME ZONE 'America/Argentina/Tucuman')
+  `);
+  // bigint llega como texto con node-postgres: se convierte aca y no en quien llama.
+  return Number(fila?.tokens ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// Equipo del panel (Fase 2)
+// Las consultas de /admin/equipo: cuentas, roles, su bitacora.
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo que la validacion de la sesion del panel necesita de la cuenta: si esta
+ * activa, que version de sesiones tiene, si le falta cambiar la contrasena
+ * provisoria, y el nombre y el rol que muestra la cabecera.
+ *
+ * Es la consulta que corre en CADA pedido del panel (ver `validarTokenAdmin` en
+ * src/lib/sesion.ts), asi que es una sola fila por clave primaria y nada mas.
+ * Nunca trae `passwordHash`: esta fila termina en la cabecera y en las paginas.
+ */
+export type CuentaDeSesion = {
+  id: number;
+  email: string;
+  nombre: string;
+  rol: RolAdmin;
+  activo: boolean;
+  versionSesion: number;
+  debeCambiarPassword: boolean;
+};
+
+export async function getCuentaDeSesion(id: number): Promise<CuentaDeSesion | null> {
+  const [fila] = await db
+    .select({
+      id: admins.id,
+      email: admins.email,
+      nombre: admins.nombre,
+      rol: admins.rol,
+      activo: admins.activo,
+      versionSesion: admins.versionSesion,
+      debeCambiarPassword: admins.debeCambiarPassword,
+    })
+    .from(admins)
+    .where(eq(admins.id, id))
+    .limit(1);
+  return fila ?? null;
+}
+
+/**
+ * Las cuentas para la pantalla de equipo, con `debeCambiarPassword`: quien
+ * administra tiene que ver quien todavia no cambio la provisoria que le
+ * entrego (puede que nunca haya llegado a ingresar).
+ *
+ * Por nombre y nada mas, activas y desactivadas juntas: si las activas fueran
+ * primero, la tarjeta que se acaba de desactivar saltaria al final de la lista
+ * con el mensaje del resultado adentro. Nunca devuelve `passwordHash`.
+ */
+export type CuentaEquipo = FilaAdmin & { debeCambiarPassword: boolean };
+
+export async function listarCuentasEquipo(): Promise<CuentaEquipo[]> {
+  return db
+    .select({
+      id: admins.id,
+      email: admins.email,
+      nombre: admins.nombre,
+      rol: admins.rol,
+      activo: admins.activo,
+      debeCambiarPassword: admins.debeCambiarPassword,
+      ultimoIngreso: admins.ultimoIngreso,
+      createdAt: admins.createdAt,
+    })
+    .from(admins)
+    .orderBy(asc(admins.nombre), asc(admins.id));
+}
+
+/**
+ * Sale del enum del esquema y no de una lista escrita a mano, por lo mismo que
+ * `EstadoIdea`: un valor nuevo en `accion_equipo` llega solo, y el compilador
+ * marca la etiqueta que falta en la pantalla.
+ */
+export type AccionEquipo = (typeof bitacoraEquipo.accion.enumValues)[number];
+
+/**
+ * Un movimiento de la bitacora del equipo, con los dos ids: con ellos la
+ * pantalla distingue a quien cambio SU contrasena de a quien se la restablecio
+ * otra persona, que en la tabla son la misma accion (`cambio_password`).
+ * Cualquiera de los dos puede ser null: la cuenta se borro (`set null`) o el
+ * cambio salio de la consola (scripts/crear-admin.ts).
+ */
+export type MovimientoEquipo = {
+  id: number;
+  adminId: number | null;
+  adminNombre: string;
+  objetivoId: number | null;
+  objetivoEmail: string;
+  accion: AccionEquipo;
+  rolAnterior: RolAdmin | null;
+  rolNuevo: RolAdmin | null;
+  createdAt: Date;
+};
+
+export async function listarBitacoraEquipo(limite = 100): Promise<MovimientoEquipo[]> {
+  return db
+    .select({
+      id: bitacoraEquipo.id,
+      adminId: bitacoraEquipo.adminId,
+      adminNombre: bitacoraEquipo.adminNombre,
+      objetivoId: bitacoraEquipo.objetivoId,
+      objetivoEmail: bitacoraEquipo.objetivoEmail,
+      accion: bitacoraEquipo.accion,
+      rolAnterior: bitacoraEquipo.rolAnterior,
+      rolNuevo: bitacoraEquipo.rolNuevo,
+      createdAt: bitacoraEquipo.createdAt,
+    })
+    .from(bitacoraEquipo)
+    .orderBy(desc(bitacoraEquipo.createdAt), desc(bitacoraEquipo.id))
+    .limit(limite);
+}
+
+// ---------------------------------------------------------------------------
+// Contenido editable (Fase 2)
+// Las de /admin/contenido: textos, preguntas frecuentes, novedades.
+//
+// A diferencia de getTextos, getFaq y getNovedades (las del sitio publico, mas
+// arriba), estas traen TODO: las preguntas y las novedades sin publicar
+// tambien, porque el panel es donde se publican. Ninguna pagina publica ni el
+// chat las usan. No hay datos de personas en estas tablas; lo unico de alguien
+// que se guarda es quien hizo cada cambio, y eso esta en `bitacora_sistema`.
+// ---------------------------------------------------------------------------
+
+export type TextoAdmin = {
+  clave: string;
+  valor: string;
+  /** La descripcion cargada en la base, si alguien la cargo. */
+  descripcion: string | null;
+  actualizado: Date;
+};
+
+/** Todos los textos de la tabla, con su descripcion y cuando se guardaron. */
+export async function listarTextosAdmin(): Promise<TextoAdmin[]> {
+  return db
+    .select({
+      clave: textos.clave,
+      valor: textos.valor,
+      descripcion: textos.descripcion,
+      actualizado: textos.updatedAt,
+    })
+    .from(textos)
+    .orderBy(asc(textos.clave));
+}
+
+export type FaqAdmin = {
+  id: number;
+  orden: number;
+  pregunta: string;
+  respuesta: string;
+  publicada: boolean;
+};
+
+/**
+ * Las preguntas frecuentes, publicadas o no, en el orden en que se muestran:
+ * el mismo criterio que `getFaq` (orden y despues id), asi la posicion que ve el
+ * panel es la que tiene en /acerca-de.
+ */
+export async function listarFaqAdmin(): Promise<FaqAdmin[]> {
+  const filas = await db
+    .select({
+      id: faq.id,
+      orden: faq.orden,
+      pregunta: faq.pregunta,
+      respuesta: faq.respuesta,
+      publicada: faq.publicada,
+    })
+    .from(faq)
+    .orderBy(asc(faq.orden), asc(faq.id));
+  return filas.map((f) => ({ ...f, id: Number(f.id), orden: Number(f.orden) }));
+}
+
+export type NovedadAdmin = {
+  id: number;
+  titulo: string;
+  slug: string;
+  copete: string | null;
+  cuerpo: string;
+  /** "YYYY-MM-DD". */
+  fecha: string;
+  publicada: boolean;
+};
+
+/** Todas las novedades, publicadas o no, en el orden de la portada. */
+export async function listarNovedadesAdmin(): Promise<NovedadAdmin[]> {
+  const filas = await db
+    .select({
+      id: novedades.id,
+      titulo: novedades.titulo,
+      slug: novedades.slug,
+      copete: novedades.copete,
+      cuerpo: novedades.cuerpo,
+      fecha: novedades.fecha,
+      publicada: novedades.publicada,
+    })
+    .from(novedades)
+    .orderBy(desc(novedades.fecha), desc(novedades.id));
+  return filas.map((f) => ({ ...f, id: Number(f.id) }));
+}
+
+/**
+ * Cuantas novedades muestra la portada: src/app/page.tsx pide
+ * `getNovedades(3)`. El panel lo usa para marcar cuales se estan viendo, y la
+ * prueba del catalogo (scripts/tests/contenido-catalogo.test.ts) falla si la
+ * portada cambia el numero y este no.
+ */
+export const NOVEDADES_EN_PORTADA = 3;
+
+// ---------------------------------------------------------------------------
+// Ideas cargadas y corregidas desde el panel (Fase 2)
+// Alta desde el panel, correccion, descarte, ubicacion en la ficha.
+//
+// Las escrituras viven en src/app/admin/ideas/operaciones.ts (con su
+// transaccion y su fila de `revisiones`); aca solo lo que la ficha necesita
+// leer para ofrecerlas. Las cuentas que dejan afuera a las descartadas estan
+// cada una en su funcion, con NO_DESCARTADA.
+// ---------------------------------------------------------------------------
+
+export type CandidataIntegracion = {
+  id: number;
+  numero: number | null;
+  titulo: string;
+  distrito: number | null;
+};
+
+/**
+ * Las ideas en las que se puede integrar `ideaId`: las de su misma edicion que
+ * pueden ser la idea final. Quedan afuera ella misma, las descartadas y las que
+ * ya estan integradas en otra (`integrada_en_id` apunta siempre a la final, ver
+ * el esquema). Es la lista del selector; la operacion vuelve a validar todo
+ * adentro de su transaccion.
+ */
+export async function getCandidatasIntegracion(
+  edicionId: number,
+  ideaId: number,
+): Promise<CandidataIntegracion[]> {
+  const filas = await db
+    .select({
+      id: ideas.id,
+      numero: ideas.numero,
+      titulo: ideas.titulo,
+      distrito: distritos.numero,
+    })
+    .from(ideas)
+    .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(
+      and(
+        eq(ideas.edicionId, edicionId),
+        ne(ideas.id, ideaId),
+        isNull(ideas.integradaEnId),
+        NO_DESCARTADA,
+      ),
+    )
+    .orderBy(asc(distritos.numero), asc(ideas.numero), asc(ideas.id));
+
+  return filas.map((f) => ({
+    id: Number(f.id),
+    numero: f.numero === null ? null : Number(f.numero),
+    titulo: f.titulo,
+    distrito: f.distrito === null ? null : Number(f.distrito),
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Ediciones anteriores (Fase 2)
+// Que una edicion pasada siga navegable con otra activa.
+//
+// Todo el sitio publico lee la edicion activa y la base admite una sola. Al
+// activar una nueva, la anterior no se borra, pero sin estas consultas quedaba
+// fuera de la navegacion, del sitemap y del chat, y sus ganadores son justo las
+// obras que se estan ejecutando. La forma de pedir otra edicion es
+// `?edicion=AAAA` (src/lib/ediciones.ts) y se resuelve con `getEdicionParaVer`.
+//
+// Todas las de esta seccion que leen ideas son publicas (paginas, sitemap,
+// chat) y dejan afuera, ademas de las sin publicar, las DESCARTADAS (estado
+// "descartado", migracion 0012): una prueba o un spam no es una idea del
+// archivo, ni una ficha del sitemap, ni el barrio de nadie. El descarte ya la
+// despublica; el filtro por estado es la segunda barrera, la misma que llevan
+// las demas consultas publicas, para el dia en que una quede publicada por una
+// carga a mano o un script.
+// ---------------------------------------------------------------------------
+
+/**
+ * Una edicion tal como la muestra una pagina publica: la activa o la pedida.
+ */
+export type EdicionEnVista = Edicion & {
+  /** Si es la activa: sin aviso de edicion anterior y sin `?edicion` en los enlaces. */
+  activa: boolean;
+  /**
+   * El año de la edicion activa, o null si no hay ninguna. El aviso de edicion
+   * anterior ofrece "Ver la edición actual" solo si hay una a la que ir.
+   */
+  anioActiva: number | null;
+};
+
+/**
+ * La edicion que pide una pagina publica, los datos abiertos o el chat. Es la
+ * UNICA forma de resolverla, para que "que edicion se esta mirando" se decida
+ * igual en todos lados:
+ *
+ *  - `anio` null: la edicion activa, como siempre. null si no hay activa.
+ *  - `anio` con valor: la edicion de ese año, este activa o no. null si no
+ *    existe (las paginas responden 404).
+ *
+ * Una sola consulta trae la pedida y la activa, porque el aviso de edicion
+ * anterior necesita saber las dos cosas.
+ */
+export async function getEdicionParaVer(anio: number | null): Promise<EdicionEnVista | null> {
+  const filas = await db
+    .select({
+      id: ediciones.id,
+      anio: ediciones.anio,
+      etapa: ediciones.etapa,
+      votacionDesde: ediciones.votacionDesde,
+      votacionHasta: ediciones.votacionHasta,
+      ideasDesde: ediciones.ideasDesde,
+      ideasHasta: ediciones.ideasHasta,
+      activa: ediciones.activa,
+    })
+    .from(ediciones)
+    .where(
+      anio === null
+        ? eq(ediciones.activa, true)
+        : or(eq(ediciones.activa, true), eq(ediciones.anio, anio)),
+    );
+
+  const activa = filas.find((fila) => fila.activa) ?? null;
+  const pedida = anio === null ? activa : (filas.find((fila) => fila.anio === anio) ?? null);
+  if (!pedida) return null;
+  return { ...pedida, activa: Boolean(pedida.activa), anioActiva: activa?.anio ?? null };
+}
+
+export type EdicionDelArchivo = {
+  id: number;
+  anio: number;
+  etapa: EtapaEdicion;
+  activa: boolean;
+  /**
+   * Ideas PUBLICADAS y no descartadas: las que el sitio muestra. Distinto de
+   * `getEdiciones`, que es del panel y cuenta todas; aca una edicion con ideas
+   * cargadas pero ninguna publicada no tiene nada para ver.
+   */
+  ideas: number;
+  /** Proyectos ganadores publicados. */
+  ganadores: number;
+};
+
+/**
+ * Todas las ediciones, de la mas nueva a la mas vieja, con lo que tiene cada
+ * una para ver. La usan /archivo (que no muestra como navegable una edicion sin
+ * ideas) y el chat (que ofrece otra edicion cuando en la pedida no hay nada).
+ */
+export async function getArchivoDeEdiciones(): Promise<EdicionDelArchivo[]> {
+  const filas = await consultar<{
+    id: number;
+    anio: number;
+    etapa: EtapaEdicion;
+    activa: boolean;
+    ideas: number;
+    ganadores: number;
+  }>(sql`
+    SELECT e.id,
+           e.anio,
+           e.etapa,
+           e.activa,
+           count(i.id) FILTER (WHERE i.publicada)::int              AS ideas,
+           count(i.id) FILTER (WHERE i.publicada AND i.ganador)::int AS ganadores
+      FROM ediciones e
+      LEFT JOIN ideas i ON i.edicion_id = e.id AND i.estado <> 'descartado'
+     GROUP BY e.id, e.anio, e.etapa, e.activa
+     ORDER BY e.anio DESC
+  `);
+
+  return filas.map((f) => ({
+    id: Number(f.id),
+    anio: Number(f.anio),
+    etapa: f.etapa,
+    activa: Boolean(f.activa),
+    ideas: Number(f.ideas),
+    ganadores: Number(f.ganadores),
+  }));
+}
+
+export type FichaPublicada = {
+  slug: string;
+  anio: number;
+  /** Si es de la edicion activa: su URL va sin `?edicion`. */
+  activa: boolean;
+};
+
+/**
+ * Las fichas publicadas de TODAS las ediciones, para el sitemap. La activa
+ * primero. El mismo slug puede aparecer en dos ediciones: son dos fichas, y
+ * cada una tiene su URL (la de la activa sin parametro, la otra con su año).
+ */
+export async function getFichasPublicadas(): Promise<FichaPublicada[]> {
+  const filas = await db
+    .select({ slug: ideas.slug, anio: ediciones.anio, activa: ediciones.activa })
+    .from(ideas)
+    .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
+    .where(and(eq(ideas.publicada, true), NO_DESCARTADA))
+    .orderBy(desc(ediciones.activa), desc(ediciones.anio), asc(ideas.id));
+
+  return filas.map((f) => ({ slug: f.slug, anio: Number(f.anio), activa: Boolean(f.activa) }));
+}
+
+export type GanadorEnObra = {
+  slug: string;
+  titulo: string;
+  distrito: number | null;
+  votos: number;
+  categoriaNombre: string | null;
+  /**
+   * La etapa de la obra (`estado_presupuesto`: preparacion, contratacion,
+   * ejecucion, finalizado), SOLO si el municipio publico al menos un avance.
+   * Sin avances es null, y quien la muestre tiene que decir que no hay
+   * informacion: en los 19 ganadores migrados la columna dice "preparacion"
+   * porque es el valor que les puso el ETL, no porque alguien lo haya
+   * informado (ver la seccion "Avance de la obra" de /proyectos/[slug]).
+   */
+  estadoObra: string | null;
+  /** Avances publicados de la obra. */
+  avancesPublicados: number;
+  /** Fecha (AAAA-MM-DD) del ultimo avance publicado, o null si no hay ninguno. */
+  ultimoAvance: string | null;
+};
+
+export type EdicionConGanadores = {
+  id: number;
+  anio: number;
+  etapa: EtapaEdicion;
+  /** Puede ser la activa, si la activa ya termino de votar. */
+  activa: boolean;
+  /** Uno por distrito como maximo, ordenados por numero de distrito. */
+  ganadores: GanadorEnObra[];
+};
+
+/**
+ * La ultima edicion que ya termino de votar y tiene ganadores publicados, con
+ * sus ganadores. Es "lo que se esta ejecutando": con una edicion nueva recien
+ * abierta (en ideas, evaluacion o votacion) la activa todavia no tiene
+ * ganadores, y lo unico que hay para seguir son las obras de la anterior.
+ *
+ * "Termino de votar" es etapa "seguimiento" o "cerrada" (`votacionTerminada` en
+ * src/lib/ediciones.ts, el mismo corte que `puedeProclamar`). "La ultima" es la
+ * de año mas alto entre esas. No excluye a la activa: si la activa ya voto y
+ * proclamo, la ultima con ganadores es ella, y quien llama compara `activa` o
+ * `anio` con la edicion que esta mostrando.
+ *
+ * null si ninguna edicion termino de votar con ganadores publicados.
+ *
+ * Es la consulta que necesitan las paginas que se adaptan a la etapa (la
+ * portada, sobre todo, cuando la activa todavia no voto). Hoy la usan
+ * /transparencia, /distritos/[numero], /proyectos cuando la edicion no tiene
+ * ideas, y el chat.
+ */
+export async function getUltimaEdicionTerminadaConGanadores(): Promise<EdicionConGanadores | null> {
+  const filas = await consultar<{
+    edicion_id: number;
+    anio: number;
+    etapa: EtapaEdicion;
+    activa: boolean;
+    slug: string;
+    titulo: string;
+    votos: number;
+    distrito: number | null;
+    categoria: string | null;
+    estado_presupuesto: string;
+    avances: number;
+    ultimo_avance: string | null;
+  }>(sql`
+    WITH ultima AS (
+      SELECT e.id
+        FROM ediciones e
+       WHERE e.etapa IN ('seguimiento', 'cerrada')
+         AND EXISTS (
+           SELECT 1 FROM ideas g
+            WHERE g.edicion_id = e.id AND g.ganador AND g.publicada
+              AND g.estado <> 'descartado'
+         )
+       ORDER BY e.anio DESC
+       LIMIT 1
+    )
+    SELECT e.id     AS edicion_id,
+           e.anio,
+           e.etapa,
+           e.activa,
+           i.slug,
+           i.titulo,
+           i.votos,
+           d.numero AS distrito,
+           c.nombre AS categoria,
+           i.estado_presupuesto,
+           (SELECT count(*) FROM avances a
+             WHERE a.idea_id = i.id AND a.publicado)::int  AS avances,
+           (SELECT max(a.fecha) FROM avances a
+             WHERE a.idea_id = i.id AND a.publicado)::text AS ultimo_avance
+      FROM ultima u
+      JOIN ediciones e ON e.id = u.id
+      JOIN ideas i ON i.edicion_id = e.id AND i.ganador AND i.publicada
+                  AND i.estado <> 'descartado'
+      LEFT JOIN distritos d ON d.id = i.distrito_id
+      LEFT JOIN categorias c ON c.id = i.categoria_id
+     ORDER BY d.numero NULLS LAST, i.id
+  `);
+
+  const [primera] = filas;
+  if (!primera) return null;
+  return {
+    id: Number(primera.edicion_id),
+    anio: Number(primera.anio),
+    etapa: primera.etapa,
+    activa: Boolean(primera.activa),
+    ganadores: filas.map((f) => {
+      const avances = Number(f.avances);
+      return {
+        slug: f.slug,
+        titulo: f.titulo,
+        distrito: f.distrito === null ? null : Number(f.distrito),
+        votos: Number(f.votos ?? 0),
+        categoriaNombre: f.categoria,
+        estadoObra: avances > 0 ? f.estado_presupuesto : null,
+        avancesPublicados: avances,
+        ultimoAvance: f.ultimo_avance,
+      };
+    }),
+  };
+}
+
+export type BarrioDeclarado = {
+  /** Como lo escribio quien presento la idea: no es el nombre oficial. */
+  barrio: string;
+  distrito: number;
+  /** Ideas publicadas que lo nombran asi, sumando todas las ediciones. */
+  ideas: number;
+};
+
+/** `%` y `_` de lo que escribio la persona son letras, no comodines del LIKE. */
+function escaparComodines(texto: string): string {
+  return texto.replace(/[\\%_]/g, (caracter) => `\\${caracter}`);
+}
+
+/**
+ * Barrios escritos a mano en las ideas publicadas que contienen alguna de las
+ * palabras, con el distrito de cada idea (que sale del punto en el mapa).
+ *
+ * Es el RESPALDO de la capa oficial de barrios (src/lib/barrios.ts): sirve para
+ * nombres que la capa no tiene ("Parque 9 de Julio", "Casino"). Mira todas las
+ * ediciones porque en que distrito queda un barrio no depende de la edicion: con
+ * la 2026 recien abierta y sin ideas, buscar solo en la activa daba "no figura"
+ * para cualquier barrio.
+ *
+ * Solo publicadas y no descartadas. Reemplaza al SQL suelto que tenian las dos
+ * formas del chat, y la del buscador sin IA miraba tambien las sin publicar: un
+ * barrio y un distrito de una idea en moderacion ya son un dato de esa idea, y
+ * el barrio de un spam no le dice a nadie en que distrito vive.
+ */
+export async function buscarBarriosEnIdeas(
+  palabras: string[],
+  limite = 8,
+): Promise<BarrioDeclarado[]> {
+  const patrones = palabras
+    .map((palabra) => normalizar(palabra))
+    .filter((palabra) => palabra.length >= 2)
+    .map((palabra) => like(ideas.barrioNormalizado, `%${escaparComodines(palabra)}%`));
+  if (!patrones.length) return [];
+
+  const filas = await db
+    .select({
+      distrito: distritos.numero,
+      barrio: ideas.barrio,
+      ideas: sql<number>`count(*)::int`,
+    })
+    .from(ideas)
+    .innerJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(
+      and(
+        eq(ideas.publicada, true),
+        NO_DESCARTADA,
+        isNotNull(ideas.barrio),
+        or(...patrones),
+      ),
+    )
+    .groupBy(distritos.numero, ideas.barrio)
+    .orderBy(desc(sql`count(*)`), asc(distritos.numero), asc(ideas.barrio))
+    .limit(limite);
+
+  return filas.map((f) => ({
+    barrio: String(f.barrio),
+    distrito: Number(f.distrito),
+    ideas: Number(f.ideas),
+  }));
+}

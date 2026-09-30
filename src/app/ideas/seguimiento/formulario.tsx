@@ -46,11 +46,18 @@ export type IdeaSeguida = {
    * a un componente de cliente.
    */
   canal: string;
+  /** Si vino del sitio anterior: solo entonces "se evaluo por fuera" es verdad. */
+  migrada: boolean;
   distrito: number | null;
   fecha: string | null;
   publicada: boolean;
-  /** Solo si esta publicada: si no, todavia no hay pagina que mostrar. */
-  slug: string | null;
+  /**
+   * La ruta de su ficha publica, solo si esta publicada: si no, todavia no hay
+   * pagina que mostrar. La arma el servidor, con `?edicion` cuando la idea es de
+   * una edicion que no es la activa: el slug se repite entre ediciones, y sin el
+   * parametro el enlace podia abrir la idea de otra edicion con el mismo titulo.
+   */
+  ficha: string | null;
 };
 
 export type ResultadoSeguimiento =
@@ -206,12 +213,14 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
       ) : ESTADOS_CERRADOS.has(idea.estado) ? (
         /*
          * La evaluacion ya termino y no hay texto que mostrar. No se promete
-         * nada: se explica por que no esta. En las ideas que entraron por fuera
-         * del sitio el detalle escrito no existe y no va a existir; en las que
-         * entraron por el sitio, todavia puede escribirse.
+         * nada: se explica por que no esta. En las ideas del sitio anterior el
+         * detalle escrito no existe y no va a existir; en las que se evaluan
+         * aca, todavia puede escribirse. Una idea "de asamblea" que el equipo
+         * carga hoy desde el panel es de las segundas: por eso se mira
+         * `migrada` y no solo el canal.
          */
         <p className="mt-5 text-sm" style={{ color: "var(--texto-suave)" }}>
-          {ORIGEN_FUERA_DEL_SITIO[idea.canal]
+          {idea.migrada && ORIGEN_FUERA_DEL_SITIO[idea.canal]
             ? "La evaluación de esta idea se hizo por fuera de este sitio: " +
               ORIGEN_FUERA_DEL_SITIO[idea.canal] +
               " en " +
@@ -227,9 +236,9 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
         </p>
       )}
 
-      {idea.publicada && idea.slug && (
+      {idea.publicada && idea.ficha && (
         <p className="mt-5 text-sm">
-          <Link href={`/proyectos/${idea.slug}`} className="font-semibold underline">
+          <Link href={idea.ficha} className="font-semibold underline">
             Ver la ficha pública de tu idea
           </Link>
         </p>

@@ -19,9 +19,11 @@ import type {
   ParticipacionDistrito,
   ResumenAdmin,
 } from "@/db/queries";
+import { conEdicion } from "@/lib/ediciones";
 import {
   ETIQUETA_ETAPA,
   ETIQUETA_PRESUPUESTO,
+  colorCategoria,
   formatearNumero,
   formatearPesos,
 } from "@/lib/formato";
@@ -31,7 +33,6 @@ import {
   BarraMini,
   MapaCalorCategorias,
   SerieDiaria,
-  colorCategoria,
   formatearPorcentaje,
   type FilaMatriz,
   type PuntoGrafico,
@@ -96,6 +97,10 @@ export default function PanelTablero({
 }: Props) {
   const router = useRouter();
   const [pendiente, iniciar] = useTransition();
+  // Los enlaces al sitio publico (distritos y fichas) van a la edicion que se
+  // esta mirando: con la 2025 elegida y la 2026 activa, sin el parametro abrian
+  // la 2026, y una ficha con el slug repetido era la idea de la otra edicion.
+  const anioEnEnlaces = edicion.activa ? null : edicion.anio;
 
   function enlaceOrden(clave: ClaveOrden): string {
     // Al cambiar de columna se arranca por lo mas interesante: el distrito de
@@ -205,7 +210,7 @@ export default function PanelTablero({
           detalle={`${formatearNumero(resumen.porEstado.factible)} factibles · ${formatearNumero(
             resumen.porEstado.no_factible,
           )} no factibles`}
-          color="var(--color-acento-600)"
+          color="var(--acento-texto)"
         />
         <Tarjeta
           titulo="Proyectos ganadores"
@@ -292,7 +297,7 @@ export default function PanelTablero({
                           href={enlaceOrden(columna.clave)}
                           scroll={false}
                           className="inline-flex items-center gap-1 hover:underline"
-                          style={{ color: activa ? "var(--color-marca-600)" : "var(--texto)" }}
+                          style={{ color: activa ? "var(--marca-texto)" : "var(--texto)" }}
                         >
                           {columna.etiqueta}
                           <span aria-hidden="true" style={{ opacity: activa ? 1 : 0.35 }}>
@@ -311,7 +316,10 @@ export default function PanelTablero({
                 {distritos.map((fila) => (
                   <tr key={fila.numero} style={{ borderBottom: "1px solid var(--borde)" }}>
                     <th scope="row" className="px-3 py-3 text-left font-medium">
-                      <Link href={`/distritos/${fila.numero}`} className="hover:underline">
+                      <Link
+                        href={conEdicion(`/distritos/${fila.numero}`, anioEnEnlaces)}
+                        className="hover:underline"
+                      >
                         D{fila.numero}
                       </Link>
                       <span
@@ -339,7 +347,7 @@ export default function PanelTablero({
                     </td>
                     <td
                       className="px-3 py-3 text-right tabular-nums"
-                      style={{ color: fila.pendientes > 0 ? "var(--color-acento-600)" : "var(--texto-suave)" }}
+                      style={{ color: fila.pendientes > 0 ? "var(--acento-texto)" : "var(--texto-suave)" }}
                     >
                       {formatearNumero(fila.pendientes)}
                     </td>
@@ -423,7 +431,7 @@ export default function PanelTablero({
                   <span
                     aria-hidden="true"
                     className="inline-block h-3 w-3 rounded-sm"
-                    style={{ background: colorCategoria(categoria.slug) }}
+                    style={{ background: colorCategoria(categoria.slug) ?? "var(--color-marca-500)" }}
                   />
                   {categoria.nombre}
                 </li>
@@ -442,11 +450,16 @@ export default function PanelTablero({
           registraron. En las ediciones migradas la fecha puede ser la del dataset original.
         </p>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          {/*
+            El `color` de SerieDiaria no es solo la linea: tambien escribe el total
+            en letras, y la rampa --color-marca-* esta oscurecida para llevar blanco
+            encima, asi que como letra no se lee en el tema oscuro. Va el token de texto.
+          */}
           <SerieDiaria
             titulo="Ideas presentadas"
             descripcion="Una línea por día con al menos una idea."
             puntos={serieIdeas}
-            color="var(--color-marca-600)"
+            color="var(--marca-texto)"
             sustantivo="ideas"
           />
           <SerieDiaria
@@ -547,7 +560,7 @@ export default function PanelTablero({
                       </td>
                       <td className="px-3 py-3">
                         <Link
-                          href={`/proyectos/${fila.slug}`}
+                          href={conEdicion(`/proyectos/${fila.slug}`, anioEnEnlaces)}
                           className="font-medium hover:underline"
                         >
                           {fila.titulo}

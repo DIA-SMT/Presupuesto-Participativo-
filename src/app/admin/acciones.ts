@@ -17,13 +17,11 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { randomBytes } from "node:crypto";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   admins,
   avances,
-  bitacoraEquipo,
   bitacoraSistema,
   categorias,
   chatConsultas,
@@ -32,176 +30,49 @@ import {
   hitos,
   ideas,
   informesImpacto,
-  novedades,
   revisiones,
-  textos,
+  votos,
 } from "@/db/schema";
 import {
+  getTokensUsadosHoy,
   getVotosPorIdea,
-  type AccionRevision,
-  type AccionSistema,
-  type EntidadSistema,
   type EstadoIdea,
-  type RolAdmin,
 } from "@/db/queries";
+import {
+  ETAPAS,
+  esEtapa,
+  puedeActivarOtraEdicion,
+  puedeCambiarEtapa,
+  puedeProclamar,
+  votosDeLaEdicion,
+  type Etapa,
+} from "@/lib/etapas";
 import { generarInforme, tieneMaterial } from "@/lib/informe-impacto";
 // `mensajeDeError` ya existe aca abajo con otro proposito (encadenar causas):
 // el del proveedor se importa con otro nombre para no pisarlo.
-import { hayClave, mensajeDeError as mensajeDelProveedor } from "@/lib/modelo";
+import {
+  gastoDelDiaAgotado,
+  hayClave,
+  mensajeDeError as mensajeDelProveedor,
+} from "@/lib/modelo";
 import { hashearPassword, verificarPassword } from "@/lib/password";
 import { MINIMO_PASSWORD } from "@/lib/politica-password";
 import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
-import { cerrarSesionAdmin, crearSesionAdmin, getSesionAdmin } from "@/lib/sesion";
-import { slugificar } from "@/lib/texto";
+import { cerrarSesionAdmin, crearSesionAdmin } from "@/lib/sesion";
+import {
+  bloqueoPorEtapa,
+  esViolacionDeUnico,
+  exigirAdmin,
+  filaRevision,
+  filaSistema,
+  leerIdeaEnJuego,
+  mensajeDeError,
+  opcional,
+  sinPermiso,
+  type Resultado,
+} from "./comun";
+import { cambiarPasswordPropia } from "./equipo/cuentas";
 
-type Resultado =
-  | { ok: true; mensaje?: string; passwordProvisoria?: string }
-  | { ok: false; error: string };
-
-// ---------------------------------------------------------------------------
-// Autorizacion
-// ---------------------------------------------------------------------------
-
-/** lector < moderador < admin. */
-const JERARQUIA: Record<RolAdmin, number> = { lector: 0, moderador: 1, admin: 2 };
-
-type Autorizacion = {
-  adminId: number;
-  email: string;
-  nombre: string;
-  rol: RolAdmin;
-};
-
-/**
- * Sesion valida con al menos el rol pedido, o null.
- *
- * El rol y el estado de la cuenta se releen de la base en cada request y NO se
- * toman del JWT de la cookie: el token dura 12 horas, asi que una cuenta
- * desactivada o degradada seguiria escribiendo con el rol viejo hasta que
- * venciera. La cookie prueba quien es; la base dice que puede hacer.
- */
-async function exigirAdmin(minimo: RolAdmin): Promise<Autorizacion | null> {
-  const sesion = await getSesionAdmin();
-  if (!sesion) return null;
-
-  const [fila] = await db
-    .select({
-      id: admins.id,
-      email: admins.email,
-      nombre: admins.nombre,
-      rol: admins.rol,
-      activo: admins.activo,
-    })
-    .from(admins)
-    .where(eq(admins.id, sesion.adminId))
-    .limit(1);
-
-  if (!fila || !fila.activo) return null;
-  if (JERARQUIA[fila.rol] < JERARQUIA[minimo]) return null;
-
-  return { adminId: fila.id, email: fila.email, nombre: fila.nombre, rol: fila.rol };
-}
-
-function sinPermiso(minimo: RolAdmin): Resultado {
-  if (minimo === "admin") {
-    return { ok: false, error: "Esta acción la puede hacer solo un administrador." };
-  }
-  if (minimo === "moderador") {
-    return { ok: false, error: "Tu sesión no tiene permisos para escribir." };
-  }
-  return { ok: false, error: "Tu sesión no está activa. Volvé a ingresar." };
-}
-
-/**
- * Texto de toda la cadena de causas. Drizzle envuelve el error del driver, asi
- * que el nombre del indice violado aparece en un `cause` y no en el mensaje.
- */
-function mensajeDeError(causa: unknown): string {
-  let mensaje = "";
-  for (let error: unknown = causa; error instanceof Error; error = error.cause) {
-    mensaje += ` ${error.message}`;
-  }
-  return mensaje;
-}
-
-function esViolacionDeUnico(causa: unknown): boolean {
-  return /duplicate key|unique constraint|unique index|_idx|_unique/i.test(
-    mensajeDeError(causa),
-  );
-}
-
-/** Fila de auditoria de una idea. Se inserta en la misma transaccion del cambio. */
-function filaRevision(datos: {
-  ideaId: number;
-  sesion: Autorizacion;
-  accion: AccionRevision;
-  estadoAnterior?: EstadoIdea | null;
-  estadoNuevo?: EstadoIdea | null;
-  nota?: string | null;
-}) {
-  return {
-    ideaId: datos.ideaId,
-    adminId: datos.sesion.adminId,
-    adminNombre: datos.sesion.nombre,
-    accion: datos.accion,
-    estadoAnterior: datos.estadoAnterior ?? null,
-    estadoNuevo: datos.estadoNuevo ?? null,
-    nota: datos.nota ?? null,
-  };
-}
-
-/**
- * Tope del ANTES y del DESPUES de `bitacora_sistema`. El valor de un texto del
- * sitio puede ser un cuerpo entero: la bitacora audita QUE cambio, no guarda
- * versiones del contenido, asi que lo que pase el tope se recorta y se marca con
- * el largo real.
- */
-const MAXIMO_VALOR_BITACORA = 400;
-
-/** Tope de la etiqueta legible de la entidad (un titulo, una clave). */
-const MAXIMO_ETIQUETA_BITACORA = 200;
-
-/** Recorta por puntos de codigo (no por unidades UTF-16) para no partir un emoji. */
-function recortarValor(
-  valor: string | null | undefined,
-  tope = MAXIMO_VALOR_BITACORA,
-): string | null {
-  if (valor === null || valor === undefined) return null;
-  const limpio = valor.trim();
-  const letras = [...limpio];
-  if (letras.length <= tope) return limpio;
-  return `${letras.slice(0, tope).join("")}… (recortado: ${letras.length} caracteres en total)`;
-}
-
-/**
- * Fila de auditoria del sistema o del contenido publico. Se inserta en la misma
- * transaccion del cambio, igual que `filaRevision`.
- *
- * `antes` va en null cuando la fila no existia (un alta) y `despues` en null
- * cuando la fila se borro: son los dos unicos casos legitimos de valor vacio.
- */
-function filaSistema(datos: {
-  sesion: Autorizacion;
-  accion: AccionSistema;
-  entidad: EntidadSistema;
-  /** null cuando la entidad no se identifica por id, como un texto por clave. */
-  entidadId?: number | null;
-  etiqueta: string;
-  antes?: string | null;
-  despues?: string | null;
-}) {
-  return {
-    adminId: datos.sesion.adminId,
-    adminNombre: datos.sesion.nombre,
-    accion: datos.accion,
-    entidad: datos.entidad,
-    entidadId: datos.entidadId ?? null,
-    entidadEtiqueta:
-      recortarValor(datos.etiqueta, MAXIMO_ETIQUETA_BITACORA) || "(sin nombre)",
-    valorAnterior: recortarValor(datos.antes),
-    valorNuevo: recortarValor(datos.despues),
-  };
-}
 
 /** Fecha ISO tal como esta guardada, o el texto que la reemplaza si falta. */
 function fechaOTexto(valor: string | null): string {
@@ -263,24 +134,6 @@ function resumenAvance(avance: {
     avance.porcentaje === null ? "sin porcentaje" : `${avance.porcentaje}% de avance`,
     avance.descripcion ? `descripción: ${avance.descripcion}` : "sin descripción",
   ].join(" · ");
-}
-
-/**
- * Campo numerico que puede venir vacio de un formulario: el vacio significa
- * "sin asignar" y se guarda como null.
- *
- * OJO, este es un pozo de zod y ya nos costo un dato mal guardado: NO sirve
- * `z.union([z.coerce.number().min(0), z.literal("")])`, porque `Number("")` es
- * 0 y entonces la rama del coerce matchea el vacio. El campo terminaba
- * guardado como 0 en lugar de quedar sin asignar, y el chequeo `=== ""` de mas
- * abajo era codigo muerto. Aca el vacio se resuelve ANTES de coercionar.
- */
-function opcional<T extends z.ZodType<number>>(esquema: T) {
-  return z.preprocess(
-    (valor) =>
-      valor === "" || valor === null || valor === undefined ? null : valor,
-    esquema.nullable(),
-  );
 }
 
 /** Largo minimo de la devolucion tecnica que el vecino va a leer. */
@@ -353,8 +206,13 @@ export async function ingresarAdmin(
     .set({ ultimoIngreso: new Date() })
     .where(eq(admins.id, admin.id));
 
-  await crearSesionAdmin({ adminId: admin.id, email: admin.email, rol: admin.rol });
-  redirect("/admin");
+  // En el token va la version de sesiones que la cuenta tiene AHORA: cualquier
+  // baja, cambio de rol o de contrasena posterior la sube y esta sesion se corta
+  // (ver `validarTokenAdmin` en src/lib/sesion.ts).
+  await crearSesionAdmin({ adminId: admin.id, version: admin.versionSesion });
+  // Con una provisoria, derecho a elegir la propia: cualquier otra pantalla lo
+  // mandaria ahi igual, y asi se ahorra el salto.
+  redirect(admin.debeCambiarPassword ? "/admin/password" : "/admin");
 }
 
 export async function salirAdmin(): Promise<void> {
@@ -364,14 +222,20 @@ export async function salirAdmin(): Promise<void> {
 
 /**
  * Cambio de la propia contrasena. Pide la actual, salvo cuando la cuenta esta
- * marcada con `debeCambiarPassword` (la eligio otra persona al crear la cuenta,
- * asi que exigirla no protegeria nada).
+ * marcada con `debeCambiarPassword` (la eligio otra persona al crear la cuenta
+ * o al restablecerla, asi que exigirla no protegeria nada).
+ *
+ * Cierra las OTRAS sesiones de la cuenta: sube la version de sesiones y a este
+ * navegador le reemite la cookie con la nueva, asi quien la cambio sigue
+ * adentro. Tambien apaga `debeCambiarPassword`, que es lo que libera el resto
+ * del panel a quien entro con una provisoria.
  */
 export async function cambiarMiPassword(
   _previo: Resultado | null,
   formulario: FormData,
 ): Promise<Resultado> {
-  const sesion = await exigirAdmin("lector");
+  // La unica accion que se deja usar con la provisoria: es la que la reemplaza.
+  const sesion = await exigirAdmin("lector", { permitirPasswordProvisoria: true });
   if (!sesion) return sinPermiso("lector");
 
   const actual = String(formulario.get("actual") ?? "");
@@ -409,22 +273,25 @@ export async function cambiarMiPassword(
   }
 
   const hash = await hashearPassword(nueva);
-  await db.transaction(async (tx) => {
-    await tx
-      .update(admins)
-      .set({ passwordHash: hash, debeCambiarPassword: false })
-      .where(eq(admins.id, sesion.adminId));
-    await tx.insert(bitacoraEquipo).values({
-      adminId: sesion.adminId,
-      adminNombre: sesion.nombre,
-      objetivoId: sesion.adminId,
-      objetivoEmail: sesion.email,
-      accion: "cambio_password",
-    });
-  });
+  // La escritura (con su fila de bitacora) solo prospera si la cuenta sigue
+  // activa y con la version de esta sesion: si en el medio alguien la desactivo
+  // o le restablecio la contrasena, gana lo que hizo esa persona.
+  const version = await cambiarPasswordPropia(sesion, hash);
+  if (version === null) {
+    return {
+      ok: false,
+      error: "Tu sesión se cerró mientras cambiabas la contraseña. Volvé a ingresar.",
+    };
+  }
+  await crearSesionAdmin({ adminId: sesion.adminId, version });
 
   revalidatePath("/", "layout");
-  return { ok: true, mensaje: "Contraseña actualizada." };
+  return {
+    ok: true,
+    mensaje: cuenta.debeCambiarPassword
+      ? "Listo: ya tenés tu contraseña y el panel está disponible."
+      : "Contraseña actualizada. Si tenías el panel abierto en otro dispositivo, esa sesión se cerró.",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +356,16 @@ export async function evaluarIdea(
   }
 
   const ahora = new Date();
-  await db.transaction(async (tx) => {
+  // Con la votacion abierta, evaluar no puede sacar a una idea de la votacion
+  // ni meterla (ver puedeCambiarIdea). Si la etapa lo impide no se escribe
+  // nada, ni siquiera la devolucion que venia en el mismo formulario.
+  const bloqueo = await db.transaction(async (tx) => {
+    const motivo = await bloqueoPorEtapa(tx, datos.id, {
+      accion: "evaluar",
+      estado: datos.estado,
+    });
+    if (motivo) return motivo;
+
     await tx
       .update(ideas)
       .set({
@@ -511,7 +387,9 @@ export async function evaluarIdea(
         nota: datos.devolucion || previa.motivoEstado,
       }),
     );
+    return null;
   });
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -548,6 +426,17 @@ export async function generarInformeImpacto(
     };
   }
 
+  // El tope diario de gasto (CHAT_TOPE_TOKENS_DIA) es uno solo para las tres
+  // funciones de IA: el informe ya sumaba su consumo en chat_consultas, pero no
+  // lo consultaba, asi que podia seguir gastando con el chat ya cortado.
+  if (await gastoDelDiaAgotado(getTokensUsadosHoy)) {
+    return {
+      ok: false,
+      error:
+        "Hoy ya se usó el tope diario de consumo de IA (CHAT_TOPE_TOKENS_DIA). El informe vuelve a estar disponible mañana.",
+    };
+  }
+
   // Tope por cuenta: sin esto, un clic repetido dispara N llamadas pagas sobre
   // la misma idea.
   const limite = await consumir(`informe:${sesion.adminId}`, 30, 3600);
@@ -560,8 +449,9 @@ export async function generarInformeImpacto(
     };
   }
 
-  const [idea] = await db
+  const [leida] = await db
     .select({
+      estado: ideas.estado,
       titulo: ideas.titulo,
       barrio: ideas.barrio,
       distrito: distritos.numero,
@@ -575,7 +465,20 @@ export async function generarInformeImpacto(
     .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .where(eq(ideas.id, id))
     .limit(1);
-  if (!idea) return { ok: false, error: "La idea no existe." };
+  if (!leida) return { ok: false, error: "La idea no existe." };
+
+  // Una descartada (prueba, spam, carga repetida) no se evalua, y el informe es
+  // parte de la evaluacion: la ficha no lo ofrece, y la accion tampoco lo genera
+  // si le llega igual (una pestaña vieja). Cada informe es una llamada paga, y el
+  // texto de un spam no tiene nada que analizar.
+  const { estado, ...idea } = leida;
+  if (estado === "descartado") {
+    return {
+      ok: false,
+      error:
+        "Esta idea está descartada: no se evalúa, así que no lleva informe. Si se descartó por error, deshacé el descarte primero.",
+    };
+  }
 
   // Sin texto no hay informe posible. Es el caso de casi todas las ideas de
   // 2025: el relevamiento del sitio anterior solo recupero el de los ganadores.
@@ -707,7 +610,16 @@ async function cambiarPublicacion(
     };
   }
 
-  await db.transaction(async (tx) => {
+  // Con la votacion abierta no se despublica una idea que se esta votando (sale
+  // del ranking y sus votantes no pueden votar de nuevo) ni se publica una
+  // factible (entra a competir a mitad de camino). El resto de las
+  // publicaciones no mueve la votacion y sigue permitido.
+  const bloqueo = await db.transaction(async (tx) => {
+    const motivoEtapa = await bloqueoPorEtapa(tx, id, {
+      accion: publicada ? "publicar" : "despublicar",
+    });
+    if (motivoEtapa) return motivoEtapa;
+
     await tx
       .update(ideas)
       .set({ publicada, updatedAt: new Date() })
@@ -720,7 +632,9 @@ async function cambiarPublicacion(
         nota: motivo || null,
       }),
     );
+    return null;
   });
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -752,14 +666,25 @@ export async function proclamarGanador(
       estado: ideas.estado,
       publicada: ideas.publicada,
       edicionId: ideas.edicionId,
+      etapa: ediciones.etapa,
       distrito: distritos.numero,
     })
     .from(ideas)
+    .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
     .where(eq(ideas.id, id))
     .limit(1);
 
   if (!idea) return { ok: false, error: "La idea no existe." };
+
+  // Solo con la votacion terminada. Se mira aca, ANTES de pedir el ranking,
+  // para no calcular un "mas votado" con la votacion abierta y para que el
+  // motivo que se muestre sea la etapa y no un empate de un conteo que todavia
+  // se mueve. Adentro de la transaccion se vuelve a mirar, con la fila
+  // bloqueada, por si la etapa cambio en el medio.
+  const porEtapa = puedeProclamar(idea.etapa);
+  if (!porEtapa.permitido) return { ok: false, error: porEtapa.motivo };
+
   if (idea.distrito === null) {
     return { ok: false, error: "La idea no tiene distrito asignado: no se puede proclamar." };
   }
@@ -815,8 +740,14 @@ export async function proclamarGanador(
   }
 
   const ahora = new Date();
+  let bloqueo: string | null;
   try {
-    await db.transaction(async (tx) => {
+    bloqueo = await db.transaction(async (tx) => {
+      const vigente = await leerIdeaEnJuego(tx, idea.id);
+      if (!vigente) return "La idea no existe.";
+      const veredicto = puedeProclamar(vigente.etapa);
+      if (!veredicto.permitido) return veredicto.motivo;
+
       await tx
         .update(ideas)
         .set({
@@ -837,6 +768,7 @@ export async function proclamarGanador(
           nota: nota || `Proyecto más votado del Distrito ${distrito}: ${primera.votos} votos.`,
         }),
       );
+      return null;
     });
   } catch (causa) {
     // Nunca dejar explotar la accion: la pantalla tiene que poder mostrar algo.
@@ -849,6 +781,7 @@ export async function proclamarGanador(
     }
     return { ok: false, error: "No se pudo proclamar el proyecto." };
   }
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -893,7 +826,13 @@ export async function reabrirRevision(
   }
 
   const ahora = new Date();
-  await db.transaction(async (tx) => {
+  // Reabrir una idea que se esta votando la saca de la votacion (vuelve a
+  // pendiente): con la votacion abierta no se puede. Reabrir un "no" o una
+  // idea sin publicar no mueve la votacion y sigue permitido.
+  const bloqueo = await db.transaction(async (tx) => {
+    const motivoEtapa = await bloqueoPorEtapa(tx, id, { accion: "reabrir" });
+    if (motivoEtapa) return motivoEtapa;
+
     await tx
       .update(ideas)
       .set({
@@ -914,7 +853,9 @@ export async function reabrirRevision(
         nota: motivo,
       }),
     );
+    return null;
   });
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -952,6 +893,11 @@ function montoEnPesos(valor: number | null): string {
  * ultimo avance cargado. Un select manual la dejaria diciendo "en ejecucion"
  * sin un solo avance que lo respalde; para retroceder una etapa se carga otro
  * avance.
+ *
+ * No mira la etapa de la edicion, a proposito: el monto no cambia que ideas se
+ * votan ni como se cuentan (ver `puedeCambiarIdea` en src/lib/etapas.ts), y
+ * bloquearlo en votacion impediria corregir un monto mal cargado justo cuando
+ * el vecino lo esta leyendo para decidir. El cambio queda en el historial.
  */
 export async function guardarPresupuestoIdea(
   _previo: Resultado | null,
@@ -1210,10 +1156,6 @@ export async function borrarAvance(
 // Ediciones y cronograma
 // ---------------------------------------------------------------------------
 
-const ETAPAS = ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const;
-
-type Etapa = (typeof ETAPAS)[number];
-
 /**
  * Cambia la etapa de una edicion.
  *
@@ -1222,6 +1164,22 @@ type Etapa = (typeof ETAPAS)[number];
  * del UPDATE, porque despues no queda en ningun lado, y la fila de bitacora va
  * en la misma transaccion: no hay forma de mover la etapa sin que quede quien la
  * movio, cuando y desde donde.
+ *
+ * Que transiciones se permiten lo decide `puedeCambiarEtapa`
+ * (src/lib/etapas.ts): avanzar siempre, volver solo en los casos en que no se
+ * deshace una votacion. Para decidirlo hacen falta los votos y los ganadores de
+ * la edicion, y se cuentan adentro de la transaccion con la fila de la edicion
+ * bloqueada FOR UPDATE. Ese bloqueo choca con el FOR SHARE de las acciones
+ * sobre ideas (ver `leerIdeaEnJuego`), asi que ninguna decide con la etapa
+ * vieja. Tambien choca con el que toma el INSERT de un voto al verificar su
+ * clave foranea hacia `ediciones`, asi que los votos que estaban entrando
+ * terminan antes de que se cuente.
+ *
+ * El voto que llega mientras tanto no se cuela: /api/votos relee la etapa con
+ * FOR SHARE dentro de su propia transaccion (src/app/api/votos/registrar.ts),
+ * asi que espera este bloqueo y despues ve la etapa nueva. No se traban entre
+ * si: aca no se bloquea ninguna idea (solo se cuentan), y el voto toma la
+ * edicion antes que la idea.
  */
 export async function cambiarEtapa(
   _previo: Resultado | null,
@@ -1231,45 +1189,83 @@ export async function cambiarEtapa(
   if (!sesion) return sinPermiso("admin");
 
   const id = Number(formulario.get("edicionId"));
-  const etapa = String(formulario.get("etapa"));
-  if (!Number.isInteger(id) || id <= 0 || !ETAPAS.includes(etapa as Etapa)) {
+  const etapa = formulario.get("etapa");
+  if (!Number.isInteger(id) || id <= 0 || !esEtapa(etapa)) {
     return { ok: false, error: "Etapa inválida." };
   }
-  const destino = etapa as Etapa;
+  const destino: Etapa = etapa;
 
-  const [edicion] = await db
-    .select({ anio: ediciones.anio, etapa: ediciones.etapa })
-    .from(ediciones)
-    .where(eq(ediciones.id, id))
-    .limit(1);
-  if (!edicion) return { ok: false, error: "La edición no existe." };
+  let resultado:
+    | { tipo: "inexistente" }
+    | { tipo: "sin_cambio"; anio: number }
+    | { tipo: "rechazado"; motivo: string }
+    | { tipo: "hecho"; anio: number };
+  try {
+    resultado = await db.transaction(async (tx) => {
+      const [edicion] = await tx
+        .select({ anio: ediciones.anio, etapa: ediciones.etapa })
+        .from(ediciones)
+        .where(eq(ediciones.id, id))
+        .for("update");
+      if (!edicion) return { tipo: "inexistente" as const };
 
-  // Sin cambio no se escribe: una fila de bitacora que dice "de X a X" no
-  // audita nada. La pantalla ya deshabilita el boton en este caso.
-  if (edicion.etapa === destino) {
-    return {
-      ok: true,
-      mensaje: `La edición ${edicion.anio} ya estaba en la etapa “${destino}”.`,
-    };
+      // Sin cambio no se escribe: una fila de bitacora que dice "de X a X" no
+      // audita nada. La pantalla ya deshabilita el boton en este caso.
+      if (edicion.etapa === destino) return { tipo: "sin_cambio" as const, anio: edicion.anio };
+
+      // Las dos cuentas de los votos, porque una edicion migrada tiene sus votos
+      // solo en el contador de las ideas (ver votosDeLaEdicion).
+      const [emitidos] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(votos)
+        .where(eq(votos.edicionId, id));
+      const [enIdeas] = await tx
+        .select({
+          votos: sql<number>`coalesce(sum(${ideas.votos}), 0)::int`,
+          ganadores: sql<number>`count(*) FILTER (WHERE ${ideas.ganador})::int`,
+        })
+        .from(ideas)
+        .where(eq(ideas.edicionId, id));
+
+      const veredicto = puedeCambiarEtapa(edicion.etapa, destino, {
+        votos: votosDeLaEdicion(Number(emitidos?.total ?? 0), Number(enIdeas?.votos ?? 0)),
+        ganadores: Number(enIdeas?.ganadores ?? 0),
+      });
+      if (!veredicto.permitido) return { tipo: "rechazado" as const, motivo: veredicto.motivo };
+
+      await tx.update(ediciones).set({ etapa: destino }).where(eq(ediciones.id, id));
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "cambio_etapa",
+          entidad: "edicion",
+          entidadId: id,
+          etiqueta: `Edición ${edicion.anio}`,
+          antes: `Etapa ${edicion.etapa}`,
+          despues: `Etapa ${destino}`,
+        }),
+      );
+      return { tipo: "hecho" as const, anio: edicion.anio };
+    });
+  } catch (causa) {
+    console.error("[admin] cambiarEtapa fallo", causa);
+    return { ok: false, error: "No se pudo cambiar la etapa. Probá de nuevo en un momento." };
   }
 
-  await db.transaction(async (tx) => {
-    await tx.update(ediciones).set({ etapa: destino }).where(eq(ediciones.id, id));
-    await tx.insert(bitacoraSistema).values(
-      filaSistema({
-        sesion,
-        accion: "cambio_etapa",
-        entidad: "edicion",
-        entidadId: id,
-        etiqueta: `Edición ${edicion.anio}`,
-        antes: `Etapa ${edicion.etapa}`,
-        despues: `Etapa ${destino}`,
-      }),
-    );
-  });
-
-  revalidatePath("/", "layout");
-  return { ok: true, mensaje: `Edición ${edicion.anio}: etapa “${destino}”.` };
+  switch (resultado.tipo) {
+    case "inexistente":
+      return { ok: false, error: "La edición no existe." };
+    case "sin_cambio":
+      return {
+        ok: true,
+        mensaje: `La edición ${resultado.anio} ya estaba en la etapa “${destino}”.`,
+      };
+    case "rechazado":
+      return { ok: false, error: resultado.motivo };
+    case "hecho":
+      revalidatePath("/", "layout");
+      return { ok: true, mensaje: `Edición ${resultado.anio}: etapa “${destino}”.` };
+  }
 }
 
 export async function crearEdicion(
@@ -1427,6 +1423,13 @@ export async function guardarEdicion(
  * Activa una edicion y desactiva las demas EN LA MISMA TRANSACCION: el indice
  * unico parcial `ediciones_una_activa_idx` rechaza dos filas con activa = true,
  * asi que el orden (primero apagar, despues prender) no es opcional.
+ *
+ * No se activa otra edicion si la activa esta en votacion
+ * (`puedeActivarOtraEdicion`): /api/votos solo mira la edicion activa, asi que
+ * seria cortar la votacion sin pasar por el cambio de etapa ni avisarle a nadie.
+ * La etapa de la saliente se lee con su fila bloqueada FOR UPDATE, el mismo
+ * bloqueo que toma `cambiarEtapa`: nadie puede abrir la votacion de la saliente
+ * entre esta lectura y el cambio.
  */
 export async function activarEdicion(
   _previo: Resultado | null,
@@ -1449,15 +1452,20 @@ export async function activarEdicion(
     return { ok: true, mensaje: `Edición ${edicion.anio} activa.` };
   }
 
+  let bloqueo: string | null;
   try {
-    await db.transaction(async (tx) => {
+    bloqueo = await db.transaction(async (tx) => {
       // Cual se apaga se lee DENTRO de la transaccion y antes del UPDATE: es el
       // ANTES del registro y despues del primer UPDATE ya no hay ninguna activa.
       const [saliente] = await tx
-        .select({ anio: ediciones.anio })
+        .select({ anio: ediciones.anio, etapa: ediciones.etapa })
         .from(ediciones)
         .where(eq(ediciones.activa, true))
-        .limit(1);
+        .limit(1)
+        .for("update");
+
+      const veredicto = puedeActivarOtraEdicion(saliente ?? null);
+      if (!veredicto.permitido) return veredicto.motivo;
 
       await tx.update(ediciones).set({ activa: false }).where(ne(ediciones.id, id));
       await tx.update(ediciones).set({ activa: true }).where(eq(ediciones.id, id));
@@ -1475,6 +1483,7 @@ export async function activarEdicion(
           despues: `Edición activa: ${edicion.anio}`,
         }),
       );
+      return null;
     });
   } catch (causa) {
     console.error("[admin] activarEdicion fallo", causa);
@@ -1486,6 +1495,7 @@ export async function activarEdicion(
     }
     return { ok: false, error: "No se pudo activar la edición." };
   }
+  if (bloqueo) return { ok: false, error: bloqueo };
 
   revalidatePath("/", "layout");
   return { ok: true, mensaje: `Edición ${edicion.anio} activa.` };
@@ -1656,286 +1666,3 @@ export async function borrarHito(
   return { ok: true };
 }
 
-// ---------------------------------------------------------------------------
-// Contenido editable
-// ---------------------------------------------------------------------------
-
-/**
- * Guarda un texto del sitio (la tabla `textos`, lo que el sitio anterior servia
- * por /api/text sin autenticacion).
- *
- * El valor anterior se lee antes del upsert: la tabla no tiene historial, asi
- * que despues de escribir la version vieja no existe mas en ningun lado. En la
- * bitacora el ANTES y el DESPUES van recortados (`MAXIMO_VALOR_BITACORA`): un
- * texto puede ser un parrafo entero y esto audita que cambio, no guarda
- * versiones.
- */
-export async function guardarTexto(
-  _previo: Resultado | null,
-  formulario: FormData,
-): Promise<Resultado> {
-  const sesion = await exigirAdmin("moderador");
-  if (!sesion) return sinPermiso("moderador");
-
-  const clave = String(formulario.get("clave") ?? "").trim();
-  const valor = String(formulario.get("valor") ?? "").trim();
-  if (!clave || clave.length > 100) return { ok: false, error: "Clave inválida." };
-
-  const [anterior] = await db
-    .select({ valor: textos.valor })
-    .from(textos)
-    .where(eq(textos.clave, clave))
-    .limit(1);
-
-  // Guardar dos veces el mismo texto no es un cambio: no deja fila.
-  if (anterior && anterior.valor === valor) {
-    return { ok: true, mensaje: "El texto ya estaba así: no se registró ningún cambio." };
-  }
-
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(textos)
-      .values({ clave, valor })
-      .onConflictDoUpdate({ target: textos.clave, set: { valor, updatedAt: new Date() } });
-
-    await tx.insert(bitacoraSistema).values(
-      filaSistema({
-        sesion,
-        accion: "texto_guardado",
-        entidad: "texto",
-        // Un texto se identifica por su clave, no por un id: va en la etiqueta.
-        entidadId: null,
-        etiqueta: clave,
-        antes: anterior ? anterior.valor || "(vacío)" : null,
-        despues: valor || "(vacío)",
-      }),
-    );
-  });
-
-  revalidatePath("/", "layout");
-  return { ok: true };
-}
-
-/** Publica una novedad en la portada del sitio. */
-export async function crearNovedad(
-  _previo: Resultado | null,
-  formulario: FormData,
-): Promise<Resultado> {
-  const sesion = await exigirAdmin("moderador");
-  if (!sesion) return sinPermiso("moderador");
-
-  const titulo = String(formulario.get("titulo") ?? "").trim();
-  const cuerpo = String(formulario.get("cuerpo") ?? "").trim();
-  const fecha = String(formulario.get("fecha") ?? "").trim();
-  const copete = String(formulario.get("copete") ?? "").trim();
-  if (titulo.length < 3 || !cuerpo || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return { ok: false, error: "Completá título, fecha y cuerpo." };
-  }
-
-  const slug = `${slugificar(titulo)}-${Date.now().toString(36)}`;
-
-  await db.transaction(async (tx) => {
-    const [creada] = await tx
-      .insert(novedades)
-      .values({ titulo, slug, copete: copete || null, cuerpo, fecha })
-      .returning({ id: novedades.id });
-
-    await tx.insert(bitacoraSistema).values(
-      filaSistema({
-        sesion,
-        accion: "novedad_creada",
-        entidad: "novedad",
-        entidadId: creada.id,
-        etiqueta: titulo,
-        // No hay ANTES: la novedad no existia.
-        despues: `Fecha ${fecha} · publicada · ${slug} · ${copete || cuerpo}`,
-      }),
-    );
-  });
-
-  revalidatePath("/", "layout");
-  return { ok: true };
-}
-
-// ---------------------------------------------------------------------------
-// Equipo del backoffice
-// ---------------------------------------------------------------------------
-
-const ROLES = ["admin", "moderador", "lector"] as const;
-
-const esquemaAdmin = z.object({
-  email: z.string().trim().toLowerCase().email().max(200),
-  nombre: z.string().trim().min(3).max(120),
-  rol: z.enum(ROLES),
-});
-
-/**
- * Alta de una cuenta del backoffice.
- *
- * La contrasena provisoria la genera el servidor (nadie la elige por la otra
- * persona) y se devuelve UNA sola vez, para que la pantalla la muestre y quien
- * la recibe la cambie en el primer ingreso: la cuenta queda marcada con
- * `debeCambiarPassword`.
- */
-export async function crearAdmin(
-  _previo: Resultado | null,
-  formulario: FormData,
-): Promise<Resultado> {
-  const sesion = await exigirAdmin("admin");
-  if (!sesion) return sinPermiso("admin");
-
-  let datos: z.infer<typeof esquemaAdmin>;
-  try {
-    datos = esquemaAdmin.parse({
-      email: formulario.get("email"),
-      nombre: formulario.get("nombre"),
-      rol: formulario.get("rol"),
-    });
-  } catch {
-    return { ok: false, error: "Revisá el correo, el nombre y el rol." };
-  }
-
-  const [existente] = await db
-    .select({ id: admins.id })
-    .from(admins)
-    .where(eq(admins.email, datos.email))
-    .limit(1);
-  if (existente) return { ok: false, error: `Ya hay una cuenta con ${datos.email}.` };
-
-  // 12 bytes al azar en base64url: 16 caracteres, sin nada que adivinar.
-  const provisoria = randomBytes(12).toString("base64url");
-  const hash = await hashearPassword(provisoria);
-
-  try {
-    await db.transaction(async (tx) => {
-      const [creado] = await tx
-        .insert(admins)
-        .values({
-          email: datos.email,
-          nombre: datos.nombre,
-          passwordHash: hash,
-          rol: datos.rol,
-          activo: true,
-          debeCambiarPassword: true,
-        })
-        .returning({ id: admins.id });
-
-      await tx.insert(bitacoraEquipo).values({
-        adminId: sesion.adminId,
-        adminNombre: sesion.nombre,
-        objetivoId: creado.id,
-        objetivoEmail: datos.email,
-        accion: "alta",
-        rolNuevo: datos.rol,
-      });
-    });
-  } catch (causa) {
-    console.error("[admin] crearAdmin fallo", causa);
-    if (esViolacionDeUnico(causa)) {
-      return { ok: false, error: `Ya hay una cuenta con ${datos.email}.` };
-    }
-    return { ok: false, error: "No se pudo crear la cuenta." };
-  }
-
-  revalidatePath("/", "layout");
-  return {
-    ok: true,
-    passwordProvisoria: provisoria,
-    mensaje:
-      "Contraseña provisoria generada. Se muestra una sola vez: copiala y entregala en mano. Quien la reciba tiene que cambiarla al ingresar.",
-  };
-}
-
-export async function cambiarRolAdmin(
-  _previo: Resultado | null,
-  formulario: FormData,
-): Promise<Resultado> {
-  const sesion = await exigirAdmin("admin");
-  if (!sesion) return sinPermiso("admin");
-
-  const id = Number(formulario.get("id"));
-  const rol = String(formulario.get("rol"));
-  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Cuenta inválida." };
-  if (!ROLES.includes(rol as RolAdmin)) return { ok: false, error: "Rol inválido." };
-
-  // Nadie se cambia el rol a si mismo: es lo que evita que el ultimo admin se
-  // degrade y deje el backoffice sin nadie que pueda administrarlo.
-  if (id === sesion.adminId) {
-    return { ok: false, error: "No podés cambiarte el rol a vos mismo. Pedíselo a otro administrador." };
-  }
-
-  const [cuenta] = await db
-    .select({ id: admins.id, email: admins.email, rol: admins.rol })
-    .from(admins)
-    .where(eq(admins.id, id))
-    .limit(1);
-  if (!cuenta) return { ok: false, error: "La cuenta no existe." };
-  if (cuenta.rol === rol) return { ok: false, error: "La cuenta ya tiene ese rol." };
-
-  await db.transaction(async (tx) => {
-    await tx
-      .update(admins)
-      .set({ rol: rol as RolAdmin })
-      .where(eq(admins.id, id));
-    await tx.insert(bitacoraEquipo).values({
-      adminId: sesion.adminId,
-      adminNombre: sesion.nombre,
-      objetivoId: cuenta.id,
-      objetivoEmail: cuenta.email,
-      accion: "cambio_rol",
-      rolAnterior: cuenta.rol,
-      rolNuevo: rol as RolAdmin,
-    });
-  });
-
-  revalidatePath("/", "layout");
-  return { ok: true };
-}
-
-/** Activa o desactiva una cuenta. El campo `activo` llega como "true" o "false". */
-export async function activarAdmin(
-  _previo: Resultado | null,
-  formulario: FormData,
-): Promise<Resultado> {
-  const sesion = await exigirAdmin("admin");
-  if (!sesion) return sinPermiso("admin");
-
-  const id = Number(formulario.get("id"));
-  const valor = String(formulario.get("activo") ?? "");
-  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Cuenta inválida." };
-  if (valor !== "true" && valor !== "false") {
-    return { ok: false, error: "Falta indicar si la cuenta queda activa." };
-  }
-  const activo = valor === "true";
-
-  if (id === sesion.adminId && !activo) {
-    return { ok: false, error: "No podés desactivar tu propia cuenta." };
-  }
-
-  const [cuenta] = await db
-    .select({ id: admins.id, email: admins.email, activo: admins.activo })
-    .from(admins)
-    .where(eq(admins.id, id))
-    .limit(1);
-  if (!cuenta) return { ok: false, error: "La cuenta no existe." };
-  if (cuenta.activo === activo) {
-    return {
-      ok: false,
-      error: activo ? "La cuenta ya está activa." : "La cuenta ya estaba desactivada.",
-    };
-  }
-
-  await db.transaction(async (tx) => {
-    await tx.update(admins).set({ activo }).where(eq(admins.id, id));
-    await tx.insert(bitacoraEquipo).values({
-      adminId: sesion.adminId,
-      adminNombre: sesion.nombre,
-      objetivoId: cuenta.id,
-      objetivoEmail: cuenta.email,
-      accion: activo ? "reactivacion" : "desactivacion",
-    });
-  });
-
-  revalidatePath("/", "layout");
-  return { ok: true };
-}

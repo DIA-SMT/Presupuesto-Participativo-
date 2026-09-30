@@ -9,9 +9,12 @@
  * invalida ni de asignar mal el distrito.
  *
  * Datos personales: el telefono ya no se pide (la columna no existe) y el
- * correo es facultativo, detras de una casilla desmarcada. Sin la casilla el
- * campo del correo ni siquiera se envia, y el aviso de como sigue la idea se
- * resuelve con el codigo de seguimiento que devuelve /api/ideas.
+ * correo HOY TAMPOCO: la casilla "Quiero dejar mi correo..." esta apagada con
+ * AVISO_POR_MAIL_HABILITADO (src/lib/aviso-por-mail.ts) porque el envio de
+ * avisos no existe todavia. El codigo de la casilla queda, listo para cuando
+ * exista: desmarcada por defecto y, sin marcarla, el correo ni siquiera se
+ * envia. Mientras tanto, como sigue la idea se consulta con el codigo de
+ * seguimiento que devuelve /api/ideas, que no necesita ningun contacto.
  *
  * UN solo boton de inteligencia artificial
  * ----------------------------------------
@@ -52,9 +55,14 @@
  * IA; ahora guarda el texto entero, porque hay que mostrarlo.
  */
 import { useEffect, useRef, useState } from "react";
-import DocumentoIdea, { type BloqueActivo } from "@/components/DocumentoIdea";
+import DocumentoIdea, {
+  type BloqueActivo,
+  type CampoEditable,
+  type EdicionDocumento,
+} from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
 import type { PropuestaIA, RespuestaAsistente } from "@/app/api/ideas/asistente/route";
+import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 
 type Categoria = { slug: string; nombre: string; descripcion: string };
 
@@ -71,6 +79,9 @@ const LARGOS = {
   solucion: 4000,
   beneficios: 3000,
 } as const;
+
+/** El barrio no esta en LARGOS porque no es un campo de redaccion. */
+const LARGO_BARRIO = 120;
 
 /** Los tres campos largos, los unicos con ayuda de redaccion. */
 type CampoLargo = "problema" | "solucion" | "beneficios";
@@ -152,7 +163,13 @@ export default function FormularioIdea({
   const [ubicando, setUbicando] = useState(false);
   const [estado, setEstado] = useState<Estado>({ tipo: "editando" });
   /** Consentimiento para guardar el correo. Arranca en false, siempre. */
-  const [avisos, setAvisos] = useState(false);
+  const [casillaAvisos, setCasillaAvisos] = useState(false);
+  /**
+   * Lo que vale de verdad: la casilla solo cuenta si los avisos existen. Con el
+   * interruptor apagado la casilla no se dibuja y esto es false siempre, asi
+   * que ni la validacion del ultimo paso ni el envio miran el correo.
+   */
+  const avisos = AVISO_POR_MAIL_HABILITADO && casillaAvisos;
 
   /** Ultima respuesta del asistente, o null si todavia no se pidio ninguna. */
   const [revision, setRevision] = useState<RespuestaAsistente | null>(null);
@@ -278,6 +295,14 @@ export default function FormularioIdea({
   const refProblema = useRef<HTMLTextAreaElement>(null);
   const refSolucion = useRef<HTMLTextAreaElement>(null);
   const refBeneficios = useRef<HTMLTextAreaElement>(null);
+  /** Los campos que el documento puede escribir, para espejarlos de este lado. */
+  const REF_DEL_CAMPO = {
+    titulo: refTitulo,
+    barrio: refBarrio,
+    solucion: refSolucion,
+    problema: refProblema,
+    beneficios: refBeneficios,
+  } as const;
   /**
    * El ultimo barrio que puso el mapa. Sirve para distinguir "esto lo completo
    * un clic" de "esto lo escribio la persona": si el valor del campo coincide
@@ -420,8 +445,10 @@ export default function FormularioIdea({
    *
    * Devuelve de una vez el texto formalizado de cada campo que tenga contenido,
    * un titulo sugerido, que le falta a la propuesta, si ya hay una parecida en
-   * el distrito y los aspectos de obra para tildar. Nada se aplica solo: queda
-   * a la vista y la persona acepta o descarta.
+   * el distrito y los aspectos de obra para tildar. El texto reescrito queda a
+   * la vista y la persona acepta o descarta campo por campo; los detalles que
+   * ella misma tildo entran derecho (ver el comentario de mas abajo, donde se
+   * decide cual de los dos caminos es).
    *
    * Nunca bloquea el envio: si falla, avisa y el formulario sigue andando.
    */
@@ -452,7 +479,33 @@ export default function FormularioIdea({
         throw new Error(cuerpo?.error ?? "No se pudo generar la ayuda.");
       }
 
-      setRevision((await respuesta.json()) as RespuestaAsistente);
+      const datos = (await respuesta.json()) as RespuestaAsistente;
+
+      /*
+       * Los detalles elegidos entran DERECHO al texto, sin una segunda
+       * confirmacion.
+       *
+       * "Nada se aplica sin que lo aceptes" sigue valiendo: lo que cambia es
+       * DONDE se acepta. Cuando alguien tilda "pavimento definitivo" y aprieta
+       * "Agregar los 3 elegidos", ya eligio dos veces; volver a mostrarle los
+       * mismos textos para que los apruebe campo por campo es preguntarle lo
+       * mismo una tercera vez, y el boton ya prometia agregarlos.
+       *
+       * El otro camino —"Mejorar con IA" a secas— SI conserva la revision campo
+       * por campo, y ahi corresponde: la IA reescribio lo que la persona habia
+       * escrito, sin que nadie se lo pidiera renglon por renglon.
+       *
+       * Lo aplicado no queda invisible: `setAplicados` deja el resumen de que
+       * campos se tocaron, y el texto se sigue pudiendo editar en el formulario
+       * o en el documento mismo.
+       */
+      if (agregar?.length && datos.propuesta) {
+        escribirPropuesta(datos.propuesta);
+        setRevision({ ...datos, propuesta: null });
+      } else {
+        setRevision(datos);
+      }
+
       setElegidos([]);
       setEstado({ tipo: "editando" });
     } catch (causa) {
@@ -473,11 +526,13 @@ export default function FormularioIdea({
   }
 
   /**
-   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
-   * retoques que les haya hecho (ver CampoPropuesto). Lo que viene null no se
-   * toca: puede ser un campo que la IA no reescribio o uno que ella quito.
+   * Escribe en el formulario los campos de una propuesta. Lo que viene null no
+   * se toca: puede ser un campo que la IA no reescribio o uno que ella quito.
+   *
+   * Esta separado de `aplicarPropuesta` porque hay dos caminos que terminan
+   * escribiendo, y solo uno pide confirmacion. Ver el comentario de `pedirAyuda`.
    */
-  function aplicarPropuesta(p: PropuestaIA) {
+  function escribirPropuesta(p: PropuestaIA) {
     const escribir = (
       ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
       campo: keyof typeof valores,
@@ -494,12 +549,56 @@ export default function FormularioIdea({
     setAplicados(
       CAMPOS_PROPUESTA.filter(({ campo }) => p[campo]).map(({ etiqueta }) => etiqueta),
     );
+  }
+
+  /**
+   * Aplica al formulario los campos que la persona eligio quedarse, ya con los
+   * retoques que les haya hecho (ver CampoPropuesto).
+   */
+  function aplicarPropuesta(p: PropuestaIA) {
+    escribirPropuesta(p);
     setRevision({ ...revision!, propuesta: null });
   }
 
-  /** Un campo cambio: se espeja en estado para redibujar el documento. */
+  /**
+   * Un campo cambio: se espeja en estado para redibujar el documento.
+   *
+   * ACA NO SE TRANSFORMA EL TEXTO. Ni `trim()`, ni normalizar comillas, ni
+   * colapsar espacios. Desde que el documento se escribe encima (ver CampoDoc en
+   * DocumentoIdea.tsx), este estado alimenta un textarea controlado: si el valor
+   * que vuelve difiere del que el nodo tiene, React reescribe el nodo y el
+   * cursor se va al final en CADA tecla. Es un sintoma rarisimo de rastrear
+   * hasta acá, asi que queda dicho donde se rompe.
+   */
   function anotarValor(campo: keyof typeof valores, valor: string) {
     setValores((previo) => (previo[campo] === valor ? previo : { ...previo, [campo]: valor }));
+  }
+
+  /**
+   * Lo que se escribe en el documento de la derecha.
+   *
+   * Espeja en el campo de la izquierda, que sigue sin estar controlado (ver el
+   * encabezado del archivo), y anota el valor. No hay ciclo: asignar `.value`
+   * desde JavaScript no dispara `input`, y `anotarValor` corta cuando el valor
+   * no cambio.
+   */
+  function escribirDesdeDocumento(campo: CampoEditable, valor: string) {
+    // El tope del campo hay que aplicarlo a mano: `maxLength` frena a quien
+    // escribe, pero no a una asignacion por codigo, y el servidor rechazaria un
+    // texto largo sin que nadie haya visto un aviso.
+    const tope = campo === "barrio" ? LARGO_BARRIO : LARGOS[campo];
+    const texto = valor.slice(0, tope);
+
+    const ref = REF_DEL_CAMPO[campo].current;
+    // Escribirle `.value` a un campo enfocado le manda el cursor al final. En la
+    // practica el foco esta en el documento, pero la guarda va igual.
+    if (ref && ref !== document.activeElement) ref.value = texto;
+
+    // Si lo toca la persona, el barrio deja de ser "lo que puso el mapa": si no,
+    // la ayuda de la izquierda seguiria diciendo que lo completo un clic.
+    if (campo === "barrio") setBarrioAutomatico(false);
+
+    anotarValor(campo, texto);
   }
 
   async function enviar(datos: FormData) {
@@ -526,7 +625,10 @@ export default function FormularioIdea({
         }),
       });
 
-      const cuerpo = (await respuesta.json()) as {
+      // Un 500 sin cuerpo (la base caida, por ejemplo) no trae JSON: sin el
+      // catch, la persona leia el error crudo del navegador, en ingles, justo
+      // al mandar su propuesta. Asi cae al mensaje de abajo.
+      const cuerpo = (await respuesta.json().catch(() => ({}))) as {
         numero?: number;
         distrito?: number;
         codigo?: string;
@@ -628,6 +730,26 @@ export default function FormularioIdea({
   const enviando = estado.tipo === "enviando";
   const revisando = estado.tipo === "revisando";
   const ocupado = enviando || revisando;
+
+  /**
+   * Todo lo que el documento necesita para dejarse escribir encima. Es el MISMO
+   * objeto para las dos instancias —el panel de al lado y la ventana del
+   * telefono—: las dos escriben en el mismo estado, asi que da igual en cual se
+   * escriba. Va acá abajo y no con las otras funciones porque necesita
+   * `ocupado`, que se calcula recien en estas lineas.
+   */
+  const edicionDelDocumento: EdicionDocumento = {
+    onEscribir: escribirDesdeDocumento,
+    onElegirCategoria: (slug) => {
+      if (refCategoria.current) refCategoria.current.value = slug;
+      anotarValor("categoria", slug);
+    },
+    onFocoBloque: setBloqueActivo,
+    categorias,
+    categoriaSlug: valores.categoria,
+    topes: { ...LARGOS, barrio: LARGO_BARRIO },
+    deshabilitado: !abierta || ocupado,
+  };
 
   return (
     <form
@@ -939,52 +1061,57 @@ export default function FormularioIdea({
             />
           </Campo>
 
-          {/* Consentimiento del correo: casilla desmarcada y finalidad declarada. */}
-          <div
-            className="rounded-xl px-4 py-4"
-            style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
-          >
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={avisos}
-                onChange={(evento) => setAvisos(evento.target.checked)}
-                disabled={!abierta || ocupado}
-                className="mt-0.5"
-              />
-              <span className="text-sm font-medium">
-                Quiero dejar mi correo para que me avisen cómo sigue mi idea.
-              </span>
-            </label>
-            <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-              Lo usamos solo para contarte cómo sigue tu idea: no lo publicamos, no lo damos a nadie
-              y no te vamos a mandar otra cosa. Es opcional, y{" "}
-              <strong>no dar el correo no afecta la evaluación de tu propuesta</strong>: se evalúa
-              igual. Podés pedir que lo borremos cuando quieras. Cómo tratamos tus datos está
-              explicado en la{" "}
-              <a href="/privacidad" className="underline">
-                política de privacidad
-              </a>
-              .
-            </p>
+          {/* Consentimiento del correo: casilla desmarcada y finalidad declarada.
+              Apagado mientras no exista el envio de avisos (ver
+              src/lib/aviso-por-mail.ts): ofrecerlo era pedir un dato para una
+              promesa que nadie iba a cumplir. */}
+          {AVISO_POR_MAIL_HABILITADO && (
+            <div
+              className="rounded-xl px-4 py-4"
+              style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+            >
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={casillaAvisos}
+                  onChange={(evento) => setCasillaAvisos(evento.target.checked)}
+                  disabled={!abierta || ocupado}
+                  className="mt-0.5"
+                />
+                <span className="text-sm font-medium">
+                  Quiero dejar mi correo para que me avisen cómo sigue mi idea.
+                </span>
+              </label>
+              <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+                Lo usamos solo para contarte cómo sigue tu idea: no lo publicamos, no lo damos a nadie
+                y no te vamos a mandar otra cosa. Es opcional, y{" "}
+                <strong>no dar el correo no afecta la evaluación de tu propuesta</strong>: se evalúa
+                igual. Podés pedir que lo borremos cuando quieras. Cómo tratamos tus datos está
+                explicado en la{" "}
+                <a href="/privacidad" className="underline">
+                  política de privacidad
+                </a>
+                .
+              </p>
 
-            {avisos && (
-              <div className="mt-4">
-                <Campo etiqueta="Correo electrónico">
-                  <input
-                    name="autorEmail"
-                    type="email"
-                    maxLength={160}
-                    onInput={(evento) => anotarValor("autorEmail", evento.currentTarget.value)}
-                    disabled={!abierta || ocupado}
-                    placeholder="tunombre@ejemplo.com"
-                    className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                    style={campoEstilo}
-                  />
-                </Campo>
-              </div>
-            )}
-          </div>
+              {avisos && (
+                <div className="mt-4">
+                  <Campo etiqueta="Correo electrónico">
+                    <input
+                      name="autorEmail"
+                      type="email"
+                      maxLength={160}
+                      onInput={(evento) => anotarValor("autorEmail", evento.currentTarget.value)}
+                      disabled={!abierta || ocupado}
+                      placeholder="tunombre@ejemplo.com"
+                      className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                      style={campoEstilo}
+                    />
+                  </Campo>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {estado.tipo === "error" && (
@@ -1161,7 +1288,8 @@ export default function FormularioIdea({
         {conIA && !revision && !revisando && (
           <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
             Escribí con tus palabras y después pedí «Mejorar con IA»: ordena tu texto, te dice qué
-            le falta y te ofrece detalles de obra para elegir. Nada se aplica sin que lo aceptes.
+            le falta y te ofrece detalles de obra para elegir. El texto que reescribe lo aceptás
+            vos campo por campo; los detalles que tildes entran derecho.
           </p>
         )}
 
@@ -1170,6 +1298,7 @@ export default function FormularioIdea({
             anio={anio}
             poligono={poligono}
             activo={bloqueActivo}
+            edicion={edicionDelDocumento}
             datos={{
               titulo: valores.titulo,
               // El nombre de la categoria, no el slug: esto lo lee una persona.
@@ -1250,6 +1379,7 @@ export default function FormularioIdea({
             anio={anio}
             poligono={poligono}
             activo={bloqueActivo}
+            edicion={edicionDelDocumento}
             datos={{
               titulo: valores.titulo,
               categoria: categorias.find((c) => c.slug === valores.categoria)?.nombre ?? "",
