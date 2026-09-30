@@ -12,6 +12,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
 import { borradoCookie } from "@/lib/cookies";
+import { sugerenciaDeDistrito } from "@/lib/barrios";
 import { empadronar } from "@/lib/empadronamiento";
 import { crearSesionVotante } from "@/lib/sesion";
 import { getEdicionActiva } from "@/db/queries";
@@ -42,6 +43,25 @@ function volver(request: Request, motivo?: string): NextResponse {
   // sin Secure, y el navegador descarta ese borrado de una cookie __Host-.
   respuesta.cookies.delete(borradoCookie(COOKIE_ESTADO));
   return respuesta;
+}
+
+/**
+ * La sugerencia de distrito, sin que un error la vuelva un problema. Es
+ * opcional: si no se puede calcular (la capa de barrios no se pudo leer, un
+ * barrio con un nombre raro), la persona elige su distrito sin sugerencia. Sin
+ * esto, cualquier falla aca caia en el catch del empadronamiento y la dejaba
+ * afuera con "No pudimos guardar tu empadronamiento", con el alta ya hecha.
+ */
+function sugerenciaSinCortar(barrio: string | null) {
+  try {
+    return sugerenciaDeDistrito(barrio);
+  } catch (causa) {
+    console.error(
+      "[cidituc] no se pudo sugerir el distrito:",
+      causa instanceof Error ? causa.message : causa,
+    );
+    return null;
+  }
 }
 
 export async function GET(request: Request) {
@@ -91,7 +111,8 @@ export async function GET(request: Request) {
        * esa fila estaba verificada: `empadronar` ignora el null al actualizar,
        * pero no hereda el distrito de una fila sin verificar, que pudo haberlo
        * elegido quien la cargo (el login de prueba lo pide a mano). Si no queda
-       * un distrito que conservar, /votar le explica que le falta.
+       * un distrito que conservar, /votar le pide que declare el suyo, con
+       * el barrio de la cuenta como sugerencia si queda en un solo distrito.
        */
       distrito: null,
       proveedor: "cidituc",
@@ -103,6 +124,9 @@ export async function GET(request: Request) {
       votanteId: empadronado.votanteId,
       distrito: empadronado.distrito,
       nombre: empadronado.nombre,
+      // Solo si todavia no tiene distrito: a quien ya lo declaro no se le
+      // propone otro.
+      sugerido: empadronado.distrito ? null : sugerenciaSinCortar(resultado.persona.barrio),
     });
   } catch (causa) {
     // Resumen siempre: sin esto, una base caida se ve igual que un token

@@ -28,10 +28,17 @@
  *     entre la lectura y el INSERT. Ademas del estado y `publicada` se compara
  *     el distrito: si el equipo mudo la idea de distrito, el control de la ruta
  *     se hizo contra el viejo.
+ *  3. El votante, con `FOR SHARE`: el distrito con el que vota es el que dice
+ *     el padron AHORA, no el que viaja en su cookie. La persona declara su
+ *     distrito y lo puede cambiar hasta votar (declararDistrito, en
+ *     src/lib/empadronamiento.ts, toma esta fila con `FOR UPDATE`): con la
+ *     boleta de un distrito abierta en otra pestaña, la cookie vieja votaba en
+ *     el distrito anterior. Asi, o el cambio espera a que termine el voto (y
+ *     rebota, porque ya voto), o el voto espera al cambio y lee el nuevo.
  *
  * Primero la edicion y despues la idea, de padre a hijo: una accion del panel
  * que tome las dos filas en el mismo orden no puede cruzarse con un voto en un
- * deadlock.
+ * deadlock. El cambio de distrito no toma la idea, asi que tampoco se cruza.
  *
  * `of` nombra la tabla aunque la consulta tenga una sola: si algun dia se le
  * suma un join, el bloqueo sigue cayendo sobre esa fila y no sobre todas.
@@ -43,7 +50,7 @@
  */
 import { and, eq, sql as incremento } from "drizzle-orm";
 import { db } from "@/db";
-import { ediciones, ideas, votos } from "@/db/schema";
+import { ediciones, ideas, votantes, votos } from "@/db/schema";
 
 export type DatosVoto = {
   edicionId: number;
@@ -59,7 +66,7 @@ export type DatosVoto = {
  * votado NO esta aca: lo dice la restriccion UNIQUE de la base con un error, y
  * la ruta lo reconoce por el nombre de la restriccion.
  */
-export type MotivoRechazo = "votacion-cerrada" | "proyecto-no-disponible";
+export type MotivoRechazo = "votacion-cerrada" | "proyecto-no-disponible" | "distrito-distinto";
 
 export type ResultadoVoto = { ok: true } | { ok: false; motivo: MotivoRechazo };
 
@@ -90,6 +97,15 @@ export async function registrarVoto(datos: DatosVoto): Promise<ResultadoVoto> {
       idea.distritoId !== datos.distritoId
     ) {
       return { ok: false, motivo: "proyecto-no-disponible" };
+    }
+
+    const [votante] = await tx
+      .select({ distritoId: votantes.distritoId })
+      .from(votantes)
+      .where(eq(votantes.id, datos.votanteId))
+      .for("share", { of: votantes });
+    if (!votante || votante.distritoId !== datos.distritoId) {
+      return { ok: false, motivo: "distrito-distinto" };
     }
 
     await tx.insert(votos).values({

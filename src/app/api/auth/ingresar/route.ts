@@ -23,7 +23,9 @@ const esquemaDev = z.object({
     .trim()
     .regex(/^\d{7,9}$/, "El DNI tiene que tener 7 u 8 números."),
   nombre: z.string().trim().max(120).optional(),
-  distrito: z.number().int().min(1).max(20),
+  // Null es entrar como con CIDITUC, que no informa el domicilio: /votar le
+  // pide a la persona que declare su distrito. Sirve para probar ese paso.
+  distrito: z.number().int().min(1).max(20).nullable(),
 });
 
 export async function POST(request: Request) {

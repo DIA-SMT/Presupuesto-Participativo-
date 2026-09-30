@@ -324,7 +324,14 @@ async function main() {
       })
       .onConflictDoUpdate({
         target: admins.email,
-        set: { passwordHash: await hashearPassword(password), activo: true },
+        // Restablecer la contrasena corta las sesiones abiertas de la cuenta,
+        // igual que en el panel y en scripts/crear-admin.ts: sube la version
+        // que va dentro de la cookie (ver `sesionVigente` en src/lib/sesion.ts).
+        set: {
+          passwordHash: await hashearPassword(password),
+          activo: true,
+          versionSesion: sql`${admins.versionSesion} + 1`,
+        },
       });
     console.log(`Backoffice: ${email.toLowerCase()} listo.`);
   } else {

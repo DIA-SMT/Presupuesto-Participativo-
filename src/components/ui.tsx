@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { IdeaVista } from "@/db/queries";
+import { conEdicion } from "@/lib/ediciones";
 import {
   COLOR_ESTADO,
   ETIQUETA_ESTADO,
@@ -133,7 +134,18 @@ export function Dato({
   );
 }
 
-export function TarjetaProyecto({ idea }: { idea: IdeaVista }) {
+export function TarjetaProyecto({
+  idea,
+  edicionEnEnlaces = null,
+}: {
+  idea: IdeaVista;
+  /**
+   * El año que lleva el enlace a la ficha mientras se recorre una edicion que
+   * no es la activa (ver `conEdicion`). Sin el, el clic en una tarjeta de 2025
+   * abria la ficha buscando el slug primero en la activa.
+   */
+  edicionEnEnlaces?: number | null;
+}) {
   const resumen = idea.problema ?? idea.solucion ?? idea.beneficios;
   const colorDeCategoria = colorCategoria(idea.categoriaSlug, idea.categoriaColor);
   return (
@@ -154,7 +166,7 @@ export function TarjetaProyecto({ idea }: { idea: IdeaVista }) {
       </div>
 
       <h3 className="text-lg font-semibold leading-snug">
-        <Link href={`/proyectos/${idea.slug}`} className="hover:underline">
+        <Link href={conEdicion(`/proyectos/${idea.slug}`, edicionEnEnlaces)} className="hover:underline">
           {idea.titulo}
         </Link>
       </h3>

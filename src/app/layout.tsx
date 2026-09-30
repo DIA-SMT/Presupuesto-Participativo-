@@ -4,7 +4,9 @@ import "./globals.css";
 import AccesoPanel from "@/components/AccesoPanel";
 import BotonTema from "@/components/BotonTema";
 import AvisoLegal from "@/components/AvisoLegal";
+import AvisoUrgente from "@/components/AvisoUrgente";
 import Chat from "@/components/Chat";
+import { sugerenciasDelChat } from "@/lib/chat-sugerencias";
 import VentanaAvisoLegal from "@/components/VentanaAvisoLegal";
 import { LogoFlor, SelloDireccionIA } from "@/components/Logo";
 import { getEdicionActiva, getTextos } from "@/db/queries";
@@ -83,11 +85,13 @@ export default async function RootLayout({
    * (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/cookies.md),
    * que es exactamente donde ya estaba.
    *
-   * El `.catch` no es decoracion: `getSesionAdmin()` tira si falta
-   * SESSION_SECRET o es corto, y este es el layout raiz de TODO el sitio. Sin
-   * el, una variable de entorno mal puesta apaga hasta la portada. Igual que
-   * las dos consultas de al lado: si el dato no viene, el sitio sigue en pie
-   * sin el acceso.
+   * El `.catch` no es decoracion. Con la cookie del panel, `getSesionAdmin()`
+   * valida la sesion contra la base (una fila por clave primaria; sin la
+   * cookie no consulta nada), asi que tira si la base no contesta, y este es
+   * el layout raiz de TODO el sitio. Igual que las dos consultas de al lado:
+   * si el dato no viene, el sitio sigue en pie sin el acceso. Tambien se traga
+   * la redireccion a /admin/password de una cuenta con la contrasena
+   * provisoria sin cambiar, que asi no ve el atajo (ver src/lib/sesion.ts).
    */
   const [textos, edicion, sesionEquipo] = await Promise.all([
     getTextos().catch(() => ({}) as Record<string, string>),
@@ -96,9 +100,9 @@ export default async function RootLayout({
   ]);
 
   /*
-   * Solo el correo, que ya viene firmado en la cookie. El nombre completo
-   * obligaria a consultar la base en cada pagina publica para una etiqueta
-   * decorativa; el panel, adentro, ya muestra nombre, correo y rol.
+   * Solo el correo, de la misma fila con la que se valido la sesion: la
+   * cookie ya no lo trae. Al atajo le alcanza para decir con que cuenta se
+   * entra; el panel, adentro, muestra nombre, correo y rol.
    */
   const cuentaEquipo = sesionEquipo?.email ?? null;
   const llamado = llamadoDeEtapa(edicion?.etapa);
@@ -153,6 +157,7 @@ export default async function RootLayout({
         <a href="#contenido" className="salto-contenido">
           Saltar al contenido
         </a>
+        <AvisoUrgente texto={textos["aviso-urgente"]} />
 
         <header
           className="sticky top-0 z-30 backdrop-blur"
@@ -345,8 +350,9 @@ export default async function RootLayout({
         <Chat
           bienvenida={
             textos["chat-bienvenida"] ??
-            "Hola. Puedo responderte sobre los proyectos del Presupuesto Participativo."
+            "¡Hola! Soy Migue. Te ayudo con el Presupuesto Participativo: cómo participar, cómo votar y qué proyectos hay en tu distrito."
           }
+          sugerencias={sugerenciasDelChat(edicion?.etapa)}
         />
       </body>
     </html>

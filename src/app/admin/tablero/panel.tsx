@@ -19,6 +19,7 @@ import type {
   ParticipacionDistrito,
   ResumenAdmin,
 } from "@/db/queries";
+import { conEdicion } from "@/lib/ediciones";
 import {
   ETIQUETA_ETAPA,
   ETIQUETA_PRESUPUESTO,
@@ -96,6 +97,10 @@ export default function PanelTablero({
 }: Props) {
   const router = useRouter();
   const [pendiente, iniciar] = useTransition();
+  // Los enlaces al sitio publico (distritos y fichas) van a la edicion que se
+  // esta mirando: con la 2025 elegida y la 2026 activa, sin el parametro abrian
+  // la 2026, y una ficha con el slug repetido era la idea de la otra edicion.
+  const anioEnEnlaces = edicion.activa ? null : edicion.anio;
 
   function enlaceOrden(clave: ClaveOrden): string {
     // Al cambiar de columna se arranca por lo mas interesante: el distrito de
@@ -311,7 +316,10 @@ export default function PanelTablero({
                 {distritos.map((fila) => (
                   <tr key={fila.numero} style={{ borderBottom: "1px solid var(--borde)" }}>
                     <th scope="row" className="px-3 py-3 text-left font-medium">
-                      <Link href={`/distritos/${fila.numero}`} className="hover:underline">
+                      <Link
+                        href={conEdicion(`/distritos/${fila.numero}`, anioEnEnlaces)}
+                        className="hover:underline"
+                      >
                         D{fila.numero}
                       </Link>
                       <span
@@ -552,7 +560,7 @@ export default function PanelTablero({
                       </td>
                       <td className="px-3 py-3">
                         <Link
-                          href={`/proyectos/${fila.slug}`}
+                          href={conEdicion(`/proyectos/${fila.slug}`, anioEnEnlaces)}
                           className="font-medium hover:underline"
                         >
                           {fila.titulo}

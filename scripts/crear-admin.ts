@@ -16,6 +16,10 @@
  * azar y la imprime UNA sola vez. Cuando la genera el script, la cuenta queda
  * marcada con `debe_cambiar_password`: quien la reciba tiene que cambiarla en
  * su primer ingreso.
+ *
+ * Si la cuenta ya existe, la actualiza y le cierra las sesiones abiertas del
+ * panel, como un restablecimiento desde /admin/equipo: sirve tambien para una
+ * cuenta comprometida o para recuperar el acceso del ultimo administrador.
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
 import "./cargar-env";
@@ -114,6 +118,15 @@ async function main() {
           // propia con ADMIN_PASSWORD eso molestaria. Solo se exige el cambio
           // cuando la genero el script.
           debeCambiarPassword: generada,
+          // Como en el panel (src/app/admin/equipo/cuentas.ts): la contrasena
+          // cambia, y quizas el rol y el estado, asi que las sesiones abiertas
+          // de la cuenta se cortan (ver `sesionVigente` en src/lib/sesion.ts).
+          // Sin esto, restablecer desde aca la contrasena de una cuenta
+          // comprometida dejaba adentro a quien ya tenia la cookie, y con la
+          // provisoria marcada esa cookie podia elegir una contrasena nueva sin
+          // saber la actual. Tambien evita que `activo: true` reviva las cookies
+          // de una cuenta dada de baja a mano en la base.
+          versionSesion: sql`${admins.versionSesion} + 1`,
         })
         .where(eq(admins.id, existente.id));
 
@@ -127,7 +140,9 @@ async function main() {
         rolNuevo: rol,
       });
     });
-    console.log(`\nCuenta actualizada: ${email} (${rol}).`);
+    console.log(
+      `\nCuenta actualizada: ${email} (${rol}). Si tenia el panel abierto, esas sesiones se cerraron.`,
+    );
   } else {
     await db.transaction(async (tx) => {
       const [creada] = await tx

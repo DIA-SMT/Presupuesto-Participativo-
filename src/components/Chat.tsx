@@ -14,8 +14,15 @@
  * panel no arrastra, asi que escribir y scrollear la conversacion siguen igual.
  * Toda la mecanica vive en usar-arrastre.ts, que tambien explica que se hace en
  * pantallas angostas y con prefers-reduced-motion.
+ *
+ * El lanzador es Migue, la mascota del programa, saliendo de un circulo: la
+ * imagen ya viene recortada para eso (scripts/migue-burbuja.mjs) y el circulo lo
+ * dibuja el CSS de abajo, asi toma los colores del tema. En pantallas anchas lo
+ * acompaña un globo con el llamado; en el telefono va solo el circulo.
  */
+import Image from "next/image";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import migueBurbuja from "../../public/images/presupuesto-participativo/migue-burbuja.webp";
 import { rutaInterna } from "@/lib/chat-enlaces";
 import { historialParaEnviar } from "@/lib/chat-historial";
 import { usarArrastre } from "./usar-arrastre";
@@ -58,13 +65,6 @@ const PIE: Record<Modo | "sin-respuestas", string> = {
 
 const SIN_RESPUESTA = "No llegó ninguna respuesta. Probá de nuevo.";
 
-const SUGERENCIAS = [
-  "¿Qué ganó en mi distrito?",
-  "¿Cómo presento una idea?",
-  "Proyectos de plazas y espacios verdes",
-  "¿Cuántas ideas se presentaron?",
-];
-
 const CLAVE_SESION = "pp-chat";
 /** Donde queda la posicion elegida. La conversacion vive en sessionStorage; el
  *  lugar del widget en localStorage, porque es una preferencia y se recuerda
@@ -73,7 +73,17 @@ const CLAVE_POSICION = "pp-chat-posicion";
 /** Instrucciones para lector de pantalla, compartidas por las dos zonas de agarre. */
 const ID_AYUDA_MOVER = "pp-chat-ayuda-mover";
 
-export default function Chat({ bienvenida }: { bienvenida: string }) {
+/**
+ * `sugerencias`: las preguntas que se ofrecen al abrir, segun la etapa (las
+ * elige el servidor, ver src/lib/chat-sugerencias.ts).
+ */
+export default function Chat({
+  bienvenida,
+  sugerencias,
+}: {
+  bienvenida: string;
+  sugerencias: string[];
+}) {
   const [abierto, setAbierto] = useState(false);
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [borrador, setBorrador] = useState("");
@@ -274,21 +284,34 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
         }}
         aria-expanded={abierto}
         aria-controls="pp-chat-panel"
-        aria-label={abierto ? "Cerrar las consultas" : "Consultas"}
+        aria-label={abierto ? "Cerrar las consultas" : "Consultas: preguntale a Migue"}
         aria-describedby={ID_AYUDA_MOVER}
         title="Arrastrame para moverme"
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full px-5 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 focus-visible:outline-offset-4"
-        style={{
-          background: "var(--color-marca-700)",
-          ...arrastre.estiloMovil,
-          ...arrastre.estiloAgarre,
-        }}
+        className="pp-lanzador fixed bottom-4 right-4 z-40 rounded-3xl focus-visible:outline-offset-4"
+        style={{ ...arrastre.estiloMovil, ...arrastre.estiloAgarre }}
       >
-        <span className="opacity-60" aria-hidden="true">
-          <IconoAgarre />
+        {/* El globo repite lo que ya dice aria-label: para el lector de
+            pantalla va oculto, si no leeria el llamado dos veces. */}
+        <span className="pp-lanzador-globo" aria-hidden="true">
+          <span className="pp-lanzador-agarre">
+            <IconoAgarre />
+          </span>
+          {abierto ? (
+            <strong>Cerrar</strong>
+          ) : (
+            <span>
+              ¿Tenés una consulta?
+              <strong>Preguntale a Migue</strong>
+            </span>
+          )}
         </span>
-        <IconoChat />
-        <span className="hidden sm:inline">{abierto ? "Cerrar" : "Consultas"}</span>
+        <AvatarMigue className="pp-lanzador-migue">
+          {abierto && (
+            <span className="pp-lanzador-cruz" aria-hidden="true">
+              <IconoCerrar />
+            </span>
+          )}
+        </AvatarMigue>
       </button>
 
       {abierto && (
@@ -298,7 +321,7 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
           role="dialog"
           aria-modal="false"
           aria-label="Consultas sobre el Presupuesto Participativo"
-          className="fixed inset-x-3 bottom-20 z-40 flex max-h-[min(34rem,78vh)] flex-col overflow-hidden rounded-2xl shadow-2xl sm:inset-x-auto sm:right-5 sm:w-[26rem]"
+          className="fixed inset-x-3 bottom-24 z-40 flex max-h-[min(34rem,74vh)] flex-col overflow-hidden rounded-2xl shadow-2xl sm:inset-x-auto sm:right-5 sm:w-[26rem]"
           style={{
             background: "var(--fondo-tarjeta)",
             border: "1px solid var(--borde)",
@@ -327,10 +350,11 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
               >
                 <IconoAgarre />
               </button>
+              <AvatarMigue className="pp-cabecera-migue" />
               <div className="min-w-0">
-                <p className="text-sm font-semibold">Consultas</p>
-                <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                  Sobre proyectos, distritos y cómo participar
+                <p className="text-sm font-semibold">Migue</p>
+                <p className="truncate text-xs" style={{ color: "var(--texto-suave)" }}>
+                  Presupuesto Participativo
                 </p>
               </div>
             </div>
@@ -351,6 +375,17 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
                 Limpiar
               </button>
             )}
+            {/* Cerrar tambien desde aca: con el lanzador corrido o tapado por
+                el teclado del telefono, era la unica forma ademas de Escape. */}
+            <button
+              type="button"
+              onClick={() => setAbierto(false)}
+              aria-label="Cerrar las consultas"
+              className="shrink-0 rounded-lg p-1.5 transition hover:brightness-95"
+              style={{ color: "var(--texto-suave)", background: "var(--fondo-suave)" }}
+            >
+              <IconoCerrar />
+            </button>
           </header>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
@@ -358,7 +393,7 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
               <>
                 <Burbuja rol="asistente">{renderizar(bienvenida)}</Burbuja>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {SUGERENCIAS.map((sugerencia) => (
+                  {sugerencias.map((sugerencia) => (
                     <button
                       key={sugerencia}
                       type="button"
@@ -471,6 +506,8 @@ export default function Chat({ bienvenida }: { bienvenida: string }) {
           </p>
         </div>
       )}
+
+      <style>{estilos}</style>
     </>
   );
 }
@@ -572,6 +609,7 @@ const NOMBRE_HERRAMIENTA: Record<string, string> = {
   resumen_distrito: "Revisando el distrito",
   ubicar_barrio: "Ubicando el barrio",
   estadisticas: "Sacando los totales",
+  consultar_reglamento: "Leyendo el reglamento",
 };
 
 function Escribiendo({ herramienta }: { herramienta: string | null }) {
@@ -595,32 +633,47 @@ function Escribiendo({ herramienta }: { herramienta: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
-// Markdown reducido: parrafos, listas, negritas y enlaces internos.
+// Markdown reducido: parrafos, listas (con viñetas o numeradas), negritas y
+// enlaces internos.
 // ---------------------------------------------------------------------------
 
 function renderizar(texto: string): ReactNode {
   const bloques: ReactNode[] = [];
   const lineas = texto.split("\n");
   let lista: ReactNode[] = [];
+  // Los pasos para votar llegan numerados ("1. Ingresá..."): antes salian como
+  // parrafos sueltos que empezaban con el numero.
+  let numerada = false;
 
   const cerrarLista = () => {
     if (!lista.length) return;
+    const items = lista.map((item, i) => (
+      <li key={i} className={numerada ? "list-decimal" : "list-disc"}>
+        {item}
+      </li>
+    ));
     bloques.push(
-      <ul key={`ul-${bloques.length}`} className="my-1.5 space-y-1 pl-4">
-        {lista.map((item, i) => (
-          <li key={i} className="list-disc">
-            {item}
-          </li>
-        ))}
-      </ul>,
+      numerada ? (
+        <ol key={`ol-${bloques.length}`} className="my-1.5 space-y-1 pl-5">
+          {items}
+        </ol>
+      ) : (
+        <ul key={`ul-${bloques.length}`} className="my-1.5 space-y-1 pl-4">
+          {items}
+        </ul>
+      ),
     );
     lista = [];
   };
 
   for (const linea of lineas) {
     const item = linea.match(/^\s*[-*•]\s+(.*)$/);
-    if (item) {
-      lista.push(enLinea(item[1]));
+    const numero = item ? null : linea.match(/^\s*\d{1,2}[.)]\s+(.*)$/);
+    if (item || numero) {
+      // Una lista de otro tipo cierra la anterior.
+      if (lista.length && numerada !== Boolean(numero)) cerrarLista();
+      numerada = Boolean(numero);
+      lista.push(enLinea((item ?? numero)![1]));
       continue;
     }
     cerrarLista();
@@ -640,10 +693,16 @@ function renderizar(texto: string): ReactNode {
  * alcanza para decidirlo: "//otro.com" tambien empieza con "/" y el navegador
  * lo abre en otro dominio. Lo decide `rutaInterna` (src/lib/chat-enlaces.ts);
  * un enlace que no pasa queda como su texto, sin la url.
+ *
+ * Dos casos que se veian con los corchetes a la vista: un enlace dentro de
+ * negritas (`**[titulo](/ruta)**`, como el modelo nombra un proyecto), que ahora
+ * se interpreta adentro; y un enlace markdown a una url completa (el modelo
+ * llego a inventarle un dominio a una ruta del sitio), que queda como su texto.
  */
 function enLinea(texto: string): ReactNode[] {
   const partes: ReactNode[] = [];
-  const patron = /\*\*([^*]+)\*\*|\[([^\]]+)\]\((\/[^)\s]*)\)|(https?:\/\/\S+)/g;
+  const patron =
+    /\*\*([^*]+)\*\*|\[([^\]]+)\]\((\/[^)\s]*)\)|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/\S+)/g;
   let ultimo = 0;
   let coincidencia: RegExpExecArray | null;
 
@@ -652,7 +711,7 @@ function enLinea(texto: string): ReactNode[] {
       partes.push(texto.slice(ultimo, coincidencia.index));
     }
     if (coincidencia[1]) {
-      partes.push(<strong key={partes.length}>{coincidencia[1]}</strong>);
+      partes.push(<strong key={partes.length}>{enLinea(coincidencia[1])}</strong>);
     } else if (coincidencia[2] && coincidencia[3]) {
       const destino = rutaInterna(coincidencia[3]);
       partes.push(
@@ -669,10 +728,13 @@ function enLinea(texto: string): ReactNode[] {
           coincidencia[2]
         ),
       );
-    } else if (coincidencia[4]) {
+    } else if (coincidencia[4] && coincidencia[5]) {
+      // Enlace a una url completa: se muestra el texto, sin la url ni el clic.
+      partes.push(coincidencia[4]);
+    } else if (coincidencia[6]) {
       // Una url externa se muestra como texto: el asistente no deberia
       // proponer salir del sitio, y asi no se convierte en un enlace clickeable.
-      partes.push(coincidencia[4]);
+      partes.push(coincidencia[6]);
     }
     ultimo = patron.lastIndex;
   }
@@ -698,16 +760,152 @@ function IconoAgarre() {
   );
 }
 
-function IconoChat() {
+function IconoCerrar() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12Z"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
     </svg>
   );
 }
+
+/**
+ * Migue saliendo de su circulo. El tamaño lo da la variable --pp-migue de la
+ * clase que se le pase (el lanzador y la cabecera usan tamaños distintos), y el
+ * alto sale de la proporcion de la imagen: el circulo ocupa el ancho entero y
+ * se apoya en la base, y lo que sobra arriba es el pelo que asoma.
+ *
+ * Es decorativo: quien lo usa ya tiene su texto o su aria-label.
+ */
+function AvatarMigue({ className, children }: { className: string; children?: ReactNode }) {
+  return (
+    <span className={`pp-migue ${className}`}>
+      <span className="pp-migue-circulo" aria-hidden="true" />
+      <Image src={migueBurbuja} alt="" sizes="(min-width: 40rem) 64px, 56px" className="pp-migue-imagen" />
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Los estilos del lanzador y del avatar. Van aca y no en Tailwind por lo mismo
+ * que los del hero: dependen de la proporcion de la imagen (384 x 440, el
+ * circulo apoyado en la base) y se entienden con el comentario al lado.
+ */
+const estilos = `
+.pp-lanzador {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* El globo del llamado: como si Migue hablara. Solo en pantallas anchas. */
+.pp-lanzador-globo {
+  display: none;
+  position: relative;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 0.9rem;
+  padding: 0.55rem 0.9rem 0.55rem 0.65rem;
+  border-radius: 1rem;
+  background: var(--fondo-tarjeta);
+  border: 1px solid var(--borde);
+  box-shadow: 0 12px 28px -14px rgba(15, 23, 42, 0.45), 0 2px 6px rgba(15, 23, 42, 0.08);
+  color: var(--texto-suave);
+  text-align: left;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  transition: transform 180ms ease-out;
+}
+.pp-lanzador-globo strong {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--marca-texto);
+}
+/* La colita del globo, que apunta a Migue. */
+.pp-lanzador-globo::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -6px;
+  width: 11px;
+  height: 11px;
+  background: var(--fondo-tarjeta);
+  border-top: 1px solid var(--borde);
+  border-right: 1px solid var(--borde);
+  transform: translateY(-50%) rotate(45deg);
+}
+.pp-lanzador-agarre { display: flex; opacity: 0.55; }
+@media (min-width: 40rem) {
+  .pp-lanzador-globo { display: flex; }
+}
+
+.pp-migue {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  width: var(--pp-migue);
+  height: calc(var(--pp-migue) * 440 / 384);
+}
+.pp-lanzador-migue { --pp-migue: 56px; }
+@media (min-width: 40rem) {
+  .pp-lanzador-migue { --pp-migue: 64px; }
+}
+.pp-cabecera-migue { --pp-migue: 38px; }
+
+/* El circulo: claro en los dos temas, para que el buzo azul resalte. */
+.pp-migue-circulo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(circle at 50% 30%, var(--color-marca-50), var(--color-marca-100));
+  border: 3px solid var(--color-marca-600);
+}
+.pp-lanzador-migue .pp-migue-circulo {
+  box-shadow: 0 12px 26px -10px rgba(1, 102, 255, 0.55), 0 3px 8px rgba(15, 23, 42, 0.18);
+}
+.pp-cabecera-migue .pp-migue-circulo { border-width: 2px; }
+
+.pp-migue-imagen {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 90%;
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* Al pasar el mouse (o al enfocarlo con el teclado) Migue se inclina, como
+   saludando. Con prefers-reduced-motion el bloque global de globals.css apaga
+   la transicion, y aca se apaga tambien el gesto. */
+.pp-lanzador:hover .pp-migue-imagen,
+.pp-lanzador:focus-visible .pp-migue-imagen {
+  transform: rotate(-7deg) translateY(-2px);
+}
+.pp-lanzador:hover .pp-lanzador-globo { transform: translateX(-2px); }
+@media (prefers-reduced-motion: reduce) {
+  .pp-lanzador:hover .pp-migue-imagen,
+  .pp-lanzador:focus-visible .pp-migue-imagen,
+  .pp-lanzador:hover .pp-lanzador-globo { transform: none; }
+}
+
+/* Con el panel abierto, una cruz sobre el circulo dice que el mismo boton cierra. */
+.pp-lanzador-cruz {
+  position: absolute;
+  top: calc(var(--pp-migue) * 56 / 384);
+  right: -4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-marca-700);
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--fondo-tarjeta);
+}
+`;

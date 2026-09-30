@@ -22,7 +22,8 @@ export default function LoginDev() {
         body: JSON.stringify({
           dni: datos.get("dni"),
           nombre: datos.get("nombre") || undefined,
-          distrito: Number(datos.get("distrito")),
+          // Sin distrito es como entrar con CIDITUC: se elige despues, en /votar.
+          distrito: datos.get("distrito") ? Number(datos.get("distrito")) : null,
         }),
       });
       // Un 500 sin cuerpo (por ejemplo, sin SESSION_SECRET) no trae JSON.
@@ -77,14 +78,11 @@ export default function LoginDev() {
           <span className="font-medium">Tu distrito</span>
           <select
             name="distrito"
-            required
             defaultValue=""
             className="rounded-xl px-3 py-2.5 text-sm outline-none"
             style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)", color: "var(--texto)" }}
           >
-            <option value="" disabled>
-              Elegí tu distrito
-            </option>
+            <option value="">Sin distrito: elegirlo después, como con CIDITUC</option>
             {Array.from({ length: 20 }, (_, i) => (
               <option key={i + 1} value={i + 1}>
                 Distrito {i + 1}

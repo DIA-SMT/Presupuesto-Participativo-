@@ -14,6 +14,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cargarMinimo, crearBaseDePrueba, type BaseDePrueba } from "./apoyo-base";
+import { sugerenciasDelChat } from "../../src/lib/chat-sugerencias";
+import { temaDelSitio } from "../../src/lib/chat-sin-ia-sitio";
 
 let base: BaseDePrueba;
 let edicionId: number;
@@ -210,15 +212,30 @@ test("sin clave responde el buscador, sin llamar a nadie", async () => {
 test("el buscador contesta lo que corresponde a las sugerencias del widget", async () => {
   delete process.env.OPENROUTER_API_KEY;
   // "presentaron" caia en "como participar" y "presento" no encontraba nada.
+  // La edicion de esta base esta en seguimiento: la carga de ideas esta cerrada.
   const casos = [
     ["¿Cuántas ideas se presentaron?", "ideas presentadas"],
-    ["¿Cómo presento una idea?", "formas de participar"],
+    ["¿Cómo presento una idea?", "presentación de ideas"],
   ] as const;
   for (const [pregunta, esperado] of casos) {
     const { resultado } = await conProveedor(sinLlamadas, () =>
       preguntar([{ rol: "usuario", texto: pregunta }]),
     );
     assert.ok(textoMostrado(await eventosDe(resultado)).includes(esperado), pregunta);
+  }
+
+  // Ninguna sugerencia sobre el sitio, de ninguna etapa, se queda en "no
+  // encontré nada". Las que piden datos de ideas dependen de lo cargado, y esta
+  // base casi no tiene ideas: esas las cubren las pruebas de chat-ediciones.
+  for (const etapa of ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const) {
+    for (const sugerencia of sugerenciasDelChat(etapa)) {
+      if (!temaDelSitio(sugerencia)) continue;
+      const { resultado } = await conProveedor(sinLlamadas, () =>
+        preguntar([{ rol: "usuario", texto: sugerencia }]),
+      );
+      const texto = textoMostrado(await eventosDe(resultado));
+      assert.doesNotMatch(texto, /No encontré nada/, `${etapa}: ${sugerencia}`);
+    }
   }
 });
 
@@ -378,6 +395,12 @@ test("al modelo no llegan vacios ni respuestas inventadas, y si la regla de alca
   const enviados = llamadas[0].cuerpo.messages ?? [];
   assert.equal(enviados[0].role, "system");
   assert.match(enviados[0].content, /# Alcance/);
+  // Lo que sabe del sitio sale del sitio: los pasos para votar que publica
+  // /acerca-de y, sin reglamento cargado, las reglas confirmadas de /reglamento.
+  assert.match(enviados[0].content, /Cómo se vota/);
+  assert.match(enviados[0].content, /Ingresá con CIDITUC/);
+  assert.match(enviados[0].content, /reglamento oficial todavía no está publicado/);
+  assert.match(enviados[0].content, /Un voto por persona/);
   assert.deepEqual(
     enviados.slice(1).map((m) => [m.role, m.content]),
     [

@@ -46,6 +46,8 @@ const MENSAJE_RECHAZO: Record<MotivoRechazo, string> = {
     "La votación se cerró justo cuando enviabas tu voto, así que no se registró.",
   "proyecto-no-disponible":
     "Ese proyecto salió de la boleta justo cuando enviabas tu voto, así que no se registró. Recargá la página para ver los proyectos que se pueden votar.",
+  "distrito-distinto":
+    "Tu distrito cambió (quizás en otra pestaña), así que el voto no se registró. Recargá la página para ver la boleta de tu distrito.",
 };
 
 export async function POST(request: Request) {
@@ -85,7 +87,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          "Tu empadronamiento no tiene un distrito asignado. Acercate a una asamblea participativa para completarlo.",
+          "Todavía no indicaste en qué distrito vivís. Elegilo en esta misma pantalla y después votá.",
       },
       { status: 403 },
     );

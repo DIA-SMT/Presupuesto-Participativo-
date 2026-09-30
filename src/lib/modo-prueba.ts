@@ -21,10 +21,12 @@
  * Lo que la idea cargada asi NO tiene es un trato distinto: entra `pendiente`
  * y sin publicar, igual que una real, porque justamente lo que se quiere
  * mostrar es el circuito real. No mueve ningun numero publico (las
- * estadisticas cuentan solo ideas publicadas) y el equipo la borra con
- * `npx tsx scripts/ver-ideas-web.ts --borrar <numero>`: el numero que mostro la
- * pantalla de idea recibida, de la edicion activa. Sin `--confirmar` el script
- * solo muestra cual borraria; el panel no tiene boton para borrar ideas.
+ * estadisticas cuentan solo ideas publicadas). Despues de la demo, desde la
+ * ficha del panel se DESCARTA (queda despublicada, fuera de toda cuenta y con
+ * motivo, sin borrarla). Para borrarla del todo esta
+ * `npx tsx scripts/ver-ideas-web.ts --borrar <numero>`, con el numero que
+ * mostro la pantalla de idea recibida (sin `--confirmar` solo muestra cual
+ * borraria), y antes del lanzamiento `scripts/limpiar-pruebas.ts` barre todas.
  */
 import { getSesionAdmin } from "@/lib/sesion";
 
@@ -36,10 +38,14 @@ export function modoPruebaPorEntorno(): boolean {
 /**
  * Si esta persona puede cargar una idea aunque la etapa este cerrada.
  *
- * El `.catch` no es decoracion: `getSesionAdmin()` tira si falta SESSION_SECRET
- * o es corto, y esto se llama desde la pagina publica de carga. Sin el, una
- * variable mal puesta tiraria la pagina entera en lugar de dejarla cerrada,
- * que es el estado seguro.
+ * El `.catch` no es decoracion: `getSesionAdmin()` valida la sesion contra la
+ * base, asi que tira si la base no contesta, y esto se llama desde la pagina
+ * publica de carga y desde las rutas de /api/ideas. Sin el, una base caida
+ * tiraria la pagina entera en lugar de dejarla cerrada, que es el estado
+ * seguro. Tambien se traga la redireccion de una cuenta con la contrasena
+ * provisoria sin cambiar: esa sesion no abre la carga fuera de etapa. Una
+ * sesion cortada (baja, cambio de rol o de contrasena) tampoco, porque para
+ * `getSesionAdmin` es lo mismo que no tener cookie.
  */
 export async function puedeCargarFueraDeEtapa(): Promise<boolean> {
   if (modoPruebaPorEntorno()) return true;

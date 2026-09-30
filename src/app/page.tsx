@@ -1,4 +1,3 @@
-import Link from "next/link";
 import HeroInicio from "@/components/HeroInicio";
 import Mapa from "@/components/Mapa";
 import { Boton, Seccion, TarjetaProyecto, Vacio } from "@/components/ui";
@@ -9,29 +8,110 @@ import {
   getHitos,
   getNovedades,
   getTextos,
+  getUltimaEdicionTerminadaConGanadores,
   listarIdeas,
+  type Edicion,
+  type Estadisticas,
+  type IdeaVista,
 } from "@/db/queries";
-import { ETIQUETA_ETAPA, formatearFecha, formatearNumero, formatearRango } from "@/lib/formato";
+import { conEdicion } from "@/lib/ediciones";
+import {
+  ETIQUETA_ETAPA,
+  formatearFecha,
+  formatearNumero,
+  formatearRango,
+  hoyEnTucuman,
+} from "@/lib/formato";
+import { portadaSegunEtapa } from "@/lib/portada";
+
+/**
+ * Los ganadores que muestra la portada. Los de la edicion activa si ya voto; si
+ * no, los de la ultima que termino de votar (con la 2026 abierta, los 19 de
+ * 2025). Antes mostraba siempre los de la activa: con una edicion nueva, una
+ * grilla vacia y "Ver los 0 ganadores".
+ */
+type Destacados = {
+  anio: number;
+  /** El año para `?edicion` en los enlaces; null si son de la activa. */
+  anioEnEnlaces: number | null;
+  ideas: IdeaVista[];
+  /** Cuantos ganadores tiene esa edicion en total, para el boton. */
+  total: number;
+};
+
+async function destacados(
+  edicion: Edicion,
+  yaVoto: boolean,
+  stats: Promise<Estadisticas>,
+): Promise<Destacados | null> {
+  if (yaVoto) {
+    const [ideas, { ganadores }] = await Promise.all([
+      listarIdeas({ edicionId: edicion.id, soloGanadores: true, limite: 6 }),
+      stats,
+    ]);
+    return {
+      anio: edicion.anio,
+      anioEnEnlaces: null,
+      ideas,
+      total: ganadores,
+    };
+  }
+  // La activa todavia no voto, asi que la ultima que termino de votar es otra
+  // (ver getUltimaEdicionTerminadaConGanadores): nunca es la activa.
+  const anterior = await getUltimaEdicionTerminadaConGanadores();
+  if (!anterior) return null;
+  return {
+    anio: anterior.anio,
+    anioEnEnlaces: anterior.anio,
+    ideas: await listarIdeas({ edicionId: anterior.id, soloGanadores: true, limite: 6 }),
+    total: anterior.ganadores.length,
+  };
+}
 
 export default async function Home() {
   const edicion = await getEdicionActiva();
   if (!edicion) return <SinDatos />;
 
+  const portada = portadaSegunEtapa(edicion, hoyEnTucuman());
+  const pedidoStats = getEstadisticas(edicion);
   const [textos, stats, distritos, ganadores, hitos, novedades] = await Promise.all([
     getTextos(),
-    getEstadisticas(edicion),
+    pedidoStats,
     getDistritos(edicion.id),
-    listarIdeas({ edicionId: edicion.id, soloGanadores: true, limite: 6 }),
+    destacados(edicion, portada.yaVoto, pedidoStats),
     getHitos(edicion.id),
     getNovedades(3),
   ]);
 
   const t = (clave: string, defecto = "") => textos[clave] ?? defecto;
 
+  // Los numeros de la banda, segun lo que ya paso. Antes de votar no hay
+  // ganadores ni votos que contar, y "0 proyectos ganadores" se leia como un
+  // programa que no dio nada. Mientras se vota, los votos no se muestran: si se
+  // publican los parciales es una decision que falta tomar (ver README).
+  const numeros = portada.yaVoto
+    ? [
+        { valor: formatearNumero(stats.ideas), etiqueta: "ideas presentadas" },
+        { valor: String(stats.ganadores), etiqueta: "proyectos ganadores" },
+        { valor: formatearNumero(stats.votos), etiqueta: "votos registrados" },
+      ]
+    : edicion.etapa === "votacion"
+      ? [
+          {
+            valor: formatearNumero(stats.porEstado.factible ?? 0),
+            etiqueta: "proyectos en votación",
+          },
+        ]
+      : [{ valor: formatearNumero(stats.ideas), etiqueta: "ideas presentadas" }];
+
   return (
     <>
       {/* --- Portada ------------------------------------------------------- */}
-      <HeroInicio />
+      <HeroInicio
+        momento={portada.momento}
+        principal={portada.principal}
+        secundaria={portada.secundaria}
+      />
 
       {/*
         Los numeros de la edicion. Estaban dentro de la portada anterior; con la
@@ -45,12 +125,7 @@ export default async function Home() {
       >
         <div className="contenedor py-6">
           <dl className="flex flex-wrap items-baseline gap-x-10 gap-y-4">
-            {[
-              { valor: formatearNumero(stats.ideas), etiqueta: "ideas presentadas" },
-              { valor: String(stats.ganadores), etiqueta: "proyectos ganadores" },
-              { valor: formatearNumero(stats.votos), etiqueta: "votos registrados" },
-              { valor: "20", etiqueta: "distritos, uno por proyecto" },
-            ].map((item) => (
+            {[...numeros, { valor: "20", etiqueta: "distritos, uno por proyecto" }].map((item) => (
               <div key={item.etiqueta} className="flex items-baseline gap-2">
                 <dt className="sr-only">{item.etiqueta}</dt>
                 <dd className="flex items-baseline gap-2">
@@ -124,30 +199,60 @@ export default async function Home() {
             alto="32rem"
           />
           <p className="mt-4 text-xs" style={{ color: "var(--texto-suave)" }}>
-            Tocá un distrito o su número para ver sus ideas y su proyecto ganador.
-            {stats.distritosSinGanador.length > 0 && (
-              <>
-                {" "}
-                En esta edición el distrito {stats.distritosSinGanador.join(", ")} quedó sin
-                proyecto ganador.
-              </>
+            {/* Antes de votar, todos los distritos estan "sin ganador": decirlo
+                era anunciar que los 20 se habian quedado sin nada. */}
+            {portada.yaVoto
+              ? "Tocá un distrito o su número para ver sus ideas y su proyecto ganador."
+              : "Tocá un distrito o su número para ver sus ideas."}
+            {portada.yaVoto && stats.distritosSinGanador.length > 0 && (
+              <> {fraseSinGanador(stats.distritosSinGanador)}</>
             )}
           </p>
         </Seccion>
       </div>
 
       {/* --- Ganadores ---------------------------------------------------- */}
-      <Seccion
-        titulo="Los proyectos más votados"
-        bajada={`Cada distrito eligió su propio proyecto. Estos son los seis con más votos de la edición ${stats.anio}.`}
-        accion={<Boton href="/proyectos?ganadores=1" variante="secundario">Ver los {stats.ganadores} ganadores</Boton>}
-      >
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {ganadores.map((idea) => (
-            <TarjetaProyecto key={idea.slug} idea={idea} />
-          ))}
-        </div>
-      </Seccion>
+      {ganadores && ganadores.ideas.length > 0 ? (
+        <Seccion
+          titulo={
+            ganadores.anioEnEnlaces === null
+              ? "Los proyectos más votados"
+              : `Los ganadores de ${ganadores.anio}`
+          }
+          bajada={bajadaGanadores(ganadores, edicion.anio)}
+          accion={
+            <Boton
+              href={conEdicion("/proyectos?ganadores=1", ganadores.anioEnEnlaces)}
+              variante="secundario"
+            >
+              {ganadores.anioEnEnlaces === null
+                ? `Ver los ${ganadores.total} ganadores`
+                : `Ver los ${ganadores.total} ganadores de ${ganadores.anio}`}
+            </Boton>
+          }
+        >
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {ganadores.ideas.map((idea) => (
+              <TarjetaProyecto
+                key={idea.slug}
+                idea={idea}
+                edicionEnEnlaces={ganadores.anioEnEnlaces}
+              />
+            ))}
+          </div>
+        </Seccion>
+      ) : (
+        portada.yaVoto && (
+          // Ya voto pero todavia no se proclamo ningun ganador: el escrutinio
+          // esta en curso. Sin esto volvia "Ver los 0 ganadores".
+          <Seccion titulo="Los proyectos más votados">
+            <Vacio>
+              Los proyectos ganadores de la edición {edicion.anio} se publican acá apenas se
+              proclamen.
+            </Vacio>
+          </Seccion>
+        )
+      )}
 
       {/* --- Cronograma --------------------------------------------------- */}
       {hitos.length > 0 && (
@@ -204,6 +309,47 @@ export default async function Home() {
       </Seccion>
     </>
   );
+}
+
+/**
+ * "el distrito 7 quedó sin proyecto ganador", o "los distritos 2, 10 y 13
+ * quedaron…". Decia siempre "el distrito 2, 10, 13 quedó", en singular aunque
+ * fueran diez.
+ */
+function fraseSinGanador(distritos: number[]): string {
+  if (distritos.length === 1) {
+    return `En esta edición el distrito ${distritos[0]} quedó sin proyecto ganador.`;
+  }
+  const lista = new Intl.ListFormat("es", { type: "conjunction" }).format(distritos.map(String));
+  return `En esta edición los distritos ${lista} quedaron sin proyecto ganador.`;
+}
+
+/** Hasta seis, que es lo que muestra la grilla: "los seis con más votos". */
+const EN_LETRAS = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis"];
+
+/**
+ * La bajada de la seccion. No dice que los proyectos "estan en obra": el sitio
+ * no tiene cargado ningun avance, y la etapa "seguimiento" no lo garantiza.
+ */
+function bajadaGanadores(ganadores: Destacados, anioActivo: number): string {
+  const mostrados = ganadores.ideas.length;
+  const enLetras = (n: number) => EN_LETRAS[n] ?? String(n);
+  if (ganadores.anioEnEnlaces === null) {
+    const cuales =
+      ganadores.total > mostrados
+        ? `Estos son los ${enLetras(mostrados)} con más votos`
+        : ganadores.total === 1
+          ? "Este es el ganador"
+          : `Estos son los ${enLetras(ganadores.total)} ganadores`;
+    return `Cada distrito eligió su propio proyecto. ${cuales} de la edición ${ganadores.anio}.`;
+  }
+  const cuales =
+    ganadores.total > mostrados
+      ? `estos son los ${enLetras(mostrados)} más votados de los ${ganadores.total} proyectos que eligieron`
+      : ganadores.total === 1
+        ? "este es el proyecto que eligieron"
+        : `estos son los ${enLetras(ganadores.total)} proyectos que eligieron`;
+  return `Mientras avanza la edición ${anioActivo}, ${cuales} los vecinos en ${ganadores.anio}.`;
 }
 
 function SinDatos() {

@@ -51,6 +51,18 @@ la sección de administración una vez que estuvo armada. Están más abajo.
 > README, "Pendientes conocidos"). Y "la base está al día" es del 25/08: hoy hay
 > migraciones hasta la `0009`, y lo que tiene aplicado Supabase se mira con
 > `npx tsx scripts/ver-migraciones.ts`, que solo lee.
+>
+> **Fase 2 (25/09/2026).** Volvieron, rehechas, `/admin/equipo` (altas, bajas,
+> roles y restablecimientos que cortan las sesiones abiertas, con la bitácora del
+> equipo a la vista) y `/admin/contenido` (textos, preguntas frecuentes,
+> novedades, aviso urgente y reglamento), las dos solo para admin. El panel
+> además carga ideas (`/admin/ideas/nueva`) y, desde la ficha, las corrige y las
+> descarta. Las acciones de equipo y contenido que habían quedado sin llamador
+> se movieron a `src/app/admin/equipo/acciones.ts` y
+> `src/app/admin/contenido/acciones.ts`, y `crear-admin` quedó para la primera
+> cuenta y las emergencias. Siguen sin pantalla los montos y avances de obra
+> (`guardarPresupuestoIdea`, `crearAvance` y `borrarAvance`, todavía sin llamador
+> en `src/app/admin/acciones.ts`), `/admin/consultas` y `bitacora_sistema`.
 
 **La base está al día**: las cinco migraciones (`0000` a `0004`) aplicadas en
 Supabase, con su registro en `drizzle.__drizzle_migrations`. El esquema pasó de
@@ -170,7 +182,9 @@ junto con los duplicados que el ETL despublicó a propósito.
 Ahora filtra por defecto, con el mismo patrón que `listarIdeas`: el backoffice
 pide `{ incluirNoPublicadas: true }` de forma explícita. La firma pasó de
 `getIdea(slug, edicionId?)` a `getIdea(slug, filtro?)` — ningún llamador usaba
-el segundo parámetro.
+el segundo parámetro. (En la Fase 2 la edición volvió: hoy es
+`getIdea(slug, edicionId?, opciones?)`, porque el slug se repite entre
+ediciones y la ficha de una edición anterior se pide con `?edicion`.)
 
 Misma corrección en la herramienta `ubicar_barrio` del chatbot
 (`src/lib/chat-herramientas.ts`), que buscaba barrios sobre ideas sin publicar.
