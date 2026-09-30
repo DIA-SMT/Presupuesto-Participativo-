@@ -62,6 +62,17 @@ export function reporteConfigurado(entorno: Record<string, string | undefined> =
 
 const FECHA = /^\d{1,2}[.-]\d{1,2}[.-]\d{2,4}$/;
 const PAR_DE_ANIOS = /^(?:19|20)\d{2}[\s-]+(?:19|20)\d{2}$/;
+/**
+ * Palabras tras las que un 19xx/20xx es un anio ("edicion 2025", "en 2025", "mayo 2025").
+ * Tras cualquier otra es una altura de calle: "San Martin 2025", "Lavalle al 2025".
+ */
+const ANTES_DE_UN_ANIO = /^(?:a|año|años|anio|anios|ciclo|de|del|desde|durante|edicion|edición|el|en|entre|hasta|hacia|para|participativo|periodo|período|pp|presupuesto|y)$/;
+/** Un mes en mayuscula puede ser una calle ("24 de Septiembre 2025"): solo cuenta en minuscula. */
+const MES = /^(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)$/;
+
+function esAnio(palabra: string, numero: string): boolean {
+  return /^(?:19|20)\d{2}$/.test(numero) && (ANTES_DE_UN_ANIO.test(palabra.toLowerCase()) || MES.test(palabra));
+}
 
 /**
  * Tapa correos, numeros de 7 cifras o mas (DNI, telefonos), alturas de calle y
@@ -81,7 +92,9 @@ export function taparDatosPersonales(texto: string): string {
       return "[número]";
     })
     // Altura de calle ("Lavalle 1234"): una palabra seguida de 3 a 5 cifras que no son un anio.
-    .replace(/(\p{L}\.?\s+)(?!(?:19|20)\d{2}\b)\d{3,5}\b/gu, "$1[número]")
+    .replace(/(\p{L}+)(\.?\s+)(\d{3,5})\b/gu, (todo: string, palabra: string, separador: string, numero: string) =>
+      esAnio(palabra, numero) ? todo : `${palabra}${separador}[número]`,
+    )
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([,.;:!?])/g, "$1")
     .trim();

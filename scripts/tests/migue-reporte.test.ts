@@ -98,9 +98,22 @@ test("el filtro deja montos, fechas y anios, que son lo que se pregunta aca", as
     "se vota el 30-09-2026?",
     "que paso en la edicion 2025",
     "proyectos del distrito 12",
+    "cuando se vota en 2025?",
+    "el Presupuesto Participativo 2025",
+    "que se voto en septiembre 2024",
+    "proyectos entre 2023 y 2025",
   ]) {
     assert.equal(taparDatosPersonales(texto), texto, texto);
   }
+});
+
+test("una altura de calle que parece un anio igual se tapa", async () => {
+  const { taparDatosPersonales } = await modulo();
+  assert.equal(taparDatosPersonales("Vivo en San Martín 2025"), "Vivo en San Martín [número]");
+  assert.equal(taparDatosPersonales("vivo en lavalle al 1990, que proyectos hay?"), "vivo en lavalle al [número], que proyectos hay?");
+  assert.equal(taparDatosPersonales("mi casa es en Av. Mate de Luna 2010"), "mi casa es en Av. Mate de Luna [número]");
+  // Calle con nombre de fecha: el mes en mayuscula no cuenta como anio.
+  assert.equal(taparDatosPersonales("vivo en 24 de Septiembre 2025"), "vivo en 24 de Septiembre [número]");
 });
 
 test("la pregunta se recorta a 300 caracteres sin partir un emoji", async () => {
