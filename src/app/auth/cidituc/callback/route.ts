@@ -45,6 +45,25 @@ function volver(request: Request, motivo?: string): NextResponse {
   return respuesta;
 }
 
+/**
+ * La sugerencia de distrito, sin que un error la vuelva un problema. Es
+ * opcional: si no se puede calcular (la capa de barrios no se pudo leer, un
+ * barrio con un nombre raro), la persona elige su distrito sin sugerencia. Sin
+ * esto, cualquier falla aca caia en el catch del empadronamiento y la dejaba
+ * afuera con "No pudimos guardar tu empadronamiento", con el alta ya hecha.
+ */
+function sugerenciaSinCortar(barrio: string | null) {
+  try {
+    return sugerenciaDeDistrito(barrio);
+  } catch (causa) {
+    console.error(
+      "[cidituc] no se pudo sugerir el distrito:",
+      causa instanceof Error ? causa.message : causa,
+    );
+    return null;
+  }
+}
+
 export async function GET(request: Request) {
   const parametros = new URL(request.url).searchParams;
   const token = parametros.get("auth");
@@ -107,9 +126,7 @@ export async function GET(request: Request) {
       nombre: empadronado.nombre,
       // Solo si todavia no tiene distrito: a quien ya lo declaro no se le
       // propone otro.
-      sugerido: empadronado.distrito
-        ? null
-        : sugerenciaDeDistrito(resultado.persona.barrio),
+      sugerido: empadronado.distrito ? null : sugerenciaSinCortar(resultado.persona.barrio),
     });
   } catch (causa) {
     // Resumen siempre: sin esto, una base caida se ve igual que un token
