@@ -80,6 +80,20 @@
   --borde: #e2e8f0;
   --texto: #16202e;
   --texto-suave: #55627a;
+  /*
+   * Rellenos del grafico por distrito y de las barritas de las tarjetas del
+   * panel (src/app/admin/bandeja/panorama.tsx). Son colores de SUPERFICIE,
+   * nunca de texto: el amarillo de las ganadoras no pasa contraste como letra
+   * (para texto estan --ganador-texto, --marca-texto y --acento-texto). Siguen
+   * a la marca: el azul del isotipo para lo factible y su amarillo para lo
+   * ganador; lo que espera evaluacion va calido, lo que no sigue va gris.
+   */
+  --grafico-sin-evaluar: #f97316;
+  --grafico-factible: #0166ff;
+  --grafico-no-factible: #a9b4c4;
+  --grafico-integrada: #7c3aed;
+  --grafico-ganadora: #eac800;
+  --grafico-descartada: #d4dbe5;
   /* Colores del isotipo OFICIAL, muestreados de
      public/marca/logo-muni-iso.png (antes eran una aproximacion: #0a63f0,
      #2fa8fa, #f2d500). Hoy el logo se sirve como imagen, asi que ningun
@@ -174,6 +188,15 @@
     --color-cat-ambiental: #5fd18e;
     --color-cat-deportivo: #f0955a;
     --color-cat-urbana: #c3a5e8;
+    /* El violeta de "integrada" como texto: el de :root daba 2.4:1 aca. */
+    --color-estado-integrado: #c3a5e8;
+    /* Los rellenos del grafico del panel, mas claros para el fondo oscuro. */
+    --grafico-sin-evaluar: #fb923c;
+    --grafico-factible: #3b9eff;
+    --grafico-no-factible: #5b6b85;
+    --grafico-integrada: #a78bfa;
+    --grafico-ganadora: #f4dc00;
+    --grafico-descartada: #3b4a63;
     color-scheme: dark;
   }
 }
@@ -199,6 +222,15 @@
     --color-cat-ambiental: #5fd18e;
     --color-cat-deportivo: #f0955a;
     --color-cat-urbana: #c3a5e8;
+    /* El violeta de "integrada" como texto: el de :root daba 2.4:1 aca. */
+    --color-estado-integrado: #c3a5e8;
+    /* Los rellenos del grafico del panel, mas claros para el fondo oscuro. */
+    --grafico-sin-evaluar: #fb923c;
+    --grafico-factible: #3b9eff;
+    --grafico-no-factible: #5b6b85;
+    --grafico-integrada: #a78bfa;
+    --grafico-ganadora: #f4dc00;
+    --grafico-descartada: #3b4a63;
     color-scheme: dark;
 }
 

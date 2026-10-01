@@ -37,7 +37,6 @@ import type {
   ResumenBandeja,
 } from "@/db/queries";
 import { colorCategoria, formatearNumero } from "@/lib/formato";
-import { COLOR_ESTADO_TABLERO } from "../tablero/graficos";
 import type { Vista } from "./panel";
 
 /** Enlace a la bandeja con algunos parametros de la vista cambiados. */
@@ -81,6 +80,40 @@ export const ETIQUETA_SOLAPA: Record<EstadoIdea, string> = {
   descartado: "Descartadas",
 };
 
+/**
+ * Los colores de cada estado, en dos juegos porque pintan cosas distintas:
+ *
+ *  - RELLENO: las barras del grafico y las barritas de las tarjetas. Son los
+ *    tokens --grafico-* de src/app/globals.css, pensados para superficies y
+ *    con su propia version para el tema oscuro.
+ *  - TEXTO: el numero grande de cada tarjeta. Son los tokens de texto del
+ *    tema, que pasan contraste sobre la tarjeta en los dos temas; el amarillo
+ *    de las ganadoras, por ejemplo, como letra no se lee sobre blanco.
+ *
+ * No se reusa COLOR_ESTADO_TABLERO (../tablero/graficos.tsx): esos colores
+ * estan calculados para el anillo del tablero sobre fondo claro, y sobre el
+ * fondo oscuro del panel el violeta y el dorado se apagaban.
+ */
+const RELLENO_ESTADO: Record<EstadoIdea, string> = {
+  pendiente: "var(--grafico-sin-evaluar)",
+  borrador: "var(--grafico-sin-evaluar)",
+  factible: "var(--grafico-factible)",
+  no_factible: "var(--grafico-no-factible)",
+  integrado: "var(--grafico-integrada)",
+  ganador: "var(--grafico-ganadora)",
+  descartado: "var(--grafico-descartada)",
+};
+
+const TEXTO_ESTADO: Record<EstadoIdea, string> = {
+  pendiente: "var(--acento-texto)",
+  borrador: "var(--texto-suave)",
+  factible: "var(--marca-texto)",
+  no_factible: "var(--texto-suave)",
+  integrado: "var(--color-estado-integrado)",
+  ganador: "var(--ganador-texto)",
+  descartado: "var(--texto-suave)",
+};
+
 type Tramo = { clave: string; etiqueta: string; estados: EstadoIdea[]; color: string };
 
 /**
@@ -93,18 +126,18 @@ const TRAMOS: Tramo[] = [
     clave: "pendiente",
     etiqueta: "Sin evaluar",
     estados: ["pendiente", "borrador"],
-    color: COLOR_ESTADO_TABLERO.pendiente,
+    color: RELLENO_ESTADO.pendiente,
   },
-  { clave: "factible", etiqueta: "Factibles", estados: ["factible"], color: COLOR_ESTADO_TABLERO.factible },
+  { clave: "factible", etiqueta: "Factibles", estados: ["factible"], color: RELLENO_ESTADO.factible },
   {
     clave: "no_factible",
     etiqueta: "No factibles",
     estados: ["no_factible"],
-    color: COLOR_ESTADO_TABLERO.no_factible,
+    color: RELLENO_ESTADO.no_factible,
   },
-  { clave: "integrado", etiqueta: "Integradas", estados: ["integrado"], color: COLOR_ESTADO_TABLERO.integrado },
-  { clave: "ganador", etiqueta: "Ganadoras", estados: ["ganador"], color: COLOR_ESTADO_TABLERO.ganador },
-  { clave: "descartado", etiqueta: "Descartadas", estados: ["descartado"], color: "var(--borde-control)" },
+  { clave: "integrado", etiqueta: "Integradas", estados: ["integrado"], color: RELLENO_ESTADO.integrado },
+  { clave: "ganador", etiqueta: "Ganadoras", estados: ["ganador"], color: RELLENO_ESTADO.ganador },
+  { clave: "descartado", etiqueta: "Descartadas", estados: ["descartado"], color: RELLENO_ESTADO.descartado },
 ];
 
 /** Donde se recuerda que los graficos estan ocultos. Solo en este navegador. */
@@ -283,7 +316,8 @@ function TarjetasEstado({
               valor={panorama.porEstado[estado]}
               // Las descartadas no son parte del total: su porcentaje no dice nada.
               base={estado === "descartado" ? undefined : panorama.total}
-              color={COLOR_ESTADO_TABLERO[estado] ?? "var(--texto-suave)"}
+              color={TEXTO_ESTADO[estado]}
+              relleno={RELLENO_ESTADO[estado]}
               href={enlace({ estado: activo ? "" : estado })}
               activo={activo}
               detalle={
@@ -311,6 +345,7 @@ function TarjetaFiltro({
   valor,
   base,
   color,
+  relleno = color,
   href,
   activo,
   detalle,
@@ -320,7 +355,10 @@ function TarjetaFiltro({
   valor: number;
   /** Sobre que total se calcula el porcentaje. Sin base no hay porcentaje. */
   base?: number;
+  /** El color del numero grande: tiene que leerse como texto. */
   color: string;
+  /** El color de la barrita, si es distinto del numero (ver RELLENO_ESTADO). */
+  relleno?: string;
   href: string;
   activo: boolean;
   detalle?: string;
@@ -366,7 +404,7 @@ function TarjetaFiltro({
       </span>
       {proporcion !== null && (
         <span className="tarjeta-filtro-barra" aria-hidden="true">
-          <span style={{ width: `${proporcion * 100}%`, background: color }} />
+          <span style={{ width: `${proporcion * 100}%`, background: relleno }} />
         </span>
       )}
       {detalle && (
