@@ -10,6 +10,19 @@
       ],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "pp-smt-webpack",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--webpack",
+        "--port",
+        "3190"
+      ],
+      "port": 3190
     }
   ]
 }

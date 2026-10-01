@@ -15,9 +15,10 @@
  * correo y el rol de la sesion, que ya vienen resueltos desde layout.tsx.
  *
  * FORMA: una barra de solapas de texto, no una caja con nueve pastillas. El
- * estilo vive en `.solapa` (src/app/globals.css), compartido con la fila de
- * filtros de la bandeja; ahi esta escrito por que se dejaron las pastillas y
- * como queda el contraste. Lo que cambio aca:
+ * estilo vive en `.solapa` (src/app/globals.css); ahi esta escrito por que se
+ * dejaron las pastillas y como queda el contraste. (La bandeja uso estas
+ * mismas solapas para filtrar por estado hasta que paso a las tarjetas del
+ * panorama, bandeja/panorama.tsx.) Lo que cambio aca:
  *
  * - Los titulos de grupo ("EL PROCESO", "CONTENIDO DEL SITIO"…) ya no se
  *   dibujan: eran tres lineas de texto en mayuscula sostenida arriba de todo,

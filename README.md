@@ -30,7 +30,7 @@ desplegarse en **Vercel**.
 | Carga de ideas | `/ideas/nueva` | Formulario con selector de punto en el mapa; el distrito se deriva solo |
 | Votación | `/votar` | Empadronamiento con CIDITUC, un voto por persona en su distrito |
 | Chatbot (Migue) | botón flotante | Consultas sobre los proyectos, cómo presentar una idea y cómo votar, fechas, reglamento y novedades, con lo que publica el sitio |
-| Backoffice | `/admin` | Leer las propuestas, evaluarlas, exportarlas en PDF y mover la etapa; cargar las que llegan por otro canal, corregirlas o descartarlas; y, solo admin, el equipo y el contenido del sitio |
+| Backoffice | `/admin` | Leer las propuestas con un panorama de tarjetas y gráficos que filtran (por estado, distrito, categoría y seguimiento del trabajo), evaluarlas, exportarlas en PDF y mover la etapa; cargar las que llegan por otro canal, corregirlas o descartarlas; y, solo admin, el equipo y el contenido del sitio |
 | Datos abiertos | `/api/proyectos`, `/geo/distritos.geojson` | JSON/CSV de la edición vigente (u otra con `?edicion=AAAA`) y geometría oficial reutilizables |
 
 ## Cómo levantarlo (desarrollo)
