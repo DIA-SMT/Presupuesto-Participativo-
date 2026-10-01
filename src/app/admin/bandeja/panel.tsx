@@ -575,14 +575,25 @@ export default function PanelBandeja({
               </p>
             </div>
           ) : (
-            <div className="superficie mt-3 overflow-x-auto rounded-2xl">
+            // La tabla scrollea adentro de su caja, con el encabezado pegado
+            // arriba: 25 filas de dos renglones hacian una pagina de 1.500 px y
+            // el panorama, la ficha y el paginador quedaban a kilometros. 70vh
+            // deja ver unas doce filas y la caja termina antes del borde de la
+            // pantalla, asi se nota que hay mas abajo. Es una region con foco
+            // propio (tabIndex) para que se pueda scrollear con el teclado.
+            <div
+              className="superficie mt-3 max-h-[70vh] overflow-auto rounded-2xl"
+              role="region"
+              aria-label="Listado de ideas, con scroll propio"
+              tabIndex={0}
+            >
               <table className="w-full min-w-[56rem] border-collapse text-sm">
                 <caption className="sr-only">
                   Ideas de la edición {anio} con su estado, distrito, barrio, antigüedad, votos, si
                   tienen devolución escrita y si el autor dejó un dato de contacto
                 </caption>
                 <thead>
-                  <tr style={{ borderBottom: "2px solid var(--borde)" }}>
+                  <tr>
                     {COLUMNAS.map((columna) => {
                       const activa = columna.clave !== null && columna.clave === columnaActiva;
                       return (
@@ -598,9 +609,17 @@ export default function PanelBandeja({
                                   : "descending"
                                 : "none"
                           }
-                          className={`px-3 py-3 font-semibold ${
+                          // sticky va en cada th y no en el thead: Chrome no lo
+                          // respeta en el thead. Y con border-collapse el borde de
+                          // la fila no acompana al encabezado pegado, por eso la
+                          // linea de abajo es una sombra interior y no un border.
+                          className={`sticky top-0 z-10 px-3 py-3 font-semibold ${
                             columna.alDerecha ? "text-right" : "text-left"
                           }`}
+                          style={{
+                            background: "var(--fondo-tarjeta)",
+                            boxShadow: "inset 0 -2px 0 var(--borde)",
+                          }}
                         >
                           {columna.clave === null ? (
                             columna.etiqueta
