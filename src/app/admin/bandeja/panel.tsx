@@ -12,9 +12,10 @@
  * enviar cuando el estado elegido exige explicarle al vecino.
  *
  * Nada de lo interactivo depende de JavaScript para leer: el orden y la pagina
- * son enlaces comunes que resuelve el servidor, y el filtro sigue siendo un
- * form GET. Con JavaScript ese form filtra en vivo (ver usarFiltrosEnVivo) y el
- * boton "Filtrar" ni se dibuja; sin JavaScript aparece y funciona como antes.
+ * son enlaces comunes que resuelve el servidor, las tarjetas y los graficos del
+ * panorama (panorama.tsx) tambien, y el buscador sigue siendo un form GET. Con
+ * JavaScript el buscador busca en vivo (ver usarFiltrosEnVivo) y el boton
+ * "Buscar" ni se dibuja; sin JavaScript aparece y funciona como antes.
  *
  * Dato sensible: el mail del autor NUNCA llega a esta pantalla. De la base sale
  * solo `tieneContacto`, asi que la bandeja puede decir si hay con quien
@@ -34,6 +35,7 @@ import type {
   IdeaAdmin,
   InformeImpacto,
   OrdenBandeja,
+  PanoramaBandeja,
   ResumenBandeja,
   RolAdmin,
 } from "@/db/queries";
@@ -56,6 +58,7 @@ import UbicacionFicha from "../ideas/ficha-ubicacion";
 import BloqueCorreccion from "../ideas/formulario-correccion";
 import { BloqueDescarte, BloqueRestaurar } from "../ideas/formulario-descarte";
 import type { Limites } from "../ideas/limites";
+import Panorama, { FiltrosActivos } from "./panorama";
 
 /** La bandeja es la pantalla principal del panel. */
 const RUTA = "/admin";
@@ -67,45 +70,6 @@ const MINIMO_MOTIVO = 10;
 
 /** Los cuatro estados que se pueden fijar evaluando: "ganador" se proclama. */
 const ESTADOS_EVALUACION: EstadoIdea[] = ["pendiente", "factible", "no_factible", "integrado"];
-
-/**
- * Estados del filtro, en el orden en que se trabajan. Las descartadas van al
- * final y solo aparecen si se piden: sin filtro de estado la bandeja no las
- * trae (ver `listarIdeasBandeja`), para que una prueba o un spam no se mezcle
- * con el trabajo del equipo.
- */
-const ESTADOS_FILTRO: EstadoIdea[] = [
-  "pendiente",
-  "factible",
-  "no_factible",
-  "integrado",
-  "ganador",
-  "borrador",
-  "descartado",
-];
-
-/**
- * Las solapas que solo se muestran si tienen algo (o si estan elegidas): casi
- * nunca hay borradores, y las descartadas son la excepcion.
- */
-const SOLAPAS_OCASIONALES: EstadoIdea[] = ["borrador", "descartado"];
-
-/**
- * Etiquetas de la fila de solapas. Son mas cortas y en plural que las de
- * ETIQUETA_ESTADO (src/lib/formato.ts), que se siguen usando en la tabla, en la
- * ficha y en el sitio publico: ahi nombran el estado de UNA idea ("Integrada
- * con otra idea"), y aca encabezan un monton de ellas ("Integradas 2"). En una
- * fila de seis filtros, la etiqueta larga no entra sin romper el renglon.
- */
-const ETIQUETA_SOLAPA: Record<EstadoIdea, string> = {
-  pendiente: "Sin evaluar",
-  factible: "Factibles",
-  no_factible: "No factibles",
-  integrado: "Integradas",
-  ganador: "Ganadoras",
-  borrador: "Borradores",
-  descartado: "Descartadas",
-};
 
 const ETIQUETA_ACCION: Record<AccionRevision, string> = {
   evaluacion: "Evaluación",
@@ -138,9 +102,15 @@ type Resultado = { ok: true; mensaje?: string } | { ok: false; error: string };
 export type Vista = {
   estado: string;
   distrito: string;
+  /** Slug de la categoría, o "" para todas. */
+  categoria: string;
   q: string;
   /** Solo los "no" sin devolución escrita: la deuda con el vecino. */
   sinDevolucion: boolean;
+  /** Solo las que todavía no se ven en el sitio. */
+  sinPublicar: boolean;
+  /** Solo las que tienen un mail del autor para avisarle. */
+  conContacto: boolean;
   orden: OrdenBandeja;
   /** null = la dirección natural del orden elegido. */
   dir: DireccionOrden | null;
@@ -216,8 +186,11 @@ function armarEnlace(vista: Vista, cambios: Partial<Vista> = {}): string {
   const parametros = new URLSearchParams();
   if (proxima.estado) parametros.set("estado", proxima.estado);
   if (proxima.distrito) parametros.set("distrito", proxima.distrito);
+  if (proxima.categoria) parametros.set("categoria", proxima.categoria);
   if (proxima.q) parametros.set("q", proxima.q);
   if (proxima.sinDevolucion) parametros.set("sindevolucion", "1");
+  if (proxima.sinPublicar) parametros.set("publicada", "0");
+  if (proxima.conContacto) parametros.set("contacto", "1");
   if (proxima.orden !== "prioridad") parametros.set("orden", proxima.orden);
   if (proxima.dir) parametros.set("dir", proxima.dir);
   if (proxima.pagina > 1) parametros.set("pagina", String(proxima.pagina));
@@ -230,17 +203,17 @@ function armarEnlace(vista: Vista, cambios: Partial<Vista> = {}): string {
 const DEMORA_BUSQUEDA = 350;
 
 /**
- * Filtros que buscan solos, sin apretar un boton.
- *
- * Los selects y la casilla navegan apenas cambian; el buscador espera a que la
- * persona deje de escribir, para no disparar una consulta por tecla.
+ * El buscador busca solo, sin apretar un boton: espera a que la persona deje
+ * de escribir, para no disparar una consulta por tecla. Es el unico campo que
+ * queda como campo: el estado, el distrito, la categoria y las cuentas de
+ * trabajo se eligen tocando las tarjetas del panorama, que son enlaces comunes.
  *
  * Detalles que hacen la diferencia entre "anda" y "no molesta":
  *  - `router.replace` y no `push`: si cada tecla dejara una entrada, el boton
  *    de atras del navegador tendria que deshacer letra por letra en vez de
  *    salir de la bandeja.
- *  - cambiar un filtro vuelve SIEMPRE a la pagina 1: si estabas en la 4 de 100
- *    ideas y filtras a 3 resultados, la pagina 4 no existe.
+ *  - buscar vuelve SIEMPRE a la pagina 1: si estabas en la 4 de 100 ideas y
+ *    filtras a 3 resultados, la pagina 4 no existe.
  *  - la URL sigue siendo la fuente de verdad, asi que la vista se puede
  *    compartir por enlace y el boton de atras funciona.
  *  - mientras la persona escribe, la URL va atras del texto por la demora: por
@@ -251,27 +224,20 @@ function usarFiltrosEnVivo(vista: Vista) {
   const router = useRouter();
   const [pendiente, iniciarTransicion] = useTransition();
   const [montado, setMontado] = useState(false);
-  const [estado, setEstado] = useState(vista.estado);
-  const [distrito, setDistrito] = useState(vista.distrito);
   const [q, setQ] = useState(vista.q);
-  const [sinDevolucion, setSinDevolucion] = useState(vista.sinDevolucion);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ultimaVista = useRef(vista);
   ultimaVista.current = vista;
 
-  // Sin JavaScript el formulario sigue siendo un GET con su boton "Filtrar":
+  // Sin JavaScript el formulario sigue siendo un GET con su boton "Buscar":
   // el boton se esconde recien cuando este componente monto y puede navegar.
   useEffect(() => setMontado(true), []);
 
-  // La vista tambien cambia por fuera de estos campos: "Limpiar filtros", el
-  // boton de atras, o el enlace de una tarjeta del resumen. Los campos siguen a
-  // la URL.
+  // La busqueda tambien cambia por fuera del campo: la cruz de su chip, el
+  // boton de atras o "Limpiar todo". El campo sigue a la URL.
   useEffect(() => {
-    setEstado(vista.estado);
-    setDistrito(vista.distrito);
-    setSinDevolucion(vista.sinDevolucion);
     if (!temporizador.current) setQ(vista.q);
-  }, [vista.estado, vista.distrito, vista.q, vista.sinDevolucion]);
+  }, [vista.q]);
 
   useEffect(
     () => () => {
@@ -291,22 +257,7 @@ function usarFiltrosEnVivo(vista: Vista) {
   return {
     montado,
     pendiente,
-    estado,
-    distrito,
     q,
-    sinDevolucion,
-    cambiarEstado(valor: string) {
-      setEstado(valor);
-      navegar({ estado: valor });
-    },
-    cambiarDistrito(valor: string) {
-      setDistrito(valor);
-      navegar({ distrito: valor });
-    },
-    cambiarSinDevolucion(valor: boolean) {
-      setSinDevolucion(valor);
-      navegar({ sinDevolucion: valor });
-    },
     cambiarBusqueda(valor: string) {
       setQ(valor);
       if (temporizador.current) clearTimeout(temporizador.current);
@@ -326,12 +277,15 @@ function usarFiltrosEnVivo(vista: Vista) {
   };
 }
 
-/** Filtros en cero, para el enlace de "Limpiar filtros". */
+/** Filtros en cero, para "Limpiar todo" y para el aviso de la tabla vacia. */
 const VISTA_LIMPIA: Partial<Vista> = {
   estado: "",
   distrito: "",
+  categoria: "",
   q: "",
   sinDevolucion: false,
+  sinPublicar: false,
+  conContacto: false,
   pagina: 1,
   idea: "",
 };
@@ -378,7 +332,7 @@ export default function PanelBandeja({
   total,
   porPagina,
   votosRegistrados,
-  distritos,
+  panorama,
   vista,
   ficha,
   historial,
@@ -396,7 +350,8 @@ export default function PanelBandeja({
   total: number;
   porPagina: number;
   votosRegistrados: number;
-  distritos: { numero: number; nombre: string }[];
+  /** Los numeros de las tarjetas y los graficos, con el filtro de `vista` puesto. */
+  panorama: PanoramaBandeja;
   vista: Vista;
   ficha: IdeaAdmin | null;
   historial: FilaRevision[];
@@ -409,7 +364,6 @@ export default function PanelBandeja({
 }) {
   const soloLectura = rol === "lector";
   const filtros = usarFiltrosEnVivo(vista);
-  const deuda = resumen.noFactiblesSinDevolucion;
 
   const paginas = Math.max(1, Math.ceil(total / porPagina));
   const desde = total === 0 ? 0 : (vista.pagina - 1) * porPagina + 1;
@@ -433,8 +387,6 @@ export default function PanelBandeja({
       pagina: 1,
     });
   }
-
-  const hayFiltro = Boolean(vista.estado || vista.distrito || vista.q || vista.sinDevolucion);
 
   return (
     <div>
@@ -470,198 +422,81 @@ export default function PanelBandeja({
         </p>
       </header>
 
-      {/* --- La unica alerta de la pantalla: la deuda con el vecino -------- */}
-      {deuda > 0 ? (
-        <Link
-          href={enlaceFiltro({ estado: "", sinDevolucion: true })}
-          aria-current={vista.sinDevolucion ? "true" : undefined}
-          className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 rounded-2xl px-5 py-4"
-          style={{
-            background: "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
-            border: `1px solid color-mix(in srgb, var(--color-acento-600) ${
-              vista.sinDevolucion ? "80%" : "40%"
-            }, transparent)`,
-          }}
-        >
-          <div>
-            <p className="text-sm font-semibold" style={{ color: "var(--acento-texto)" }}>
-              {textoDeuda(deuda, resumen.porEstado.no_factible)}
-            </p>
-            <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-              Es lo que el equipo le debe al vecino: se le dijo que no sin explicarle por qué.
-            </p>
-          </div>
-          <span
-            className="text-sm font-semibold underline"
-            style={{ color: "var(--acento-texto)" }}
-          >
-            {vista.sinDevolucion
-              ? "Estás viendo solo esas"
-              : `Trabajar en esas ${formatearNumero(deuda)}`}
-          </span>
-        </Link>
-      ) : (
-        <p
-          className="mt-4 rounded-2xl px-5 py-3 text-sm font-semibold"
-          style={{
-            background: "color-mix(in srgb, var(--color-cat-ambiental) 8%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--color-cat-ambiental) 35%, transparent)",
-            color: "var(--color-cat-ambiental)",
-          }}
-        >
-          Ningún vecino tiene un “no” sin explicación: todas las ideas no factibles tienen su
-          devolución escrita.
-        </p>
-      )}
-
       {/*
-        --- El estado ES el filtro -----------------------------------------
-        Antes esto eran siete tarjetas con un numero grande cada una: se leian
-        como un tablero de metricas, no como controles, asi que no habia forma de
-        anticipar que tocarlas filtraba la lista. En una sola fila de solapas la
-        cuenta se lee de corrido y suma hasta el total sin tener que buscarlo.
+        --- El panorama: tarjetas y graficos que filtran -----------------
+        Las tarjetas por estado, las columnas por distrito, las categorias y
+        las cuentas de trabajo son los controles del filtro: cada una es un
+        enlace a esta misma pantalla con el filtro cambiado, y la elegida se
+        marca con borde, tilde y aria-current. Sus numeros se calculan con el
+        filtro puesto (ver getPanoramaBandeja), asi que la tarjeta elegida y el
+        "Mostrando X de Z" de la tabla siempre dicen lo mismo.
 
-        El label dice "De la edición" a proposito: los numeros salen de
-        `getResumenBandeja`, que cuenta la edicion entera y no sabe del filtro de
-        distrito ni de la busqueda por texto. Sin ese anclaje, filtrar por un
-        distrito dejaba una fila de numeros que no coincidian con la lista de
-        abajo. Cuantas filas trae el filtro real lo dice el "Mostrando X–Y de Z"
-        que esta arriba de la tabla.
+        Antes esto era una fila de solapas de texto mas dos selects, y antes de
+        eso siete tarjetas con un numero grande que nadie sospechaba que
+        filtraban. Las tarjetas volvieron porque el equipo quiso leer la bandeja
+        como un tablero, con la leccion aprendida: tienen que verse como
+        controles (relieve al pasar, borde en la elegida) y la fila "Filtros:"
+        con sus cruces, arriba de la tabla, dice siempre que esta filtrando.
       */}
-      <nav
-        aria-label="Filtrar por estado"
-        className="mt-5 flex flex-wrap items-end gap-x-1"
-        style={{ borderBottom: "1px solid var(--borde)" }}
-      >
-        <span className="mb-2 mr-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-          De la edición:
-        </span>
-        <ul className="-mb-px flex flex-wrap items-end">
-          <li>
-            <SolapaFiltro
-              etiqueta="Todas"
-              valor={resumen.total}
-              href={enlaceFiltro({ estado: "", sinDevolucion: false })}
-              activo={!vista.estado && !vista.sinDevolucion}
+      <Panorama panorama={panorama} resumen={resumen} vista={vista} enlace={enlaceFiltro} />
+
+      {/* --- Filtros puestos y buscador ----------------------------------- */}
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <FiltrosActivos
+          vista={vista}
+          categorias={panorama.porCategoria}
+          enlace={enlaceFiltro}
+          limpiar={armarEnlace(vista, VISTA_LIMPIA)}
+        />
+        <form
+          method="get"
+          action={RUTA}
+          // Con JavaScript el campo ya navego solo; el submit solo llega cuando
+          // alguien aprieta Enter, y ahi se busca sin esperar la demora.
+          onSubmit={(evento) => {
+            if (!filtros.montado) return;
+            evento.preventDefault();
+            filtros.buscarYa();
+          }}
+          className="flex flex-wrap items-end gap-3"
+        >
+          {/* El resto del filtro viaja escondido: sin JavaScript, buscar no
+              tiene que borrar la tarjeta elegida ni el orden. */}
+          {vista.estado && <input type="hidden" name="estado" value={vista.estado} />}
+          {vista.distrito && <input type="hidden" name="distrito" value={vista.distrito} />}
+          {vista.categoria && <input type="hidden" name="categoria" value={vista.categoria} />}
+          {vista.sinDevolucion && <input type="hidden" name="sindevolucion" value="1" />}
+          {vista.sinPublicar && <input type="hidden" name="publicada" value="0" />}
+          {vista.conContacto && <input type="hidden" name="contacto" value="1" />}
+          {vista.orden !== "prioridad" && <input type="hidden" name="orden" value={vista.orden} />}
+          {vista.dir && <input type="hidden" name="dir" value={vista.dir} />}
+
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium">Buscar</span>
+            <input
+              type="search"
+              name="q"
+              value={filtros.q}
+              onChange={(evento) => filtros.cambiarBusqueda(evento.target.value)}
+              placeholder="Título o barrio (con o sin tildes)…"
+              style={estiloCampo}
+              className="w-64 rounded-xl px-3 py-2"
             />
-          </li>
-          {/*
-            "Borradores" y "Descartadas" solo se muestran si existen (o si
-            estan elegidas): casi nunca hay ideas asi. "Todas" no suma las
-            descartadas; la de "Descartadas" las cuenta aparte.
-          */}
-          {ESTADOS_FILTRO.filter(
-            (estado) =>
-              !SOLAPAS_OCASIONALES.includes(estado) ||
-              resumen.porEstado[estado] > 0 ||
-              vista.estado === estado,
-          ).map((estado) => (
-            <li key={estado}>
-              <SolapaFiltro
-                etiqueta={ETIQUETA_SOLAPA[estado]}
-                valor={resumen.porEstado[estado]}
-                href={enlaceFiltro({ estado, sinDevolucion: false })}
-                activo={vista.estado === estado && !vista.sinDevolucion}
-              />
-            </li>
-          ))}
-        </ul>
-      </nav>
+          </label>
 
-      {/* --- Filtros ------------------------------------------------------- */}
-      <form
-        method="get"
-        action={RUTA}
-        // Con JavaScript los campos ya navegaron solos; el submit solo llega
-        // cuando alguien aprieta Enter, y ahi se busca sin esperar la demora.
-        onSubmit={(evento) => {
-          if (!filtros.montado) return;
-          evento.preventDefault();
-          filtros.buscarYa();
-        }}
-        className="mt-5 flex flex-wrap items-end gap-3"
-      >
-        {/* El orden elegido sobrevive al filtro; la página vuelve a la primera. */}
-        {vista.orden !== "prioridad" && <input type="hidden" name="orden" value={vista.orden} />}
-        {vista.dir && <input type="hidden" name="dir" value={vista.dir} />}
-
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Estado</span>
-          <select
-            name="estado"
-            value={filtros.estado}
-            onChange={(evento) => filtros.cambiarEstado(evento.target.value)}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          >
-            <option value="">Todos</option>
-            {ESTADOS_FILTRO.map((estado) => (
-              <option key={estado} value={estado}>
-                {ETIQUETA_ESTADO[estado] ?? estado}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Distrito</span>
-          <select
-            name="distrito"
-            value={filtros.distrito}
-            onChange={(evento) => filtros.cambiarDistrito(evento.target.value)}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          >
-            <option value="">Todos</option>
-            {distritos.map((distrito) => (
-              <option key={distrito.numero} value={distrito.numero}>
-                {distrito.nombre || `Distrito ${distrito.numero}`}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Buscar</span>
-          <input
-            type="search"
-            name="q"
-            value={filtros.q}
-            onChange={(evento) => filtros.cambiarBusqueda(evento.target.value)}
-            placeholder="Título o barrio (con o sin tildes)…"
-            style={estiloCampo}
-            className="w-64 rounded-xl px-3 py-2"
-          />
-        </label>
-
-        <label className="flex items-center gap-2 pb-2.5 text-sm">
-          <input
-            type="checkbox"
-            name="sindevolucion"
-            value="1"
-            checked={filtros.sinDevolucion}
-            onChange={(evento) => filtros.cambiarSinDevolucion(evento.target.checked)}
-          />
-          Solo los “no” sin devolución
-        </label>
-
-        {/* Sin JavaScript el filtro necesita su boton; con JavaScript los
-            campos ya buscan solos y el boton sobra. */}
-        {!filtros.montado && (
-          <button
-            type="submit"
-            className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
-            style={{ background: "var(--color-marca-700)" }}
-          >
-            Filtrar
-          </button>
-        )}
-        {hayFiltro && (
-          <Link href={armarEnlace(vista, VISTA_LIMPIA)} className="pb-3 text-sm underline">
-            Limpiar filtros
-          </Link>
-        )}
-      </form>
+          {/* Sin JavaScript el buscador necesita su boton; con JavaScript el
+              campo ya busca solo y el boton sobra. */}
+          {!filtros.montado && (
+            <button
+              type="submit"
+              className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
+              style={{ background: "var(--color-marca-700)" }}
+            >
+              Buscar
+            </button>
+          )}
+        </form>
+      </div>
 
       {/*
         La tabla y la ficha se ponen lado a lado SOLO desde 1536 px (2xl), no
@@ -692,16 +527,16 @@ export default function PanelBandeja({
                     }`}
               {/* Sin filtro de estado las descartadas no vienen: se avisa, para
                   que una busqueda que no encuentra un spam no parezca un error. */}
-              {!filtros.pendiente && !vista.estado && resumen.porEstado.descartado > 0 && (
+              {!filtros.pendiente && !vista.estado && panorama.porEstado.descartado > 0 && (
                 <>
                   {" · "}
                   <Link
                     href={enlaceFiltro({ estado: "descartado", sinDevolucion: false })}
                     className="underline"
                   >
-                    {resumen.porEstado.descartado === 1
+                    {panorama.porEstado.descartado === 1
                       ? "sin la descartada"
-                      : `sin las ${formatearNumero(resumen.porEstado.descartado)} descartadas`}
+                      : `sin las ${formatearNumero(panorama.porEstado.descartado)} descartadas`}
                   </Link>
                 </>
               )}
@@ -725,17 +560,6 @@ export default function PanelBandeja({
               </Link>
             )}
           </div>
-
-          {vista.sinDevolucion && (
-            // El numero de la alerta mide solo las no factibles (es el que el
-            // equipo viene mirando); el filtro suma tambien las integradas sin
-            // devolucion, asi que puede traer alguna fila mas. Se aclara en una
-            // linea para que nadie lo lea como un error de la cuenta.
-            <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-              Suma las integradas con otra idea, así que puede traer alguna fila más que el número
-              de arriba.
-            </p>
-          )}
 
           {filas.length === 0 ? (
             <div
@@ -985,50 +809,6 @@ export default function PanelBandeja({
       </div>
     </div>
   );
-}
-
-/**
- * Una solapa de la fila de filtros: la etiqueta del estado y cuántas ideas hay.
- * El estilo es el mismo `.solapa` de la barra de secciones del panel
- * (src/app/globals.css), asi que la fila se lee como un control y no como una
- * tarjeta de metrica.
- */
-function SolapaFiltro({
-  etiqueta,
-  valor,
-  href,
-  activo,
-}: {
-  etiqueta: string;
-  valor: number;
-  href: string;
-  activo: boolean;
-}) {
-  return (
-    <Link href={href} aria-current={activo ? "true" : undefined} className="solapa">
-      {etiqueta}
-      <span className="solapa-numero">{formatearNumero(valor)}</span>
-    </Link>
-  );
-}
-
-/**
- * El texto de la alerta de deuda. Dice siempre el subconjunto ("32 de las 32")
- * a proposito: antes la caja anunciaba "32 ideas no factibles sin devolución" y
- * tres centimetros abajo un contador decia "32 No factible", y no habia manera
- * de saber si era el mismo dato repetido o dos datos distintos que coincidian.
- *
- * Cuando la deuda es total —hoy lo es— no se dice "32 de las 32", que suena a
- * numero mal calculado, sino "ninguna tiene": es la misma cuenta dicha como la
- * diria una persona.
- */
-function textoDeuda(deuda: number, noFactibles: number): string {
-  if (deuda >= noFactibles) {
-    return noFactibles === 1
-      ? "La única idea no factible no tiene la devolución escrita"
-      : `Ninguna de las ${formatearNumero(noFactibles)} ideas no factibles tiene la devolución escrita`;
-  }
-  return `${formatearNumero(deuda)} de las ${formatearNumero(noFactibles)} ideas no factibles no tienen la devolución escrita`;
 }
 
 /** Un paso del paginador. Deshabilitado se dibuja como texto, no como enlace. */

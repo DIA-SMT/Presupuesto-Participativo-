@@ -313,20 +313,165 @@
   border-bottom-color: var(--color-marca-600);
 }
 
-/*
- * La cuenta que acompana a la etiqueta en las solapas de filtro ("Factibles
- * 47"). Va con cifras de ancho fijo para que los numeros no bailen al filtrar,
- * y con el color del texto principal: es el dato, no la etiqueta.
- */
-.solapa-numero {
-  margin-left: 0.375rem;
+/* ---------------------------------------------------------------------------
+ * Las tarjetas que filtran, las columnas por distrito y los chips de la
+ * bandeja del panel (src/app/admin/bandeja/panorama.tsx).
+ *
+ * Son ENLACES con forma de tarjeta, y la leccion de la primera version de la
+ * bandeja (siete tarjetas con un numero grande que nadie sospechaba que
+ * filtraban) esta escrita aca: tienen relieve al pasar el mouse, borde y
+ * sombra en la elegida ademas del tilde que pone el componente, y el foco de
+ * teclado es el general (:focus-visible). Nada se marca solo por color: la
+ * elegida lleva aria-current, el tilde y el borde.
+ * --------------------------------------------------------------------------- */
+.tarjeta-filtro {
+  display: block;
+  height: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: 1rem;
+  background: var(--fondo-tarjeta);
+  border: 1px solid var(--borde);
+  color: var(--texto);
+  transition:
+    border-color 120ms,
+    box-shadow 120ms,
+    transform 120ms;
+}
+
+.tarjeta-filtro:hover {
+  border-color: var(--borde-control);
+  transform: translateY(-1px);
+}
+
+.tarjeta-filtro[aria-current] {
+  border-color: var(--color-marca-600);
+  box-shadow:
+    inset 0 0 0 1px var(--color-marca-600),
+    0 0 0 3px color-mix(in srgb, var(--color-marca-600) 18%, transparent);
+}
+
+/* La deuda con el vecino: ambar mientras quede alguna, verde cuando no. */
+.tarjeta-filtro[data-tono="alerta"] {
+  background: color-mix(in srgb, var(--color-acento-600) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-acento-600) 40%, transparent);
+}
+
+.tarjeta-filtro[data-tono="ok"] {
+  background: color-mix(in srgb, var(--color-cat-ambiental) 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-cat-ambiental) 35%, transparent);
+}
+
+.tarjeta-filtro-tilde {
+  font-size: 0.7rem;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--marca-texto);
+}
+
+/* La barrita de proporcion. Es decorativa: el porcentaje va en texto al lado. */
+.tarjeta-filtro-barra {
+  display: block;
+  height: 0.3rem;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--borde);
+}
+
+.tarjeta-filtro-barra > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+/* Una columna del grafico por distrito: el numero arriba, la pila, la etiqueta. */
+.columna-distrito {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.125rem;
+  border-radius: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--texto-suave);
+  transition:
+    background-color 120ms,
+    opacity 120ms;
+}
+
+.columna-distrito:hover {
+  background: var(--fondo-suave);
   color: var(--texto);
 }
 
-.solapa[aria-current] .solapa-numero {
+.columna-distrito[aria-current] {
+  background: color-mix(in srgb, var(--color-marca-600) 12%, transparent);
   color: var(--marca-texto);
+  font-weight: 600;
+}
+
+/* Con un distrito elegido, los demas se apagan para que el elegido resalte. */
+.columna-distrito[data-apagada] {
+  opacity: 0.45;
+}
+
+.columna-distrito[data-apagada]:hover {
+  opacity: 1;
+}
+
+.columna-distrito-valor {
+  height: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* column-reverse: el primer tramo del DOM queda abajo, como en una pila. */
+.columna-distrito-pila {
+  display: flex;
+  flex-direction: column-reverse;
+  width: 100%;
+  max-width: 1.75rem;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--borde) 55%, transparent);
+}
+
+.columna-distrito-pila > span {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+}
+
+.columna-distrito-etiqueta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Un filtro puesto, arriba de la tabla. Tocarlo lo saca. */
+.chip-filtro {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--marca-texto);
+  background: color-mix(in srgb, var(--color-marca-600) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-marca-600) 35%, transparent);
+}
+
+.chip-filtro:hover {
+  border-color: var(--color-marca-600);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tarjeta-filtro,
+  .columna-distrito {
+    transition: none;
+  }
+
+  .tarjeta-filtro:hover {
+    transform: none;
+  }
 }
 
 /* Enlace de salto al contenido, visible solo al tabular. */

@@ -19,6 +19,7 @@ import {
   ne,
   or,
   sql,
+  type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -890,12 +891,18 @@ export type FiltroBandeja = {
    */
   estado?: EstadoIdea | EstadoIdea[];
   distrito?: number;
+  /** Slug de la categoria (`categorias.slug`). La page lo valida contra la lista. */
+  categoria?: string;
   texto?: string;
   /**
    * Solo los "no" sin devolucion escrita (`no_factible` o `integrado` con
    * `motivo_estado` vacio): la deuda del equipo con el vecino.
    */
   sinDevolucion?: boolean;
+  /** Solo las que todavia no se ven en el sitio. */
+  sinPublicar?: boolean;
+  /** Solo las que tienen un mail del autor para avisarle. El mail no sale. */
+  conContacto?: boolean;
   /** Por defecto "prioridad": primero lo que necesita trabajo del equipo. */
   orden?: OrdenBandeja;
   /** Sin esto, cada orden usa su direccion natural (ver `ORDENES`). */
@@ -962,6 +969,82 @@ const ORDENES: Record<
   estado: { columna: ideas.estado, porDefecto: "asc" },
 };
 
+/**
+ * Las dimensiones por las que filtra la bandeja, una por bloque del panorama
+ * (src/app/admin/bandeja/panorama.tsx). `getPanoramaBandeja` cuenta cada una
+ * SIN su propio filtro y con los demas puestos.
+ */
+export type DimensionBandeja =
+  | "estado"
+  | "distrito"
+  | "categoria"
+  | "sinDevolucion"
+  | "sinPublicar"
+  | "conContacto";
+
+/** Hay un mail del autor para avisarle. El dato en si nunca sale de la base. */
+const CON_CONTACTO = isNotNull(ideas.autorEmail);
+/** Todavia no se ve en el sitio. */
+const SIN_PUBLICAR = eq(ideas.publicada, false);
+
+/**
+ * Las condiciones del filtro de la bandeja, las mismas para el listado, para
+ * el total del paginador y para el panorama: si una cuenta se calculara
+ * distinto de como se lista, los numeros de las tarjetas dejarian de coincidir
+ * con la tabla. Valen sobre `ideas` con LEFT JOIN a `distritos` y a
+ * `categorias`, las dos tablas que participan de un filtro.
+ *
+ * `omitir` deja afuera dimensiones enteras. Es lo que hace posible que cada
+ * bloque del panorama cuente "cuantas filas habria si eligiera esto" en vez
+ * de repetir la cuenta del listado. Sin el estado no se aplica tampoco la
+ * barrera de las descartadas: el bloque por estado las cuenta en su propia
+ * clave, como `getResumenBandeja`.
+ */
+function condicionesBandeja(filtro: FiltroBandeja, omitir: DimensionBandeja[] = []): SQL[] {
+  const salvo = new Set(omitir);
+  const condiciones: SQL[] = [eq(ideas.edicionId, filtro.edicionId)];
+
+  if (!salvo.has("estado")) {
+    const estados = !filtro.estado
+      ? []
+      : Array.isArray(filtro.estado)
+        ? filtro.estado
+        : [filtro.estado];
+    condiciones.push(estados.length ? inArray(ideas.estado, estados) : NO_DESCARTADA);
+  }
+  if (!salvo.has("distrito") && filtro.distrito) {
+    condiciones.push(eq(distritos.numero, filtro.distrito));
+  }
+  if (!salvo.has("categoria") && filtro.categoria) {
+    condiciones.push(eq(categorias.slug, filtro.categoria));
+  }
+  if (!salvo.has("sinDevolucion") && filtro.sinDevolucion) condiciones.push(SIN_DEVOLUCION);
+  if (!salvo.has("sinPublicar") && filtro.sinPublicar) condiciones.push(SIN_PUBLICAR);
+  if (!salvo.has("conContacto") && filtro.conContacto) condiciones.push(CON_CONTACTO);
+
+  // La busqueda por texto no es una dimension del panorama: acota todo.
+  if (filtro.texto?.trim()) {
+    const texto = filtro.texto.trim();
+    const patron = `%${texto}%`;
+    const patronSinTildes = `%${normalizar(texto)}%`;
+    // Tres formas de encontrar lo mismo, porque el equipo escribe con y sin
+    // tildes y este proyecto no usa la extension unaccent:
+    //  - el titulo tal como esta cargado;
+    //  - el titulo con las tildes sacadas por `translate` (una vuelta de SQL,
+    //    sin extensiones; son ~100 ideas por edicion, no necesita indice);
+    //  - el barrio contra `barrio_normalizado`, que ya viene sin tildes.
+    const busqueda = or(
+      ilike(ideas.titulo, patron),
+      sql`translate(${ideas.titulo},
+        'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun') ILIKE ${patronSinTildes}`,
+      like(ideas.barrioNormalizado, patronSinTildes),
+    );
+    if (busqueda) condiciones.push(busqueda);
+  }
+
+  return condiciones;
+}
+
 export type FilaBandeja = {
   id: number;
   numero: number | null;
@@ -998,34 +1081,7 @@ export type PaginaBandeja = {
 export async function listarIdeasBandeja(
   filtro: FiltroBandeja,
 ): Promise<PaginaBandeja> {
-  const condiciones = [eq(ideas.edicionId, filtro.edicionId)];
-
-  const estados = !filtro.estado
-    ? []
-    : Array.isArray(filtro.estado)
-      ? filtro.estado
-      : [filtro.estado];
-  condiciones.push(estados.length ? inArray(ideas.estado, estados) : NO_DESCARTADA);
-  if (filtro.distrito) condiciones.push(eq(distritos.numero, filtro.distrito));
-  if (filtro.sinDevolucion) condiciones.push(SIN_DEVOLUCION);
-  if (filtro.texto?.trim()) {
-    const texto = filtro.texto.trim();
-    const patron = `%${texto}%`;
-    const patronSinTildes = `%${normalizar(texto)}%`;
-    // Tres formas de encontrar lo mismo, porque el equipo escribe con y sin
-    // tildes y este proyecto no usa la extension unaccent:
-    //  - el titulo tal como esta cargado;
-    //  - el titulo con las tildes sacadas por `translate` (una vuelta de SQL,
-    //    sin extensiones; son ~100 ideas por edicion, no necesita indice);
-    //  - el barrio contra `barrio_normalizado`, que ya viene sin tildes.
-    const busqueda = or(
-      ilike(ideas.titulo, patron),
-      sql`translate(${ideas.titulo},
-        'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun') ILIKE ${patronSinTildes}`,
-      like(ideas.barrioNormalizado, patronSinTildes),
-    );
-    if (busqueda) condiciones.push(busqueda);
-  }
+  const condiciones = condicionesBandeja(filtro);
 
   const { columna, porDefecto } = ORDENES[filtro.orden ?? "prioridad"];
   const ordenar = (filtro.dir ?? porDefecto) === "asc" ? asc : desc;
@@ -1062,12 +1118,13 @@ export async function listarIdeasBandeja(
     .orderBy(ordenar(columna), asc(ideas.createdAt), asc(ideas.id));
 
   // El total se cuenta aparte, con las MISMAS condiciones y sin limite: es lo
-  // que hace posible paginar. Solo necesita el join de distritos, que es el
-  // unico que participa de un filtro.
+  // que hace posible paginar. Solo necesita los joins de distritos y de
+  // categorias, los dos que participan de un filtro.
   const consultaTotal = db
     .select({ total: sql<number>`count(*)::int` })
     .from(ideas)
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
     .where(and(...condiciones));
 
   const desplazamiento = Math.max(0, Math.trunc(filtro.desplazamiento ?? 0));
@@ -1300,15 +1357,7 @@ export async function getResumenBandeja(edicionId: number): Promise<ResumenBande
        AND coalesce(btrim(motivo_estado), '') = ''
   `);
 
-  const porEstado: Record<EstadoIdea, number> = {
-    borrador: 0,
-    pendiente: 0,
-    factible: 0,
-    no_factible: 0,
-    integrado: 0,
-    ganador: 0,
-    descartado: 0,
-  };
+  const porEstado = estadosEnCero();
   let total = 0;
   for (const fila of filas) {
     const cantidad = Number(fila.cantidad);
@@ -1317,6 +1366,198 @@ export async function getResumenBandeja(edicionId: number): Promise<ResumenBande
   }
 
   return { total, porEstado, noFactiblesSinDevolucion: Number(deuda?.cantidad ?? 0) };
+}
+
+/** Todos los estados en cero, para rellenar lo que una cuenta agrupada no trae. */
+function estadosEnCero(): Record<EstadoIdea, number> {
+  return {
+    borrador: 0,
+    pendiente: 0,
+    factible: 0,
+    no_factible: 0,
+    integrado: 0,
+    ganador: 0,
+    descartado: 0,
+  };
+}
+
+export type DistritoPanorama = {
+  numero: number;
+  nombre: string;
+  /** Cuantas ideas del distrito hay en cada estado, con los demas filtros puestos. */
+  porEstado: Record<EstadoIdea, number>;
+  /** Suma de `porEstado`: lo que mostraria el listado al elegir este distrito. */
+  total: number;
+};
+
+export type CategoriaPanorama = { slug: string; nombre: string; cantidad: number };
+
+/**
+ * Los numeros de las tarjetas y los graficos de la bandeja, calculados con el
+ * filtro puesto. Ver `getPanoramaBandeja`.
+ */
+export type PanoramaBandeja = {
+  /** Ideas que matchean los demas filtros, sin las descartadas: la tarjeta "Todas". */
+  total: number;
+  /** Por estado, con las descartadas en su propia clave (fuera de `total`). */
+  porEstado: Record<EstadoIdea, number>;
+  /** Los 20 distritos siempre, con ceros, por numero. */
+  porDistrito: DistritoPanorama[];
+  /** Ideas sin distrito asignado: el grafico no las puede elegir; el listado si las trae. */
+  sinDistrito: number;
+  /** Todas las categorias, con ceros, en su orden. */
+  porCategoria: CategoriaPanorama[];
+  sinCategoria: number;
+  /** Las tres cuentas de seguimiento del trabajo. Cada una es un interruptor. */
+  trabajo: { sinDevolucion: number; sinPublicar: number; conContacto: number };
+};
+
+/**
+ * Lo que la bandeja muestra en sus tarjetas y graficos
+ * (src/app/admin/bandeja/panorama.tsx), con el filtro puesto.
+ *
+ * Cada bloque se cuenta SIN el filtro de su propia dimension y CON los de las
+ * demas (ver `condicionesBandeja`): la tarjeta "Factibles" dice cuantas
+ * factibles hay en el distrito y la categoria elegidos, y la columna del
+ * distrito 5 cuantas ideas del estado elegido tiene ese distrito. Asi la
+ * tarjeta elegida muestra siempre el mismo numero que el total del listado, y
+ * las demas dicen cuantas filas habria al cambiar de tarjeta. Con el filtro
+ * vacio es la foto de la edicion entera, la misma que `getResumenBandeja`.
+ *
+ * Las tres cuentas de trabajo son interruptores independientes: cada una se
+ * calcula sin su propio filtro pero con los otros dos puestos, en un solo
+ * SELECT con tres FILTER.
+ *
+ * Son seis consultas sobre ~100 filas por edicion, en paralelo.
+ */
+export async function getPanoramaBandeja(filtro: FiltroBandeja): Promise<PanoramaBandeja> {
+  const contar = sql<number>`count(*)::int`;
+  const condiciones = (omitir: DimensionBandeja[]) => and(...condicionesBandeja(filtro, omitir));
+
+  const propias = {
+    sinDevolucion: SIN_DEVOLUCION,
+    sinPublicar: SIN_PUBLICAR,
+    conContacto: CON_CONTACTO,
+  };
+  // La condicion de una cuenta de trabajo: la suya, mas las otras dos si
+  // estan puestas en el filtro.
+  const cuentaDeTrabajo = (propia: keyof typeof propias) => {
+    const partes = (Object.keys(propias) as (keyof typeof propias)[])
+      .filter((clave) => clave === propia || filtro[clave])
+      .map((clave) => propias[clave]);
+    return sql<number>`count(*) FILTER (WHERE ${and(...partes)})::int`;
+  };
+
+  const [
+    porEstadoFilas,
+    porDistritoFilas,
+    listaDistritos,
+    porCategoriaFilas,
+    listaCategorias,
+    [trabajo],
+  ] = await Promise.all([
+    db
+      .select({ estado: ideas.estado, cantidad: contar })
+      .from(ideas)
+      .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+      .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
+      .where(condiciones(["estado"]))
+      .groupBy(ideas.estado),
+    db
+      .select({ numero: distritos.numero, estado: ideas.estado, cantidad: contar })
+      .from(ideas)
+      .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+      .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
+      .where(condiciones(["distrito"]))
+      .groupBy(distritos.numero, ideas.estado),
+    db
+      .select({ numero: distritos.numero, nombre: distritos.nombre })
+      .from(distritos)
+      .orderBy(asc(distritos.numero)),
+    db
+      .select({ slug: categorias.slug, cantidad: contar })
+      .from(ideas)
+      .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+      .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
+      .where(condiciones(["categoria"]))
+      .groupBy(categorias.slug),
+    db
+      .select({ slug: categorias.slug, nombre: categorias.nombre })
+      .from(categorias)
+      .orderBy(asc(categorias.orden)),
+    db
+      .select({
+        sinDevolucion: cuentaDeTrabajo("sinDevolucion"),
+        sinPublicar: cuentaDeTrabajo("sinPublicar"),
+        conContacto: cuentaDeTrabajo("conContacto"),
+      })
+      .from(ideas)
+      .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+      .leftJoin(categorias, eq(categorias.id, ideas.categoriaId))
+      .where(condiciones(["sinDevolucion", "sinPublicar", "conContacto"])),
+  ]);
+
+  const porEstado = estadosEnCero();
+  let total = 0;
+  for (const fila of porEstadoFilas) {
+    const cantidad = Number(fila.cantidad);
+    porEstado[fila.estado] = cantidad;
+    if (fila.estado !== "descartado") total += cantidad;
+  }
+
+  const porDistrito: DistritoPanorama[] = listaDistritos.map((fila) => ({
+    numero: Number(fila.numero),
+    nombre: fila.nombre,
+    porEstado: estadosEnCero(),
+    total: 0,
+  }));
+  let sinDistrito = 0;
+  for (const fila of porDistritoFilas) {
+    const cantidad = Number(fila.cantidad);
+    const distrito =
+      fila.numero === null
+        ? undefined
+        : porDistrito.find((candidato) => candidato.numero === Number(fila.numero));
+    if (!distrito) {
+      sinDistrito += cantidad;
+      continue;
+    }
+    distrito.porEstado[fila.estado] = cantidad;
+    distrito.total += cantidad;
+  }
+
+  const porCategoria: CategoriaPanorama[] = listaCategorias.map((fila) => ({
+    slug: fila.slug,
+    nombre: fila.nombre,
+    cantidad: 0,
+  }));
+  let sinCategoria = 0;
+  for (const fila of porCategoriaFilas) {
+    const cantidad = Number(fila.cantidad);
+    const categoria =
+      fila.slug === null
+        ? undefined
+        : porCategoria.find((candidata) => candidata.slug === fila.slug);
+    if (!categoria) {
+      sinCategoria += cantidad;
+      continue;
+    }
+    categoria.cantidad = cantidad;
+  }
+
+  return {
+    total,
+    porEstado,
+    porDistrito,
+    sinDistrito,
+    porCategoria,
+    sinCategoria,
+    trabajo: {
+      sinDevolucion: Number(trabajo?.sinDevolucion ?? 0),
+      sinPublicar: Number(trabajo?.sinPublicar ?? 0),
+      conContacto: Number(trabajo?.conContacto ?? 0),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

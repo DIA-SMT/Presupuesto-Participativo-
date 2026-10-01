@@ -4,9 +4,9 @@ import {
   distritoDeCoordenada,
   getCandidatasIntegracion,
   getCategorias,
-  getDistritos,
   getEdicionActiva,
   getIdeaAdmin,
+  getPanoramaBandeja,
   getResumenBandeja,
   getInformeImpacto,
   getRevisiones,
@@ -14,6 +14,7 @@ import {
   listarIdeasBandeja,
   ordenBandeja,
   type EstadoIdea,
+  type FiltroBandeja,
   type PaginaBandeja,
 } from "@/db/queries";
 import { getSesionAdmin } from "@/lib/sesion";
@@ -31,6 +32,11 @@ import { limitesDeLaIdea } from "./ideas/limites";
  * y la idea abierta viajan en el querystring (no en estado del cliente) por dos
  * razones: el enlace de una busqueda se puede compartir dentro del equipo, y
  * despues de cada accion la ficha y el historial se releen de la base.
+ *
+ * Arriba de la tabla va el panorama (bandeja/panorama.tsx): tarjetas y
+ * graficos que son, a la vez, los controles del filtro. Sus numeros salen de
+ * `getPanoramaBandeja` con el MISMO filtro que el listado, asi que la tarjeta
+ * elegida y el "Mostrando X de Z" de la tabla dicen lo mismo.
  *
  * El selector de etapa no se renderiza aca a proposito: es la accion mas
  * peligrosa del panel (cambia lo que ve todo el sitio) y vive en
@@ -59,8 +65,11 @@ type Props = {
   searchParams: Promise<{
     estado?: string;
     distrito?: string;
+    categoria?: string;
     q?: string;
     sindevolucion?: string;
+    publicada?: string;
+    contacto?: string;
     orden?: string;
     dir?: string;
     pagina?: string;
@@ -85,6 +94,20 @@ export default async function AdminIdeas({ searchParams }: Props) {
   const distrito = Number.isInteger(pedido) && pedido >= 1 && pedido <= 20 ? pedido : undefined;
   const texto = parametros.q?.trim() ? parametros.q.trim() : undefined;
   const sinDevolucion = parametros.sindevolucion === "1";
+  // "publicada=0" son las que todavia no se ven en el sitio; "contacto=1" las
+  // que dejaron un mail. Son las tarjetas de trabajo del panorama.
+  const sinPublicar = parametros.publicada === "0";
+  const conContacto = parametros.contacto === "1";
+  // Las categorias se piden siempre: validan el filtro `categoria` del
+  // querystring (lo que no esta en la lista se ignora) y las necesita la ficha
+  // para corregir una idea. Son tres filas.
+  const categorias = (await getCategorias()).map((categoria) => ({
+    slug: categoria.slug,
+    nombre: categoria.nombre,
+  }));
+  const categoria = categorias.some((fila) => fila.slug === parametros.categoria)
+    ? parametros.categoria
+    : undefined;
   // Las dos funciones validan contra la lista blanca de queries.ts: lo que no
   // esta en la lista cae al orden de trabajo y a su direccion natural.
   const orden = ordenBandeja(parametros.orden);
@@ -93,23 +116,31 @@ export default async function AdminIdeas({ searchParams }: Props) {
   const paginaPedida = Number(parametros.pagina);
   const primera = Number.isInteger(paginaPedida) && paginaPedida > 0 ? paginaPedida : 1;
 
+  // El mismo filtro para el listado, el total del paginador y el panorama.
+  const filtro: FiltroBandeja = {
+    edicionId: edicion.id,
+    estado,
+    distrito,
+    categoria,
+    texto,
+    sinDevolucion,
+    sinPublicar,
+    conContacto,
+    orden,
+    dir,
+  };
+
   const consultarPagina = (pagina: number): Promise<PaginaBandeja> =>
     listarIdeasBandeja({
-      edicionId: edicion.id,
-      estado,
-      distrito,
-      texto,
-      sinDevolucion,
-      orden,
-      dir,
+      ...filtro,
       limite: POR_PAGINA,
       desplazamiento: (pagina - 1) * POR_PAGINA,
     });
 
-  const [resumen, votosRegistrados, distritosEdicion] = await Promise.all([
+  const [resumen, panorama, votosRegistrados] = await Promise.all([
     getResumenBandeja(edicion.id),
+    getPanoramaBandeja(filtro),
     getVotosRegistrados(edicion.id),
-    getDistritos(edicion.id),
   ]);
 
   // Una pagina fuera de rango (un marcador viejo, o un filtro que se achico)
@@ -140,15 +171,14 @@ export default async function AdminIdeas({ searchParams }: Props) {
   // oficial: el navegador no la tiene cargada hasta que dibuja el mapa.
   let extras: ExtrasFicha | null = null;
   if (ficha) {
-    const [categorias, candidatas, distritoDelPunto] = await Promise.all([
-      getCategorias(),
+    const [candidatas, distritoDelPunto] = await Promise.all([
       getCandidatasIntegracion(edicion.id, ficha.id),
       ficha.lat === null || ficha.lon === null
         ? Promise.resolve(null)
         : distritoDeCoordenada(ficha.lat, ficha.lon),
     ]);
     extras = {
-      categorias: categorias.map((categoria) => ({ slug: categoria.slug, nombre: categoria.nombre })),
+      categorias,
       candidatas,
       distritoDelPunto,
       limites: limitesDeLaIdea(),
@@ -160,16 +190,19 @@ export default async function AdminIdeas({ searchParams }: Props) {
       anio={edicion.anio}
       etapa={edicion.etapa}
       resumen={resumen}
+      panorama={panorama}
       filas={resultado.filas}
       total={resultado.total}
       porPagina={POR_PAGINA}
       votosRegistrados={votosRegistrados}
-      distritos={distritosEdicion.map((d) => ({ numero: d.numero, nombre: d.nombre }))}
       vista={{
         estado: estado ?? "",
         distrito: distrito ? String(distrito) : "",
+        categoria: categoria ?? "",
         q: texto ?? "",
         sinDevolucion,
+        sinPublicar,
+        conContacto,
         orden,
         dir: dir ?? null,
         pagina,
