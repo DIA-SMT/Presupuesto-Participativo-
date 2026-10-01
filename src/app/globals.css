@@ -384,35 +384,83 @@
   border-radius: inherit;
 }
 
-/* Una columna del grafico por distrito: el numero arriba, la pila, la etiqueta. */
+/*
+ * El grafico por distrito: la pieza central del panorama, a todo el ancho.
+ * Las medidas de la columna viven como variables aca para que las guias
+ * horizontales (dibujadas aparte, detras de las columnas) caigan exactamente
+ * sobre la franja de la pila: arriba de ella van el relleno y el numero.
+ */
+.grafico-distritos {
+  --alto-pila: 10rem;
+  --alto-valor: 1.25rem;
+  --separacion: 0.3rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-marca-600) 7%, var(--fondo-tarjeta)) 0%,
+    var(--fondo-tarjeta) 60%
+  );
+  border: 1px solid color-mix(in srgb, var(--color-marca-600) 22%, var(--borde));
+}
+
+.grafico-distritos-guias {
+  position: absolute;
+  top: calc(var(--separacion) + var(--alto-valor) + var(--separacion));
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: var(--alto-pila);
+  pointer-events: none;
+}
+
+.grafico-distritos-guias > span {
+  display: block;
+  height: 0;
+  border-top: 1px dashed color-mix(in srgb, var(--borde) 80%, transparent);
+}
+
+/* La ultima guia es la base de las columnas: entera, no punteada. */
+.grafico-distritos-guias > span:last-child {
+  border-top-style: solid;
+  border-top-color: var(--borde);
+}
+
+/* Una columna: el numero arriba, la pila, la etiqueta. Es un enlace. */
 .columna-distrito {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.125rem;
-  border-radius: 0.5rem;
-  font-size: 0.7rem;
+  gap: var(--separacion);
+  padding: var(--separacion) 0.125rem;
+  border-radius: 0.625rem;
+  font-size: 0.75rem;
   color: var(--texto-suave);
   transition:
     background-color 120ms,
+    box-shadow 120ms,
     opacity 120ms;
 }
 
 .columna-distrito:hover {
-  background: var(--fondo-suave);
+  background: color-mix(in srgb, var(--color-marca-600) 7%, transparent);
   color: var(--texto);
+}
+
+.columna-distrito:hover .columna-distrito-pila {
+  filter: brightness(1.12);
 }
 
 .columna-distrito[aria-current] {
   background: color-mix(in srgb, var(--color-marca-600) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-marca-600) 45%, transparent);
   color: var(--marca-texto);
   font-weight: 600;
 }
 
 /* Con un distrito elegido, los demas se apagan para que el elegido resalte. */
 .columna-distrito[data-apagada] {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .columna-distrito[data-apagada]:hover {
@@ -420,19 +468,28 @@
 }
 
 .columna-distrito-valor {
-  height: 1rem;
+  height: var(--alto-valor);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: var(--alto-valor);
+  color: var(--texto);
   font-variant-numeric: tabular-nums;
 }
 
-/* column-reverse: el primer tramo del DOM queda abajo, como en una pila. */
+/*
+ * column-reverse: el primer tramo del DOM queda abajo, como en una pila. El
+ * fondo es transparente para que se vean las guias; cada tramo se separa del
+ * siguiente con un hilo del color de la tarjeta y el de arriba va redondeado.
+ */
 .columna-distrito-pila {
   display: flex;
   flex-direction: column-reverse;
   width: 100%;
-  max-width: 1.75rem;
+  max-width: 2.75rem;
+  height: var(--alto-pila);
   overflow: hidden;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--borde) 55%, transparent);
+  border-radius: 6px 6px 2px 2px;
+  transition: filter 120ms;
 }
 
 .columna-distrito-pila > span {
@@ -441,8 +498,32 @@
   min-height: 2px;
 }
 
+.columna-distrito-pila > span + span {
+  border-bottom: 1px solid var(--fondo-tarjeta);
+}
+
 .columna-distrito-etiqueta {
   font-variant-numeric: tabular-nums;
+}
+
+/* Una entrada de la leyenda del grafico: color, nombre del tramo y su total. */
+.leyenda-tramo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--fondo-suave);
+  border: 1px solid var(--borde);
+}
+
+.leyenda-tramo > span:first-child {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
 }
 
 /* Un filtro puesto, arriba de la tabla. Tocarlo lo saca. */

@@ -107,9 +107,6 @@ const TRAMOS: Tramo[] = [
   { clave: "descartado", etiqueta: "Descartadas", estados: ["descartado"], color: "var(--borde-control)" },
 ];
 
-/** Alto de las columnas, en rem. Entra al lado de las tarjetas sin empujar la tabla. */
-const ALTO_COLUMNAS = 7;
-
 /** Donde se recuerda que los graficos estan ocultos. Solo en este navegador. */
 const CLAVE_GRAFICOS = "pp-bandeja-graficos";
 
@@ -211,10 +208,13 @@ export default function Panorama({
         </button>
       </div>
 
-      <div
-        id="panorama-graficos"
-        className={`mt-3 grid gap-4 ${graficos ? "xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : ""}`}
-      >
+      {/*
+        El grafico por distrito va solo, a todo el ancho: es la pieza central
+        del panorama (el programa se decide distrito por distrito) y en una
+        columna angosta sus veinte barras quedaban finitas y mudas. Las
+        categorias y el trabajo van debajo, lado a lado.
+      */}
+      <div id="panorama-graficos" className="mt-3 grid gap-4">
         {graficos && (
           <ColumnasDistrito
             distritos={panorama.porDistrito}
@@ -223,7 +223,7 @@ export default function Panorama({
             enlace={enlace}
           />
         )}
-        <div className="grid content-start gap-4">
+        <div className={`grid gap-4 ${graficos ? "xl:grid-cols-2" : ""}`}>
           {graficos && <TarjetasCategoria panorama={panorama} vista={vista} enlace={enlace} />}
           <TarjetasTrabajo panorama={panorama} vista={vista} enlace={enlace} />
         </div>
@@ -386,6 +386,33 @@ function cantidadDelTramo(distrito: DistritoPanorama, tramo: Tramo): number {
   return tramo.estados.reduce((suma, estado) => suma + distrito.porEstado[estado], 0);
 }
 
+const listaEnCastellano = new Intl.ListFormat("es", { type: "conjunction" });
+
+/**
+ * Una linea que lee el grafico por la persona: donde se concentran las ideas
+ * y que distritos no tienen ninguna. Es el dato que el equipo busca con la
+ * vista cuando mira las veinte columnas, dicho con palabras.
+ */
+function fraseDistritos(distritos: DistritoPanorama[], total: number): string | null {
+  if (total === 0) return null;
+  const maximo = Math.max(...distritos.map((distrito) => distrito.total));
+  const punteros = distritos.filter((d) => d.total === maximo).map((d) => `D${d.numero}`);
+  const vacios = distritos.filter((d) => d.total === 0).map((d) => `D${d.numero}`);
+
+  let frase =
+    punteros.length === 1
+      ? total === 1
+        ? `La única idea es de ${punteros[0]}`
+        : `${punteros[0]} concentra ${formatearNumero(maximo)} de las ${formatearNumero(total)} ideas`
+      : `${listaEnCastellano.format(punteros)} concentran ${formatearNumero(maximo)} cada uno`;
+  if (vacios.length > 0 && vacios.length <= 4) {
+    frase += ` · sin ideas: ${listaEnCastellano.format(vacios)}`;
+  } else if (vacios.length > 4) {
+    frase += ` · ${vacios.length} distritos sin ideas`;
+  }
+  return frase;
+}
+
 function ColumnasDistrito({
   distritos,
   sinDistrito,
@@ -400,22 +427,32 @@ function ColumnasDistrito({
   const elegido = vista.distrito ? Number(vista.distrito) : null;
   const total = distritos.reduce((suma, distrito) => suma + distrito.total, 0);
   const maximo = Math.max(1, ...distritos.map((distrito) => distrito.total));
-  // La leyenda nombra solo los tramos que aparecen en alguna columna.
-  const tramos = TRAMOS.filter((tramo) =>
-    distritos.some((distrito) => cantidadDelTramo(distrito, tramo) > 0),
-  );
+  // La leyenda nombra solo los tramos que aparecen en alguna columna, con su
+  // suma: asi tambien se lee cuantas hay de cada tipo en todo el grafico.
+  const tramos = TRAMOS.map((tramo) => ({
+    tramo,
+    suma: distritos.reduce((suma, distrito) => suma + cantidadDelTramo(distrito, tramo), 0),
+  })).filter((parte) => parte.suma > 0);
+  const resumen = fraseDistritos(distritos, total);
 
   return (
-    <section className="superficie rounded-2xl p-4" aria-labelledby="panorama-distritos">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id="panorama-distritos" className="text-sm font-semibold">
-          Ideas por distrito
-        </h2>
-        <p className="text-xs" style={suave}>
-          {elegido === null
-            ? "Tocá una columna para ver solo ese distrito"
-            : `Viendo el distrito ${elegido}; tocalo de nuevo para ver todos`}
-        </p>
+    <section className="grafico-distritos rounded-2xl p-5" aria-labelledby="panorama-distritos">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
+        <div>
+          <h2 id="panorama-distritos" className="text-base font-bold">
+            Ideas por distrito
+          </h2>
+          <p className="mt-0.5 text-xs" style={suave}>
+            {elegido === null
+              ? "Tocá una columna para ver solo ese distrito"
+              : `Viendo el distrito ${elegido}; tocalo de nuevo para ver todos`}
+          </p>
+        </div>
+        {resumen && (
+          <p className="text-sm font-medium" aria-live="polite">
+            {resumen}
+          </p>
+        )}
       </div>
 
       {total === 0 && elegido === null ? (
@@ -424,73 +461,82 @@ function ColumnasDistrito({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <ol
-            className="mt-3 flex min-w-[34rem] items-end gap-1"
-            aria-label="Un enlace por distrito; cada uno filtra el listado"
-          >
-            {distritos.map((distrito) => {
-              const activo = elegido === distrito.numero;
-              const apagado = elegido !== null && !activo;
-              const partes = TRAMOS.map((tramo) => ({
-                tramo,
-                cantidad: cantidadDelTramo(distrito, tramo),
-              })).filter((parte) => parte.cantidad > 0);
-              const detalle = partes
-                .map((parte) => `${formatearNumero(parte.cantidad)} ${parte.tramo.etiqueta.toLowerCase()}`)
-                .join(", ");
-              const lectura =
-                `Distrito ${distrito.numero}, ${distrito.nombre}: ${formatearNumero(distrito.total)} ${
-                  distrito.total === 1 ? "idea" : "ideas"
-                }` +
-                (detalle ? ` (${detalle})` : "") +
-                (activo ? ". Filtro puesto: tocá para sacarlo." : ". Tocá para ver solo este distrito.");
-              return (
-                <li key={distrito.numero} className="min-w-0 flex-1">
-                  <Link
-                    href={enlace({ distrito: activo ? "" : String(distrito.numero) })}
-                    scroll={false}
-                    aria-current={activo ? "true" : undefined}
-                    aria-label={lectura}
-                    title={`D${distrito.numero} · ${distrito.nombre}: ${formatearNumero(distrito.total)}`}
-                    className="columna-distrito"
-                    data-apagada={apagado || undefined}
-                  >
-                    <span className="columna-distrito-valor" aria-hidden="true">
-                      {distrito.total > 0 ? formatearNumero(distrito.total) : ""}
-                    </span>
-                    <span
-                      className="columna-distrito-pila"
-                      style={{ height: `${ALTO_COLUMNAS}rem` }}
-                      aria-hidden="true"
+          {/*
+            Las guias horizontales son decorativas (un cuarto del maximo cada
+            una) y van debajo de las columnas, en la franja que ocupa la pila:
+            las medidas salen de las variables de `.grafico-distritos`.
+          */}
+          <div className="relative mt-5 min-w-[34rem]">
+            <div className="grafico-distritos-guias" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <ol
+              className="relative flex items-end gap-1.5"
+              aria-label="Un enlace por distrito; cada uno filtra el listado"
+            >
+              {distritos.map((distrito) => {
+                const activo = elegido === distrito.numero;
+                const apagado = elegido !== null && !activo;
+                const partes = TRAMOS.map((tramo) => ({
+                  tramo,
+                  cantidad: cantidadDelTramo(distrito, tramo),
+                })).filter((parte) => parte.cantidad > 0);
+                const detalle = partes
+                  .map((parte) => `${formatearNumero(parte.cantidad)} ${parte.tramo.etiqueta.toLowerCase()}`)
+                  .join(", ");
+                const lectura =
+                  `Distrito ${distrito.numero}, ${distrito.nombre}: ${formatearNumero(distrito.total)} ${
+                    distrito.total === 1 ? "idea" : "ideas"
+                  }` +
+                  (detalle ? ` (${detalle})` : "") +
+                  (activo ? ". Filtro puesto: tocá para sacarlo." : ". Tocá para ver solo este distrito.");
+                return (
+                  <li key={distrito.numero} className="min-w-0 flex-1">
+                    <Link
+                      href={enlace({ distrito: activo ? "" : String(distrito.numero) })}
+                      scroll={false}
+                      aria-current={activo ? "true" : undefined}
+                      aria-label={lectura}
+                      title={`D${distrito.numero} · ${distrito.nombre}: ${formatearNumero(distrito.total)}`}
+                      className="columna-distrito"
+                      data-apagada={apagado || undefined}
                     >
-                      {partes.map(({ tramo, cantidad }) => (
-                        <span
-                          key={tramo.clave}
-                          style={{ height: `${(cantidad / maximo) * 100}%`, background: tramo.color }}
-                        />
-                      ))}
-                    </span>
-                    <span className="columna-distrito-etiqueta" aria-hidden="true">
-                      D{distrito.numero}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ol>
+                      <span className="columna-distrito-valor" aria-hidden="true">
+                        {distrito.total > 0 ? formatearNumero(distrito.total) : ""}
+                      </span>
+                      <span className="columna-distrito-pila" aria-hidden="true">
+                        {partes.map(({ tramo, cantidad }) => (
+                          <span
+                            key={tramo.clave}
+                            style={{ height: `${(cantidad / maximo) * 100}%`, background: tramo.color }}
+                          />
+                        ))}
+                      </span>
+                      <span className="columna-distrito-etiqueta" aria-hidden="true">
+                        D{distrito.numero}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         </div>
       )}
 
       {tramos.length > 0 && (
-        <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="Qué significa cada color">
-          {tramos.map((tramo) => (
-            <li key={tramo.clave} className="flex items-center gap-1.5">
-              <span
-                aria-hidden="true"
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{ background: tramo.color }}
-              />
+        <ul className="mt-4 flex flex-wrap gap-2" aria-label="Qué significa cada color, con el total de cada tramo">
+          {tramos.map(({ tramo, suma }) => (
+            <li key={tramo.clave} className="leyenda-tramo">
+              <span aria-hidden="true" style={{ background: tramo.color }} />
               {tramo.etiqueta}
+              <span className="tabular-nums" style={suave}>
+                {formatearNumero(suma)}
+              </span>
             </li>
           ))}
         </ul>
