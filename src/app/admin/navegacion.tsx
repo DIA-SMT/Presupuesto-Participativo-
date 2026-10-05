@@ -25,9 +25,12 @@
  *   compitiendo con el titulo de la pantalla. La agrupacion no se perdio, se
  *   volvio invisible: sigue en el `aria-label` de cada lista y en los
  *   separadores, asi que un lector de pantalla la anuncia igual.
- * - Las acciones de la cuenta ("Mi contraseña", Salir) dejaron de tener el
- *   tamaño de la navegacion. Son enlaces chicos y subrayados: se ven
- *   accionables, pero no compiten con las secciones.
+ * - El bloque de la cuenta es una pastilla: avatar con las iniciales, nombre,
+ *   correo, el rol como etiqueta y dos botones chicos con icono ("Mi
+ *   contraseña", Salir). Antes eran dos enlaces subrayados en gris, que no se
+ *   veian como botones. Siguen sin competir con las secciones: son de 32 px,
+ *   van en el color del texto comun y Salir recien se tiñe al pasar el mouse.
+ *   El estilo vive en `.cuenta-panel` y `.boton-cuenta` (globals.css).
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -124,45 +127,98 @@ export default function CabeceraPanel({
         </ul>
       </nav>
 
-      <section
-        aria-label="Tu cuenta"
-        className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs"
-      >
-        <span className="text-sm font-semibold">{nombre}</span>
-        <span style={{ color: "var(--texto-suave)" }}>
-          {email} · {ETIQUETA_ROL[rol] ?? rol}
+      <section aria-label="Tu cuenta" className="cuenta-panel">
+        <span className="cuenta-panel-avatar" aria-hidden="true">
+          {iniciales(nombre, email)}
+        </span>
+        <span className="cuenta-panel-datos">
+          <span className="cuenta-panel-nombre">{nombre}</span>
+          <span className="cuenta-panel-detalle">
+            <span className="truncate">{email}</span>
+            <span className="cuenta-panel-rol" data-rol={rol}>
+              {ETIQUETA_ROL[rol] ?? rol}
+            </span>
+          </span>
         </span>
         {/*
-          py-1.5 y px-1 no son decorativos: con text-xs (12 px de texto y 16 de
-          renglon) el area sensible quedaba en 16 px de alto, y el criterio 2.5.8
-          de WCAG 2.2 pide 24x24 para un control que no esta dentro de una
-          oracion. Con ese relleno queda en 28 px de alto y arriba de 30 de
-          ancho. El relleno no mueve la linea de base, asi que siguen alineados
-          con el nombre y el correo.
+          Dos botones de 32 px de alto (el criterio 2.5.8 de WCAG 2.2 pide
+          24x24 para un control que no esta dentro de una oracion), con icono y
+          texto: el icono solo no alcanza para entenderlos, y el texto solo no
+          se veia como boton. Salir es un boton de verdad (escribe: cierra la
+          sesion en el servidor), por eso va dentro de un form.
         */}
-        <span className="-my-1.5 flex items-baseline gap-x-2">
+        <span className="cuenta-panel-acciones">
           <Link
             href="/admin/password"
             aria-current={estaActivo(pathname, "/admin/password") ? "page" : undefined}
-            className="px-1 py-1.5 underline"
-            style={{ color: "var(--texto-suave)" }}
+            className="boton-cuenta"
           >
+            <IconoLlave />
             Mi contraseña
           </Link>
-          {/* Salir es un boton (escribe: cierra la sesion en el servidor) con
-              forma de enlace. Va subrayado siempre, no solo al pasar el mouse,
-              para que se lea accionable sin depender del color. */}
           <form action={salirAdmin}>
-            <button
-              type="submit"
-              className="px-1 py-1.5 underline"
-              style={{ color: "var(--texto-suave)" }}
-            >
+            <button type="submit" className="boton-cuenta boton-cuenta-salir">
+              <IconoSalir />
               Salir
             </button>
           </form>
         </span>
       </section>
     </div>
+  );
+}
+
+/**
+ * Las iniciales del avatar: la primera letra de las dos primeras palabras del
+ * nombre ("Nombre Apellido" → "NA"). Si el nombre no da ninguna, la del correo.
+ */
+function iniciales(nombre: string, email: string): string {
+  const letras = nombre
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((palabra) => palabra[0].toUpperCase())
+    .join("");
+  return letras || email.slice(0, 1).toUpperCase();
+}
+
+/** Una llave, para "Mi contraseña". Decorativa: el texto va al lado. */
+function IconoLlave() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="8" cy="15" r="4" />
+      <path d="M10.85 12.15 19 4" />
+      <path d="m18 5 2 2" />
+      <path d="m15 8 2 2" />
+    </svg>
+  );
+}
+
+/** Una puerta con la flecha hacia afuera, para Salir. Decorativa. */
+function IconoSalir() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
   );
 }

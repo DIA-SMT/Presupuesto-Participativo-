@@ -80,6 +80,20 @@
   --borde: #e2e8f0;
   --texto: #16202e;
   --texto-suave: #55627a;
+  /*
+   * Rellenos del grafico por distrito y de las barritas de las tarjetas del
+   * panel (src/app/admin/bandeja/panorama.tsx). Son colores de SUPERFICIE,
+   * nunca de texto: el amarillo de las ganadoras no pasa contraste como letra
+   * (para texto estan --ganador-texto, --marca-texto y --acento-texto). Siguen
+   * a la marca: el azul del isotipo para lo factible y su amarillo para lo
+   * ganador; lo que espera evaluacion va calido, lo que no sigue va gris.
+   */
+  --grafico-sin-evaluar: #f97316;
+  --grafico-factible: #0166ff;
+  --grafico-no-factible: #a9b4c4;
+  --grafico-integrada: #7c3aed;
+  --grafico-ganadora: #eac800;
+  --grafico-descartada: #d4dbe5;
   /* Colores del isotipo OFICIAL, muestreados de
      public/marca/logo-muni-iso.png (antes eran una aproximacion: #0a63f0,
      #2fa8fa, #f2d500). Hoy el logo se sirve como imagen, asi que ningun
@@ -174,6 +188,15 @@
     --color-cat-ambiental: #5fd18e;
     --color-cat-deportivo: #f0955a;
     --color-cat-urbana: #c3a5e8;
+    /* El violeta de "integrada" como texto: el de :root daba 2.4:1 aca. */
+    --color-estado-integrado: #c3a5e8;
+    /* Los rellenos del grafico del panel, mas claros para el fondo oscuro. */
+    --grafico-sin-evaluar: #fb923c;
+    --grafico-factible: #3b9eff;
+    --grafico-no-factible: #5b6b85;
+    --grafico-integrada: #a78bfa;
+    --grafico-ganadora: #f4dc00;
+    --grafico-descartada: #3b4a63;
     color-scheme: dark;
   }
 }
@@ -199,6 +222,15 @@
     --color-cat-ambiental: #5fd18e;
     --color-cat-deportivo: #f0955a;
     --color-cat-urbana: #c3a5e8;
+    /* El violeta de "integrada" como texto: el de :root daba 2.4:1 aca. */
+    --color-estado-integrado: #c3a5e8;
+    /* Los rellenos del grafico del panel, mas claros para el fondo oscuro. */
+    --grafico-sin-evaluar: #fb923c;
+    --grafico-factible: #3b9eff;
+    --grafico-no-factible: #5b6b85;
+    --grafico-integrada: #a78bfa;
+    --grafico-ganadora: #f4dc00;
+    --grafico-descartada: #3b4a63;
     color-scheme: dark;
 }
 
@@ -384,35 +416,83 @@
   border-radius: inherit;
 }
 
-/* Una columna del grafico por distrito: el numero arriba, la pila, la etiqueta. */
+/*
+ * El grafico por distrito: la pieza central del panorama, a todo el ancho.
+ * Las medidas de la columna viven como variables aca para que las guias
+ * horizontales (dibujadas aparte, detras de las columnas) caigan exactamente
+ * sobre la franja de la pila: arriba de ella van el relleno y el numero.
+ */
+.grafico-distritos {
+  --alto-pila: 10rem;
+  --alto-valor: 1.25rem;
+  --separacion: 0.3rem;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-marca-600) 7%, var(--fondo-tarjeta)) 0%,
+    var(--fondo-tarjeta) 60%
+  );
+  border: 1px solid color-mix(in srgb, var(--color-marca-600) 22%, var(--borde));
+}
+
+.grafico-distritos-guias {
+  position: absolute;
+  top: calc(var(--separacion) + var(--alto-valor) + var(--separacion));
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: var(--alto-pila);
+  pointer-events: none;
+}
+
+.grafico-distritos-guias > span {
+  display: block;
+  height: 0;
+  border-top: 1px dashed color-mix(in srgb, var(--borde) 80%, transparent);
+}
+
+/* La ultima guia es la base de las columnas: entera, no punteada. */
+.grafico-distritos-guias > span:last-child {
+  border-top-style: solid;
+  border-top-color: var(--borde);
+}
+
+/* Una columna: el numero arriba, la pila, la etiqueta. Es un enlace. */
 .columna-distrito {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.125rem;
-  border-radius: 0.5rem;
-  font-size: 0.7rem;
+  gap: var(--separacion);
+  padding: var(--separacion) 0.125rem;
+  border-radius: 0.625rem;
+  font-size: 0.75rem;
   color: var(--texto-suave);
   transition:
     background-color 120ms,
+    box-shadow 120ms,
     opacity 120ms;
 }
 
 .columna-distrito:hover {
-  background: var(--fondo-suave);
+  background: color-mix(in srgb, var(--color-marca-600) 7%, transparent);
   color: var(--texto);
+}
+
+.columna-distrito:hover .columna-distrito-pila {
+  filter: brightness(1.12);
 }
 
 .columna-distrito[aria-current] {
   background: color-mix(in srgb, var(--color-marca-600) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-marca-600) 45%, transparent);
   color: var(--marca-texto);
   font-weight: 600;
 }
 
 /* Con un distrito elegido, los demas se apagan para que el elegido resalte. */
 .columna-distrito[data-apagada] {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .columna-distrito[data-apagada]:hover {
@@ -420,19 +500,28 @@
 }
 
 .columna-distrito-valor {
-  height: 1rem;
+  height: var(--alto-valor);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: var(--alto-valor);
+  color: var(--texto);
   font-variant-numeric: tabular-nums;
 }
 
-/* column-reverse: el primer tramo del DOM queda abajo, como en una pila. */
+/*
+ * column-reverse: el primer tramo del DOM queda abajo, como en una pila. El
+ * fondo es transparente para que se vean las guias; cada tramo se separa del
+ * siguiente con un hilo del color de la tarjeta y el de arriba va redondeado.
+ */
 .columna-distrito-pila {
   display: flex;
   flex-direction: column-reverse;
   width: 100%;
-  max-width: 1.75rem;
+  max-width: 2.75rem;
+  height: var(--alto-pila);
   overflow: hidden;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--borde) 55%, transparent);
+  border-radius: 6px 6px 2px 2px;
+  transition: filter 120ms;
 }
 
 .columna-distrito-pila > span {
@@ -441,8 +530,169 @@
   min-height: 2px;
 }
 
+.columna-distrito-pila > span + span {
+  border-bottom: 1px solid var(--fondo-tarjeta);
+}
+
 .columna-distrito-etiqueta {
   font-variant-numeric: tabular-nums;
+}
+
+/* Una entrada de la leyenda del grafico: color, nombre del tramo y su total. */
+.leyenda-tramo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--fondo-suave);
+  border: 1px solid var(--borde);
+}
+
+.leyenda-tramo > span:first-child {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * El bloque de la cuenta en la cabecera del panel (src/app/admin/navegacion.tsx):
+ * una pastilla con el avatar de iniciales, el nombre, el correo, el rol como
+ * etiqueta y dos botones chicos con icono. Los botones son de 32 px de alto
+ * (WCAG 2.5.8 pide 24) y van en el color del texto comun, para no competir con
+ * las solapas de las secciones; Salir se tiñe de ambar solo al pasar el mouse.
+ * --------------------------------------------------------------------------- */
+.cuenta-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.375rem 0.5rem 0.375rem 0.375rem;
+  border-radius: 999px;
+  background: var(--fondo-suave);
+  border: 1px solid var(--borde);
+}
+
+.cuenta-panel-avatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--color-marca-700), var(--color-marca-500));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18);
+}
+
+.cuenta-panel-datos {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.cuenta-panel-nombre {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.cuenta-panel-detalle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--texto-suave);
+}
+
+/* El rol como etiqueta; cada rol con su tinte, para distinguirlos de un vistazo. */
+.cuenta-panel-rol {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--texto-suave);
+  background: color-mix(in srgb, var(--texto-suave) 14%, transparent);
+}
+
+.cuenta-panel-rol[data-rol="admin"] {
+  color: var(--marca-texto);
+  background: color-mix(in srgb, var(--color-marca-600) 14%, transparent);
+}
+
+.cuenta-panel-rol[data-rol="moderador"] {
+  color: var(--color-cat-ambiental);
+  background: color-mix(in srgb, var(--color-cat-ambiental) 14%, transparent);
+}
+
+.cuenta-panel-acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--borde);
+}
+
+.boton-cuenta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--texto);
+  background: var(--fondo-tarjeta);
+  border: 1px solid var(--borde);
+  transition:
+    border-color 120ms,
+    background-color 120ms,
+    color 120ms;
+}
+
+.boton-cuenta > svg {
+  flex-shrink: 0;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.boton-cuenta:hover,
+.boton-cuenta[aria-current] {
+  color: var(--marca-texto);
+  border-color: color-mix(in srgb, var(--color-marca-600) 45%, transparent);
+  background: color-mix(in srgb, var(--color-marca-600) 10%, var(--fondo-tarjeta));
+}
+
+.boton-cuenta-salir:hover {
+  color: var(--acento-texto);
+  border-color: color-mix(in srgb, var(--color-acento-600) 50%, transparent);
+  background: color-mix(in srgb, var(--color-acento-600) 10%, var(--fondo-tarjeta));
+}
+
+/* En un telefono la pastilla se parte en dos renglones: sin la raya que separa
+   las acciones, que ahi quedaria colgando. */
+@media (max-width: 40rem) {
+  .cuenta-panel {
+    border-radius: 1rem;
+  }
+
+  .cuenta-panel-acciones {
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 
 /* Un filtro puesto, arriba de la tabla. Tocarlo lo saca. */
