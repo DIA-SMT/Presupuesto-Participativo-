@@ -16,7 +16,11 @@
  */
 import type { Edicion } from "@/db/queries";
 import type { ContextoDelSitio } from "./chat-contexto";
-import { buscarEnParrafos, mismaPregunta } from "./contenido-del-programa";
+import {
+  REQUISITO_PARA_PRESENTAR,
+  buscarEnParrafos,
+  mismaPregunta,
+} from "./contenido-del-programa";
 import { votacionTerminada } from "./ediciones";
 import { formatearFecha } from "./formato";
 import { normalizar } from "./texto";
@@ -182,6 +186,8 @@ export function responderSobreElSitio(
         texto: conAviso(contexto, [
           estado,
           ...(contexto.comoPresentar ? ["", contexto.comoPresentar] : []),
+          "",
+          REQUISITO_PARA_PRESENTAR,
           "",
           "Si ya presentaste una, la seguís con su número y el código de seguimiento en **Seguí tu idea**.",
         ]).join("\n"),

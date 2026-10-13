@@ -56,6 +56,14 @@ export const REGLAS_CONFIRMADAS: Explicacion[] = [
 ];
 
 /**
+ * Con que se presenta una idea desde el sitio: el ingreso con CIDITUC que pide
+ * /ideas/nueva (y exige /api/ideas). Lo dicen /acerca-de y el chat, con y sin
+ * modelo. Si deja de pedirse, hay que cambiarlo aca.
+ */
+export const REQUISITO_PARA_PRESENTAR =
+  "Para presentar una idea ingresás con tu ciudadanía digital CIDITUC, la misma cuenta que usás para los trámites de la Municipalidad: la idea queda a tu nombre, que solo ve el equipo que la evalúa. Si todavía no tenés CIDITUC, la podés hacer desde la página de la Municipalidad o en una asamblea participativa.";
+
+/**
  * Como se vota en el sitio, paso por paso: lo que hace de verdad /votar (y
  * /ingresar antes). Lo muestra /acerca-de y lo dice el chat. Si cambia el
  * circuito de votacion, hay que cambiarlo aca.

@@ -923,7 +923,17 @@ function Ficha({
         <DatoFicha etiqueta="Barrio">{ficha.barrio ?? "Sin barrio"}</DatoFicha>
         <DatoFicha etiqueta="Categoría">{ficha.categoriaNombre ?? "Sin categoría"}</DatoFicha>
         <DatoFicha etiqueta="Votos">{formatearNumero(ficha.votos)}</DatoFicha>
-        <DatoFicha etiqueta="Autor">{ficha.autorNombre ?? "Sin nombre cargado"}</DatoFicha>
+        <DatoFicha etiqueta="Autor">
+          {ficha.autorNombre ?? "Sin nombre cargado"}
+          {/* El nombre salio de la cuenta con la que ingreso, no se escribio. */}
+          {ficha.autorConCidituc && (
+            <span className="ml-2 align-middle">
+              <Chip color="var(--color-cat-ambiental)">
+                <span aria-hidden="true">✓</span> verificado con CIDITUC
+              </Chip>
+            </span>
+          )}
+        </DatoFicha>
         <DatoFicha etiqueta="Contacto del autor">
           {ficha.tieneContacto
             ? ficha.autorAvisos

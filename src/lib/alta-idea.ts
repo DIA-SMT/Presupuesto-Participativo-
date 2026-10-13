@@ -66,6 +66,11 @@ export type DatosIdeaNueva = {
   canalDetalle?: string | null;
   autorNombre?: string | null;
   /**
+   * La persona del padron que la presento con CIDITUC (ver ideas.votante_id).
+   * Solo la puerta publica la pone; el panel y el modo prueba no.
+   */
+  votanteId?: number | null;
+  /**
    * El correo del autor, SOLO con consentimiento (la casilla de avisos del
    * formulario publico). La carga del panel no lo pide nunca.
    */
@@ -212,6 +217,7 @@ export async function crearIdea(
         canal: datos.canal,
         canalDetalle: datos.canalDetalle || null,
         autorNombre: datos.autorNombre || null,
+        votanteId: datos.votanteId ?? null,
         // El contacto entra SOLO con consentimiento, y queda registrada la
         // version del texto que la persona acepto.
         autorEmail: datos.contacto?.email ?? null,

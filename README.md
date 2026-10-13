@@ -27,7 +27,7 @@ desplegarse en **Vercel**.
 | Ficha de proyecto | `/proyectos/<slug>` | Problema, propuesta, beneficios, votos, presupuesto y avance de obra |
 | Transparencia | `/transparencia` | Qué proyecto ganó en cada distrito y con cuántos votos; datos abiertos |
 | Ediciones anteriores | `/archivo` y `?edicion=2025` | Proyectos, fichas, distritos y transparencia de cualquier edición, con un aviso cuando no es la vigente |
-| Carga de ideas | `/ideas/nueva` | Formulario con selector de punto en el mapa; el distrito se deriva solo |
+| Carga de ideas | `/ideas/nueva` | Formulario con selector de punto en el mapa; el distrito se deriva solo. Se ingresa con CIDITUC: el autor es la cuenta y la idea queda atada a la persona del padrón |
 | Votación | `/votar` | Empadronamiento con CIDITUC, un voto por persona en su distrito |
 | Chatbot (Migue) | botón flotante | Consultas sobre los proyectos, cómo presentar una idea y cómo votar, fechas, reglamento y novedades, con lo que publica el sitio |
 | Backoffice | `/admin` | Leer las propuestas con un panorama de tarjetas y gráficos que filtran (por estado, distrito, categoría y seguimiento del trabajo), evaluarlas, exportarlas en PDF y mover la etapa; cargar las que llegan por otro canal, corregirlas o descartarlas; y, solo admin, el equipo y el contenido del sitio |
@@ -156,6 +156,20 @@ navegador dejan de viajar como contexto (ahora van firmadas).
    `crear-admin` queda para la primera cuenta y para recuperar el acceso si nadie
    puede entrar; restablecer una contraseña desde ahí también cierra las
    sesiones de esa cuenta.
+
+### Ideas con CIDITUC (en este orden)
+
+1. **La migración `0014` antes que el código.** `npm run db:migrate -- --produccion`.
+   Suma `ideas.votante_id` (admite null, con su clave foránea y un índice) y no
+   toca ninguna fila: el código anterior sigue andando con ella aplicada. Al
+   revés no: el código nuevo la escribe en cada idea.
+2. **Desplegar.** Desde ahí, `/ideas/nueva` con la etapa de ideas abierta manda a
+   `/ingresar?para=ideas` a quien no entró, la vuelta de CIDITUC cae de nuevo en
+   el formulario, y `/api/ideas` rechaza (401) una idea sin sesión. El nombre del
+   autor sale de la cuenta. El destino viaja en la cookie `pp_cidituc_destino`,
+   validado contra una lista blanca (`src/lib/ingreso-vecino.ts`).
+3. **Revisar `/privacidad` con Legales**: ahora dice que la identidad de CIDITUC
+   es obligatoria para presentar una idea y que la idea queda asociada al padrón.
 
 Antes de abrir la etapa de ideas al público se barren las pruebas con
 `scripts/limpiar-pruebas.ts` (ver [Scripts](#scripts)), con la fecha del día

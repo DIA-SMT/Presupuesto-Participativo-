@@ -312,6 +312,19 @@ export const ideas = pgTable(
     canalDetalle: text("canal_detalle"),
     autorNombre: text("autor_nombre"),
     /**
+     * La persona del padron que presento la idea desde el sitio, ingresando con
+     * CIDITUC (src/app/api/ideas/route.ts). Desde entonces el nombre del autor
+     * sale de su cuenta y no se escribe a mano. Es el vinculo con `votantes`, que
+     * guarda el DNI solo hasheado: de aca no se llega a ningun dato en claro.
+     * Sirve para saber que ideas presento cada persona (un "Mis ideas", un
+     * tope por persona). Null en lo cargado por el equipo, en lo migrado, en lo
+     * presentado antes de 0014 y en lo del modo prueba; queda en null si la
+     * fila del padron se borra.
+     */
+    votanteId: integer("votante_id").references((): AnyPgColumn => votantes.id, {
+      onDelete: "set null",
+    }),
+    /**
      * Contacto del autor. Se guarda SOLO si la persona marco la casilla de
      * avisos, con la finalidad declarada de contarle como sigue su idea. No es
      * un dato publico: ninguna consulta del sitio ni del chatbot lo devuelve.
@@ -351,6 +364,9 @@ export const ideas = pgTable(
     index("ideas_edicion_idx").on(t.edicionId),
     // Orden de la bandeja de revision: por edicion, estado y antiguedad.
     index("ideas_bandeja_idx").on(t.edicionId, t.estado, t.createdAt),
+    // Las ideas de una persona, y el borrado de una fila del padron sin
+    // recorrer la tabla entera para poner el null.
+    index("ideas_votante_idx").on(t.votanteId),
     // El numero es el identificador que el vecino ve: no puede repetirse
     // dentro de una edicion. Verificado: las 100 ideas de 2025 ya lo cumplen.
     uniqueIndex("ideas_edicion_numero_idx").on(t.edicionId, t.numero),

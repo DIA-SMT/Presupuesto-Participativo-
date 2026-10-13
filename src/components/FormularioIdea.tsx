@@ -146,9 +146,16 @@ export default function FormularioIdea({
   abierta,
   conIA,
   anio,
+  autor,
 }: {
   categorias: Categoria[];
   abierta: boolean;
+  /**
+   * La persona que ingreso con CIDITUC, o null en modo prueba. Con autor, el
+   * nombre no se pide: el servidor lo toma de la sesion (y descarta el que
+   * venga en el formulario), asi que pedirlo seria un campo que no se usa.
+   */
+  autor: { nombre: string | null } | null;
   /** Año de la edición activa, para el encabezado del documento. */
   anio: number;
   /**
@@ -618,7 +625,8 @@ export default function FormularioIdea({
           beneficios: datos.get("beneficios") || null,
           lat: punto.lat,
           lon: punto.lon,
-          autorNombre: datos.get("autorNombre") || null,
+          // Con sesion el servidor usa el nombre de la cuenta de CIDITUC.
+          autorNombre: autor ? null : datos.get("autorNombre") || null,
           // Sin la casilla marcada el correo no viaja: no hay consentimiento.
           autorEmail: avisos ? datos.get("autorEmail") || null : null,
           autorAvisos: avisos,
@@ -1043,23 +1051,41 @@ export default function FormularioIdea({
         </section>
 
         <section className={paso === ULTIMO ? "space-y-4" : "hidden"}>
-          <h3 className="text-base font-bold">Tus datos (opcionales)</h3>
+          <h3 className="text-base font-bold">{autor ? "Tus datos" : "Tus datos (opcionales)"}</h3>
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
             Ninguno de estos datos se publica. Al enviar la idea te vamos a dar un{" "}
             <strong>código de seguimiento</strong>: con ese código y el número de tu idea podés ver
             cuando quieras cómo sigue, sin dejarnos ningún dato de contacto.
           </p>
 
-          <Campo etiqueta="Tu nombre" ayuda="Opcional. Solo lo ve el equipo que evalúa la propuesta.">
-            <input
-              name="autorNombre"
-              maxLength={120}
-              onInput={(evento) => anotarValor("autorNombre", evento.currentTarget.value)}
-              disabled={!abierta || ocupado}
-              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-              style={campoEstilo}
-            />
-          </Campo>
+          {autor ? (
+            /*
+              Con CIDITUC el autor es la cuenta con la que se ingreso: el nombre
+              no se escribe. Para cambiar de cuenta esta el "Salir" de la
+              cabecera de la pagina (src/app/ideas/nueva/page.tsx), afuera de
+              este formulario: un form no puede ir adentro de otro.
+            */
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
+              style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
+            >
+              <p className="text-sm">
+                Presentás la idea como <strong>{autor.nombre ?? "la cuenta con la que ingresaste"}</strong>,
+                con tu cuenta de CIDITUC. Solo lo ve el equipo que evalúa la propuesta.
+              </p>
+            </div>
+          ) : (
+            <Campo etiqueta="Tu nombre" ayuda="Opcional. Solo lo ve el equipo que evalúa la propuesta.">
+              <input
+                name="autorNombre"
+                maxLength={120}
+                onInput={(evento) => anotarValor("autorNombre", evento.currentTarget.value)}
+                disabled={!abierta || ocupado}
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={campoEstilo}
+              />
+            </Campo>
+          )}
 
           {/* Consentimiento del correo: casilla desmarcada y finalidad declarada.
               Apagado mientras no exista el envio de avisos (ver

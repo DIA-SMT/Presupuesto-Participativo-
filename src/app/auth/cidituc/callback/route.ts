@@ -10,12 +10,20 @@
  */
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
+import { COOKIE_DESTINO, COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
 import { borradoCookie } from "@/lib/cookies";
 import { sugerenciaDeDistrito } from "@/lib/barrios";
 import { empadronar } from "@/lib/empadronamiento";
 import { crearSesionVotante } from "@/lib/sesion";
 import { getEdicionActiva } from "@/db/queries";
+import {
+  PANTALLA_DEL_DESTINO,
+  destinoDeIngreso,
+  etapaDejaIngresar,
+  puertaDeIngreso,
+  type DestinoIngreso,
+} from "@/lib/ingreso-vecino";
+import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -24,24 +32,29 @@ export const runtime = "nodejs";
  * Siempre se vuelve por redireccion y a una URL limpia: el token no puede
  * quedar en la barra de direcciones ni en el historial de la persona.
  *
- * Si sale bien se va a /votar; si no, a /ingresar con el motivo como codigo, y
- * /ingresar lo traduce. Un unico "error al ingresar" manda a todos a insistir
+ * Si sale bien se va a la pantalla del destino (/votar, o /ideas/nueva si se
+ * entro para presentar una idea); si no, a /ingresar, con el destino y el
+ * motivo como codigo, y /ingresar lo traduce. Un unico "error al ingresar" manda a todos a insistir
  * contra una puerta cerrada: "no pudimos consultar tus datos" se arregla
  * reintentando y "la votacion no esta abierta" no.
  */
-function volver(request: Request, motivo?: string): NextResponse {
+function volver(request: Request, destino: DestinoIngreso, motivo?: string): NextResponse {
   // La vuelta se arma sobre la URL con la que LLEGO el pedido, no sobre
   // SITE_URL: asi la persona termina en el mismo sitio del que salio. Con
   // SITE_URL, un `npm run dev` en un puerto que no sea el 3000 la mandaba al
   // 3000, y un despliegue de vista previa la sacaba a produccion.
-  const destino = new URL(motivo ? "/ingresar" : "/votar", request.url);
-  if (motivo) destino.searchParams.set("error", motivo);
-  const respuesta = NextResponse.redirect(destino);
+  const vuelta = new URL(
+    motivo ? puertaDeIngreso(destino) : PANTALLA_DEL_DESTINO[destino],
+    request.url,
+  );
+  if (motivo) vuelta.searchParams.set("error", motivo);
+  const respuesta = NextResponse.redirect(vuelta);
   // El estado es de un solo uso: se borra pase lo que pase, asi un reintento
   // arranca limpio en vez de chocar con el sobrante del intento anterior. Con
   // los mismos atributos con que se escribio: un `delete(nombre)` a secas sale
   // sin Secure, y el navegador descarta ese borrado de una cookie __Host-.
   respuesta.cookies.delete(borradoCookie(COOKIE_ESTADO));
+  respuesta.cookies.delete(borradoCookie(COOKIE_DESTINO));
   return respuesta;
 }
 
@@ -66,8 +79,11 @@ function sugerenciaSinCortar(barrio: string | null) {
 
 export async function GET(request: Request) {
   const parametros = new URL(request.url).searchParams;
+  // Para que entro la persona: lo dejo /auth/cidituc/ingresar. Se valida contra
+  // la lista blanca otra vez: es una cookie, la escribe el navegador.
+  const destino = destinoDeIngreso((await cookies()).get(COOKIE_DESTINO)?.value);
   const token = parametros.get("auth");
-  if (!token) return volver(request, "sin-token");
+  if (!token) return volver(request, destino, "sin-token");
 
   /*
    * La vuelta tiene que corresponder a una salida de ESTE navegador. Sin esta
@@ -78,23 +94,28 @@ export async function GET(request: Request) {
    */
   const estadoGuardado = (await cookies()).get(COOKIE_ESTADO)?.value;
   if (!mismoEstado(estadoGuardado, parametros.get("state"))) {
-    return volver(request, "estado");
+    return volver(request, destino, "estado");
   }
 
   const limite = await consumir(`cidituc:${hashearIp(ipDe(request))}`, 20, 600);
-  if (!limite.permitido) return volver(request, "demasiados-intentos");
+  if (!limite.permitido) return volver(request, destino, "demasiados-intentos");
 
   /*
    * Autenticar no es autorizar. El token prueba que la persona es quien dice
    * ser ante el municipio, no que pueda votar aca. La "lista propia" de este
-   * sitio es la etapa del proceso: fuera de la votacion no se abre sesion de
-   * votante ni se suma a nadie al padron.
+   * sitio es la etapa del proceso: se abre sesion (y se suma la persona al
+   * padron) para votar en la votacion y para presentar una idea en la etapa
+   * de ideas, y en ningun otro momento (ver etapaDejaIngresar).
    */
   const edicion = await getEdicionActiva();
-  if (!edicion || edicion.etapa !== "votacion") return volver(request, "fuera-de-etapa");
+  const fueraDeEtapa =
+    destino === "ideas" && edicion?.etapa !== "ideas" && (await puedeCargarFueraDeEtapa());
+  if (!edicion || !etapaDejaIngresar(destino, edicion.etapa, fueraDeEtapa)) {
+    return volver(request, destino, "fuera-de-etapa");
+  }
 
   const resultado = await consultarPerfil(token);
-  if (!resultado.ok) return volver(request, resultado.motivo);
+  if (!resultado.ok) return volver(request, destino, resultado.motivo);
 
   try {
     const empadronado = await empadronar({
@@ -135,10 +156,10 @@ export async function GET(request: Request) {
       "[cidituc] no se pudo empadronar:",
       causa instanceof Error ? causa.message : causa,
     );
-    return volver(request, "sin-padron");
+    return volver(request, destino, "sin-padron");
   }
 
   // El token de CIDITUC ya cumplio su funcion y no se guarda: conservarlo solo
   // amplia lo que se pierde si algo se filtra.
-  return volver(request);
+  return volver(request, destino);
 }

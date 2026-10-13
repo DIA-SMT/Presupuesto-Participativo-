@@ -1,6 +1,14 @@
 /**
  * Alta de una idea presentada por un vecino.
  *
+ * Con la etapa de ideas abierta, hay que haber ingresado con CIDITUC: la
+ * sesion del vecino (la misma de la votacion) es la que pone el nombre del
+ * autor y ata la idea a la persona del padron (`ideas.votante_id`). El nombre
+ * que venga en el cuerpo se descarta. La pantalla ya manda a ingresar a quien
+ * no entro; esto es lo que impide saltearla mandando el pedido a mano. El modo
+ * prueba (etapa cerrada, ver src/lib/modo-prueba.ts) carga sin CIDITUC, como
+ * antes, porque no es una presentacion valida.
+ *
  * La idea entra como `pendiente` y sin publicar: aparece en el sitio despues de
  * que el equipo la revise desde el backoffice. El distrito no lo elige quien
  * carga: se deriva por point-in-polygon a partir del punto marcado en el mapa.
@@ -20,6 +28,7 @@ import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 import { exigirMismoOrigen } from "@/lib/origen";
 import { hoyEnTucuman } from "@/lib/formato";
+import { getSesionVotante } from "@/lib/sesion";
 
 export const runtime = "nodejs";
 
@@ -30,6 +39,21 @@ const esquema = altaIdea;
 
 const SIN_EDICION = "No hay una edición activa.";
 const ETAPA_CERRADA = "La etapa de presentación de ideas está cerrada.";
+const SIN_SESION =
+  "Para presentar una idea tenés que ingresar con CIDITUC, y tu sesión no está activa (dura 4 horas). Copiá lo que escribiste, entrá de nuevo desde «Presentá tu idea» y pegalo.";
+
+/**
+ * La fila del padron de la sesion ya no existe (la borro una limpieza de
+ * pruebas, por ejemplo): la clave foranea de `ideas.votante_id` rebota el
+ * alta. Para la persona es lo mismo que una sesion vencida. El nombre de la
+ * restriccion aparece en un `cause` del error de drizzle, no en el mensaje.
+ */
+function votanteInexistente(causa: unknown): boolean {
+  for (let error: unknown = causa; error instanceof Error; error = error.cause) {
+    if (error.message.includes("ideas_votante_id_votantes_id_fk")) return true;
+  }
+  return false;
+}
 
 /**
  * Con los avisos por correo apagados (src/lib/aviso-por-mail.ts), el contacto
@@ -99,6 +123,13 @@ export async function POST(request: Request) {
     return Response.json({ error: ETAPA_CERRADA }, { status: 409 });
   }
 
+  // En la etapa, sin sesion no hay idea. Con la sesion vencida (dura 4 horas)
+  // la persona se entera aca y no al recargar: el mensaje le dice que hacer.
+  const sesion = await getSesionVotante();
+  if (!fueraDeEtapa && !sesion) {
+    return Response.json({ error: SIN_SESION }, { status: 401 });
+  }
+
   // Sin casilla marcada no hay consentimiento, y sin consentimiento no se
   // guarda el contacto (el zod ya rechaza mail sin casilla). Con los avisos
   // apagados `sinContacto` ya saco los dos campos; el interruptor se repite aca
@@ -119,7 +150,10 @@ export async function POST(request: Request) {
         lat: datos.lat,
         lon: datos.lon,
         canal: "web",
-        autorNombre: datos.autorNombre,
+        // Con sesion, el autor es la cuenta de CIDITUC y no lo que diga el
+        // cuerpo; en modo prueba sin sesion, el nombre escrito, como antes.
+        autorNombre: sesion ? sesion.nombre : datos.autorNombre,
+        votanteId: sesion?.votanteId ?? null,
         // El contacto entra SOLO con la casilla marcada. Sin consentimiento el
         // dato no se guarda, y queda registrada la version del texto aceptado.
         contacto:
@@ -159,6 +193,9 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (causa) {
+    if (votanteInexistente(causa)) {
+      return Response.json({ error: SIN_SESION }, { status: 401 });
+    }
     console.error("[ideas] alta fallida", causa);
     return Response.json(
       { error: "No se pudo guardar la idea. Probá de nuevo en un momento." },

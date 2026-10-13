@@ -83,6 +83,16 @@ export const RUTA_INGRESO = "/auth/cidituc/ingresar";
 export const COOKIE_ESTADO = nombreCookie("pp_cidituc_estado");
 export const DURACION_ESTADO = 600;
 
+/**
+ * Para que entro la persona (votar o presentar una idea, ver
+ * src/lib/ingreso-vecino.ts). Va aparte del estado porque el estado es lo que
+ * el Derivador devuelve y se compara tal cual; el destino es solo nuestro. Se
+ * escribe y se borra junto con el estado, con los mismos atributos y la misma
+ * duracion, y el callback lo vuelve a validar contra la lista blanca: una
+ * cookie es dato del navegador, no una orden.
+ */
+export const COOKIE_DESTINO = nombreCookie("pp_cidituc_destino");
+
 export function nuevoEstado(): string {
   return randomBytes(16).toString("hex");
 }
