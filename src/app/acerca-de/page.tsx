@@ -2,7 +2,11 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Boton } from "@/components/ui";
 import { getEdicionActiva, getFaq, getHitos, getTextos } from "@/db/queries";
-import { PASOS_PARA_VOTAR, POR_QUE_NO_HAY_MONTOS } from "@/lib/contenido-del-programa";
+import {
+  PASOS_PARA_VOTAR,
+  POR_QUE_NO_HAY_MONTOS,
+  REQUISITO_PARA_PRESENTAR,
+} from "@/lib/contenido-del-programa";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 
 export const metadata: Metadata = {
@@ -119,6 +123,9 @@ export default async function AcercaDe() {
               {edicion?.etapa === "ideas"
                 ? "La etapa de ideas está abierta. Contanos qué problema querés resolver en tu barrio."
                 : "La etapa de ideas de esta edición está cerrada. Mientras tanto podés armar tu propuesta y descargarla en PDF; la vas a poder enviar cuando se abra la próxima."}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+              {REQUISITO_PARA_PRESENTAR}
             </p>
             <div className="mt-4">
               <Boton href="/ideas/nueva">

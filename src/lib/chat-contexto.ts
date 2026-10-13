@@ -26,6 +26,7 @@ import {
   PASOS_PARA_VOTAR,
   POR_QUE_NO_HAY_MONTOS,
   REGLAS_CONFIRMADAS,
+  REQUISITO_PARA_PRESENTAR,
   buscarEnParrafos,
   type Explicacion,
 } from "./contenido-del-programa";
@@ -212,7 +213,7 @@ export function contextoParaElModelo(contexto: ContextoDelSitio): string {
       "",
       lista(contexto.comoFunciona),
       "",
-      `Presentar una idea: ${contexto.comoPresentar ?? "el sitio no tiene cargada una explicación."} Se presenta en /ideas/nueva, solo mientras está abierta la etapa de presentación de ideas. Quien ya presentó una la sigue en /ideas/seguimiento, con el número de la idea y el código de seguimiento que recibió al presentarla.`,
+      `Presentar una idea: ${contexto.comoPresentar ?? "el sitio no tiene cargada una explicación."} Se presenta en /ideas/nueva, solo mientras está abierta la etapa de presentación de ideas. ${REQUISITO_PARA_PRESENTAR} Quien ya presentó una la sigue en /ideas/seguimiento, con el número de la idea y el código de seguimiento que recibió al presentarla.`,
       "",
       "Cómo se vota (los pasos que publica /acerca-de):",
       ...contexto.pasosParaVotar.map((paso, i) => `${i + 1}. ${paso.titulo}: ${paso.texto}`),

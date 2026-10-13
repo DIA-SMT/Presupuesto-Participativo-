@@ -16,6 +16,7 @@
  * pagina seria una molestia y no un robo, pero no cuesta nada impedirlo.
  */
 import { NextResponse } from "next/server";
+import { destinoDeIngreso, puertaDeIngreso } from "@/lib/ingreso-vecino";
 import { exigirMismoOrigen } from "@/lib/origen";
 import { cerrarSesionVotante } from "@/lib/sesion";
 
@@ -27,9 +28,15 @@ export async function POST(request: Request) {
 
   await cerrarSesionVotante();
 
+  // De que pantalla salio: el "Salir" del formulario de ideas manda para=ideas
+  // y vuelve a esa puerta. Validado contra la lista blanca; un cuerpo que no
+  // se puede leer es la puerta de votar, como siempre.
+  const formulario = await request.formData().catch(() => null);
+  const para = destinoDeIngreso(formulario?.get("para")?.toString());
+
   // Sobre la URL con la que llego el pedido, como la vuelta de CIDITUC: asi la
   // persona sigue en el mismo sitio (desarrollo, vista previa o produccion).
-  const destino = new URL("/ingresar", request.url);
+  const destino = new URL(puertaDeIngreso(para), request.url);
   destino.searchParams.set("salida", "1");
   // 303: la respuesta a un POST se sigue con un GET. Con el 307 que Next usa
   // por defecto, el navegador repetiria el POST contra /ingresar.

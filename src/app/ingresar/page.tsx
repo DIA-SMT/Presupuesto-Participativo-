@@ -8,12 +8,42 @@ import { getEdicionActiva } from "@/db/queries";
 import { RUTA_INGRESO, ingresoHabilitado } from "@/lib/cidituc";
 import { proveedorActivo } from "@/lib/empadronamiento";
 import { formatearRango } from "@/lib/formato";
+import {
+  PANTALLA_DEL_DESTINO,
+  destinoDeIngreso,
+  etapaDejaIngresar,
+  type DestinoIngreso,
+} from "@/lib/ingreso-vecino";
+import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 import { getSesionVotante } from "@/lib/sesion";
 
 export const metadata: Metadata = {
-  title: "Ingresar para votar",
+  title: "Ingresar",
   description:
-    "Ingresá con tu ciudadanía digital CIDITUC para votar en el Presupuesto Participativo de San Miguel de Tucumán.",
+    "Ingresá con tu ciudadanía digital CIDITUC para presentar tu idea o votar en el Presupuesto Participativo de San Miguel de Tucumán.",
+};
+
+/**
+ * Lo que cambia la pantalla segun para que entra la persona (ver
+ * src/lib/ingreso-vecino.ts): el titulo, la explicacion, el aviso cuando la
+ * etapa no esta abierta y lo que va a pasar a la vuelta.
+ */
+const TEXTOS_DEL_DESTINO: Record<
+  DestinoIngreso,
+  { titulo: string; para: string; cerrada: string; vuelta: string }
+> = {
+  votar: {
+    titulo: "Ingresá para votar",
+    para: "Para votar",
+    cerrada: "La votación no está abierta en este momento.",
+    vuelta: "volvés acá para elegir tu proyecto",
+  },
+  ideas: {
+    titulo: "Ingresá para presentar tu idea",
+    para: "Para presentar una idea",
+    cerrada: "La presentación de ideas no está abierta en este momento.",
+    vuelta: "volvés directo al formulario para cargar tu idea",
+  },
 };
 
 export const dynamic = "force-dynamic";
@@ -36,31 +66,40 @@ const MENSAJE_ERROR_INGRESO: Record<string, string> = {
   "sin-documento":
     "CIDITUC no nos devolvió tu número de documento, así que no podemos empadronarte. Escribinos para que lo revisemos.",
   "sin-padron": "No pudimos guardar tu empadronamiento. Probá de nuevo en un rato.",
-  "fuera-de-etapa": "La votación no está abierta en este momento, así que no hace falta ingresar.",
+  // Este depende del destino: lo arma TEXTOS_DEL_DESTINO.cerrada.
+  "fuera-de-etapa": "",
   "demasiados-intentos": "Hubo demasiados intentos desde tu conexión. Esperá unos minutos.",
   "ingreso-cerrado":
     "El ingreso con ciudadanía digital todavía no está habilitado. Cuando lo esté, vas a poder entrar desde acá.",
 };
 
 type Props = {
-  searchParams: Promise<{ error?: string; salida?: string }>;
+  searchParams: Promise<{ error?: string; salida?: string; para?: string }>;
 };
 
 /**
- * Puerta del vecino: el unico lugar donde se entra para votar. /votar sin
- * sesion manda aca, y aca con sesion se sigue derecho a /votar.
+ * Puerta del vecino: el unico lugar donde se entra, para votar o (con
+ * `?para=ideas`) para presentar una idea. /votar e /ideas/nueva sin sesion
+ * mandan aca, y aca con sesion se sigue derecho a la pantalla del destino.
  *
  * Es la pareja publica de /admin/ingresar y se arma igual (logo, a quien va
  * dirigida, la accion y un recuadro para quien se equivoco de puerta), pero no
  * la nombra: el panel del equipo no tiene enlaces desde el sitio publico.
  *
- * Fuera de la etapa de votacion no se ofrece el boton: el callback no abriria
+ * Fuera de la etapa del destino no se ofrece el boton: el callback no abriria
  * sesion igual ("fuera-de-etapa"), y mandar a la persona a CIDITUC para
  * decirle eso a la vuelta es hacerle perder el tiempo.
  */
 export default async function IngresarVecino({ searchParams }: Props) {
-  const { error, salida } = await searchParams;
-  const mensajeError = error ? MENSAJE_ERROR_INGRESO[error] : undefined;
+  const { error, salida, para } = await searchParams;
+  const destino = destinoDeIngreso(para);
+  const textos = TEXTOS_DEL_DESTINO[destino];
+  const mensajeError =
+    error === "fuera-de-etapa"
+      ? `${textos.cerrada} No hace falta ingresar.`
+      : error
+        ? MENSAJE_ERROR_INGRESO[error]
+        : undefined;
   /*
    * Vuelta del boton "Salir" del panel de votacion (POST /api/auth/salir). El
    * cartel confirma que la sesion se cerro, que es lo que necesita ver quien
@@ -70,9 +109,13 @@ export default async function IngresarVecino({ searchParams }: Props) {
    */
   const salio = salida === "1";
   const edicion = await getEdicionActiva();
-  const abierta = edicion?.etapa === "votacion";
+  // La misma regla que el callback: si aca se ofrece el boton, a la vuelta se
+  // abre la sesion.
+  const fueraDeEtapa =
+    destino === "ideas" && edicion?.etapa !== "ideas" && (await puedeCargarFueraDeEtapa());
+  const abierta = etapaDejaIngresar(destino, edicion?.etapa, fueraDeEtapa);
 
-  if (abierta && (await getSesionVotante())) redirect("/votar");
+  if (abierta && (await getSesionVotante())) redirect(PANTALLA_DEL_DESTINO[destino]);
 
   let proveedor: "cidituc" | "dev" = "dev";
   try {
@@ -134,9 +177,9 @@ export default async function IngresarVecino({ searchParams }: Props) {
               </span>
             </div>
 
-            <h1 className="mt-5 text-2xl font-bold">Ingresá para votar</h1>
+            <h1 className="mt-5 text-2xl font-bold">{textos.titulo}</h1>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-              Para votar entrás con tu ciudadanía digital <strong>CIDITUC</strong>, la misma
+              {textos.para} entrás con tu ciudadanía digital <strong>CIDITUC</strong>, la misma
               cuenta que usás para los trámites de la Municipalidad. No hace falta crear un
               usuario nuevo ni una contraseña para este sitio.
             </p>
@@ -144,8 +187,15 @@ export default async function IngresarVecino({ searchParams }: Props) {
             {!abierta ? (
               <div className="mt-5">
                 <Aviso tono="atencion">
-                  <strong>La votación no está abierta en este momento.</strong>{" "}
-                  {edicion?.votacionDesde && (
+                  <strong>{textos.cerrada}</strong>{" "}
+                  {destino === "ideas" && edicion?.ideasDesde && (
+                    <>
+                      En la edición {edicion.anio} la presentación de ideas{" "}
+                      {new Date(edicion.ideasHasta ?? "") < new Date() ? "fue" : "será"}{" "}
+                      {formatearRango(edicion.ideasDesde, edicion.ideasHasta)}.
+                    </>
+                  )}
+                  {destino === "votar" && edicion?.votacionDesde && (
                     <>
                       En la edición {edicion.anio} la votación{" "}
                       {new Date(edicion.votacionHasta ?? "") < new Date() ? "fue" : "será"}{" "}
@@ -156,7 +206,7 @@ export default async function IngresarVecino({ searchParams }: Props) {
               </div>
             ) : habilitado ? (
               <a
-                href={RUTA_INGRESO}
+                href={destino === "votar" ? RUTA_INGRESO : `${RUTA_INGRESO}?para=${destino}`}
                 className="mt-6 flex w-full items-center justify-center rounded-xl px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-110"
                 style={{ background: "var(--color-marca-700)" }}
               >
@@ -172,8 +222,7 @@ export default async function IngresarVecino({ searchParams }: Props) {
 
             {abierta && habilitado && (
               <p className="mt-3 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-                Vas a salir un momento a la página de CIDITUC y, cuando ingreses, volvés acá
-                para elegir tu proyecto.
+                Vas a salir un momento a la página de CIDITUC y, cuando ingreses, {textos.vuelta}.
               </p>
             )}
           </div>

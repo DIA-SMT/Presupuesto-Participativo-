@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import FormularioIdea from "@/components/FormularioIdea";
 import { Aviso } from "@/components/ui";
 import { getCategorias, getEdicionActiva, getTextos, getTokensUsadosHoy } from "@/db/queries";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 import { gastoDelDiaAgotado, hayClave } from "@/lib/modelo";
+import { puertaDeIngreso } from "@/lib/ingreso-vecino";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
+import { getSesionVotante } from "@/lib/sesion";
 
 export const metadata: Metadata = {
   title: "Presentá tu idea",
@@ -27,6 +30,20 @@ export default async function NuevaIdea() {
   const porPrueba = !enEtapa && (await puedeCargarFueraDeEtapa());
   const abierta = enEtapa || porPrueba;
 
+  /*
+   * Para presentar una idea hay que ingresar con CIDITUC: quien no entro va a
+   * /ingresar?para=ideas y a la vuelta cae de nuevo aca, ya con su sesion. El
+   * nombre del autor sale de esa cuenta, y la idea queda atada a la persona
+   * del padron (ver /api/ideas, que lo vuelve a exigir: esto es la pantalla).
+   *
+   * Solo con la etapa abierta. Cerrada, el formulario se muestra deshabilitado
+   * con su aviso y no hay a que ingresar; en modo prueba (el equipo, o
+   * MODO_PRUEBA_IDEAS=1) se carga sin CIDITUC, como hasta ahora: es para
+   * mostrar el circuito y no es una presentacion valida.
+   */
+  const sesion = await getSesionVotante();
+  if (enEtapa && !sesion) redirect(puertaDeIngreso("ideas"));
+
   return (
     <div className="contenedor py-10 sm:py-14">
       <header className="max-w-3xl">
@@ -36,6 +53,29 @@ export default async function NuevaIdea() {
         <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--texto-suave)" }}>
           {textos["ideas-nueva-subtitulo"]}
         </p>
+        {/*
+          Con quien se esta presentando, y la salida. Es un form comun que
+          postea a /api/auth/salir, como el Salir de la votacion: en una
+          computadora compartida la sesion sigue abierta hasta que alguien la
+          cierra. Vuelve a la puerta de las ideas (para=ideas).
+        */}
+        {sesion && (
+          <form
+            action="/api/auth/salir"
+            method="post"
+            className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+            style={{ color: "var(--texto-suave)" }}
+          >
+            <input type="hidden" name="para" value="ideas" />
+            <span>
+              Ingresaste con CIDITUC como{" "}
+              <strong style={{ color: "var(--texto)" }}>{sesion.nombre ?? "tu cuenta"}</strong>.
+            </span>
+            <button type="submit" className="font-medium underline">
+              ¿No sos vos? Salir
+            </button>
+          </form>
+        )}
       </header>
 
       {!enEtapa && edicion && (
@@ -76,6 +116,7 @@ export default async function NuevaIdea() {
         abierta={abierta}
         conIA={hayClave() && !(await gastoDelDiaAgotado(getTokensUsadosHoy))}
         anio={edicion?.anio ?? new Date().getFullYear()}
+        autor={sesion ? { nombre: sesion.nombre } : null}
       />
     </div>
   );

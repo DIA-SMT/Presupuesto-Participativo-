@@ -1174,6 +1174,12 @@ export type IdeaAdmin = IdeaVista & {
   integradas: number;
   cargadoPor: string | null;
   autorNombre: string | null;
+  /**
+   * La presento alguien que ingreso con CIDITUC (`ideas.votante_id`): el nombre
+   * es el de su cuenta, no uno escrito a mano. Solo el booleano: el id del
+   * padron no tiene nada que hacer en la pantalla.
+   */
+  autorConCidituc: boolean;
   /** Nunca el mail: solo si hay contacto para avisarle al autor. */
   tieneContacto: boolean;
   autorAvisos: boolean;
@@ -1205,6 +1211,8 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
         WHERE otra.integrada_en_id = ${ideas.id})`,
       cargadoPor: ideas.cargadoPor,
       autorNombre: ideas.autorNombre,
+      autorConCidituc: sql<number>`CASE
+        WHEN ${ideas.votanteId} IS NOT NULL THEN 1 ELSE 0 END`,
       tieneContacto: sql<number>`CASE
         WHEN ${ideas.autorEmail} IS NOT NULL THEN 1 ELSE 0 END`,
       autorAvisos: ideas.autorAvisos,
@@ -1243,6 +1251,7 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     integradas: Number(fila.integradas ?? 0),
     cargadoPor: fila.cargadoPor,
     autorNombre: fila.autorNombre,
+    autorConCidituc: Number(fila.autorConCidituc) === 1,
     tieneContacto: Number(fila.tieneContacto) === 1,
     autorAvisos: Boolean(fila.autorAvisos),
     autorAvisosVersion: fila.autorAvisosVersion,

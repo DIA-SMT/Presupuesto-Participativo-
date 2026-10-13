@@ -175,8 +175,8 @@ export default async function Privacidad() {
             </li>
             <li>
               <strong>Ciudadanía digital de Tucumán (CIDITUC)</strong>, para verificar la identidad
-              de quien vota. La verificación la hace ese sistema; el sitio solo recibe la
-              confirmación y los datos mínimos del padrón.
+              de quien presenta una idea o vota. La verificación la hace ese sistema; el sitio solo
+              recibe la confirmación y los datos mínimos del padrón.
             </li>
           </ul>
           <p>
@@ -200,8 +200,8 @@ export default async function Privacidad() {
               borramos antes si nos lo pedís.
             </li>
             <li>
-              <strong>El padrón de votantes</strong> (documento hasheado, nombre y distrito) se
-              conserva para poder auditar el resultado de la edición.
+              <strong>El padrón</strong> (documento hasheado, nombre y distrito de quien ingresó con
+              CIDITUC para presentar una idea o votar) se conserva para poder auditar la edición.
             </li>
             <li>
               <strong>Los registros técnicos</strong> de límite de uso por conexión se reinician
@@ -256,7 +256,7 @@ export default async function Privacidad() {
         <Bloque titulo="7. Qué hacemos para cuidarlos">
           <ul className="list-disc space-y-3 pl-5">
             <li>
-              El <strong>documento (DNI) de quien vota no se guarda nunca en claro</strong>: se
+              El <strong>documento (DNI) de quien ingresa con CIDITUC no se guarda nunca en claro</strong>: se
               guarda una huella criptográfica que no permite reconstruirlo. Lo mismo con la dirección
               IP de las visitas.
             </li>
@@ -316,11 +316,11 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
       "Título, categoría, barrio, problema, solución, beneficios y el punto que marcás en el mapa. Se usan para evaluar técnicamente la propuesta, asignarla a un distrito y publicarla en el sitio para que se pueda votar. Este contenido es público.",
   },
   {
-    dato: "Tu nombre",
-    caracter: "Facultativo",
+    dato: "Tu identidad de CIDITUC, al presentar una idea",
+    caracter: "Obligatorio para presentar una idea",
     color: "var(--color-cat-ambiental)",
     finalidad:
-      "Solo para que el equipo pueda identificar quién presentó la propuesta si necesita entenderla mejor. No se publica en el sitio.",
+      "Para presentar una idea ingresás con CIDITUC. La idea queda asociada a tu registro del padrón (el documento se guarda hasheado, no en claro) y el equipo ve el nombre de tu cuenta, para saber quién la presentó si necesita entenderla mejor. Tu nombre no se publica en el sitio.",
   },
   {
     dato: "Tu correo electrónico",
@@ -330,8 +330,8 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
       "Lo usamos solo para contarte cómo sigue tu idea. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se guarda únicamente si marcás la casilla del formulario.",
   },
   {
-    dato: "Tu documento, nombre y distrito, al empadronarte para votar",
-    caracter: "Obligatorio para poder votar",
+    dato: "Tu documento, nombre y distrito, al ingresar con CIDITUC",
+    caracter: "Obligatorio para presentar una idea o votar",
     color: "var(--marca-texto)",
     finalidad:
       "Sirven para verificar que sos vecino o vecina de la ciudad y garantizar un voto por persona en su distrito. El documento se guarda hasheado (no en claro); del número solo conservamos los últimos tres dígitos, para que la mesa de ayuda pueda identificarte si tenés un problema.",
