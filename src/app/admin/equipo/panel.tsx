@@ -24,7 +24,13 @@ import { Chip } from "@/components/ui";
 import type { AccionEquipo, RolAdmin } from "@/db/queries";
 import { ETIQUETA_ROL, formatearNumero } from "@/lib/formato";
 import type { Resultado } from "../comun";
-import { activarAdmin, cambiarRolAdmin, crearAdmin, restablecerPasswordAdmin } from "./acciones";
+import {
+  activarAdmin,
+  cambiarRolAdmin,
+  crearAdmin,
+  eliminarAdmin,
+  restablecerPasswordAdmin,
+} from "./acciones";
 
 /*
  * useActionState le pasa a la accion su resultado anterior como primer
@@ -106,6 +112,7 @@ const ETIQUETA_ACCION: Record<AccionEquipo, string> = {
   desactivacion: "Desactivación",
   reactivacion: "Reactivación",
   cambio_password: "Cambio de contraseña",
+  eliminacion: "Eliminación de cuenta",
 };
 
 /**
@@ -134,6 +141,8 @@ function rolDelMovimiento(fila: MovimientoEnPantalla): string {
     return `${etiquetaRol(fila.rolAnterior)} → ${etiquetaRol(fila.rolNuevo)}`;
   }
   if (fila.rolNuevo) return etiquetaRol(fila.rolNuevo);
+  // La eliminacion guarda el rol que tenia la cuenta al borrarse.
+  if (fila.rolAnterior) return etiquetaRol(fila.rolAnterior);
   return "—";
 }
 
@@ -209,10 +218,10 @@ export default function PanelEquipo({
             Cuentas
           </h2>
           <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-            Para sacarle el acceso a alguien, desactivá la cuenta: así se conserva el historial de lo
-            que revisó. No hay borrado de cuentas. Cambiar el rol, desactivar o restablecer la
-            contraseña le cierra a esa persona las sesiones que tenga abiertas: tiene que volver a
-            ingresar.
+            Para sacarle el acceso a alguien, desactivá la cuenta: se puede deshacer. Una cuenta
+            desactivada que no va a volver se puede eliminar, y lo que revisó sigue en el historial
+            con su nombre. Cambiar el rol, desactivar o restablecer la contraseña le cierra a esa
+            persona las sesiones que tenga abiertas: tiene que volver a ingresar.
           </p>
           <ul className="mt-4 space-y-2">
             {cuentas.map((cuenta) => (
@@ -305,7 +314,7 @@ export default function PanelEquipo({
   );
 }
 
-type AccionDeTarjeta = "rol" | "activo" | "clave";
+type AccionDeTarjeta = "rol" | "activo" | "clave" | "eliminar";
 
 function TarjetaCuenta({
   cuenta,
@@ -320,12 +329,14 @@ function TarjetaCuenta({
     restablecerSinArrastrar,
     null,
   );
+  const [estadoEliminar, accionEliminar, eliminando] = useActionState(eliminarAdmin, null);
 
   // La desactivacion y el restablecimiento piden un segundo click: los dos le
   // cortan las sesiones a la otra persona, y el segundo le cambia la
-  // contrasena que usa hoy. El cambio de rol no, porque se deshace igual.
-  const [confirmando, setConfirmando] = useState<"baja" | "clave" | null>(null);
-  // Tres acciones en la misma tarjeta: se muestra el resultado de la ultima
+  // contrasena que usa hoy. La eliminacion tambien, porque no se deshace. El
+  // cambio de rol no, porque se deshace igual.
+  const [confirmando, setConfirmando] = useState<"baja" | "clave" | "eliminar" | null>(null);
+  // Varias acciones en la misma tarjeta: se muestra el resultado de la ultima
   // que se uso, no uno viejo de otra.
   const [ultima, setUltima] = useState<AccionDeTarjeta | null>(null);
   const [provisoriaOculta, setProvisoriaOculta] = useState<Resultado | null>(null);
@@ -341,14 +352,15 @@ function TarjetaCuenta({
   // principio de la pagina y quien usa teclado perdia el lugar.
   const botonBaja = useRef<HTMLButtonElement>(null);
   const botonClave = useRef<HTMLButtonElement>(null);
+  const botonEliminar = useRef<HTMLButtonElement>(null);
   const aviso = useRef<HTMLDivElement>(null);
 
   // Cada resultado nuevo se lleva el foco. Solo cambian cuando termina una
   // accion de ESTA tarjeta: la revalidacion que dispara otra tarjeta no los
   // toca.
   useEffect(() => {
-    if (estadoRol || estadoActivo || estadoClave) aviso.current?.focus();
-  }, [estadoRol, estadoActivo, estadoClave]);
+    if (estadoRol || estadoActivo || estadoClave || estadoEliminar) aviso.current?.focus();
+  }, [estadoRol, estadoActivo, estadoClave, estadoEliminar]);
 
   function enviar(accion: AccionDeTarjeta) {
     setUltima(accion);
@@ -356,7 +368,9 @@ function TarjetaCuenta({
   }
 
   function cancelar() {
-    (confirmando === "baja" ? botonBaja : botonClave).current?.focus();
+    const boton =
+      confirmando === "baja" ? botonBaja : confirmando === "eliminar" ? botonEliminar : botonClave;
+    boton.current?.focus();
     setConfirmando(null);
   }
 
@@ -366,7 +380,15 @@ function TarjetaCuenta({
   }
 
   const resultado =
-    ultima === "rol" ? estadoRol : ultima === "activo" ? estadoActivo : ultima === "clave" ? estadoClave : null;
+    ultima === "rol"
+      ? estadoRol
+      : ultima === "activo"
+        ? estadoActivo
+        : ultima === "clave"
+          ? estadoClave
+          : ultima === "eliminar"
+            ? estadoEliminar
+            : null;
   const provisoria =
     ultima === "clave" && estadoClave?.ok && estadoClave.passwordProvisoria && provisoriaOculta !== estadoClave
       ? estadoClave.passwordProvisoria
@@ -453,19 +475,36 @@ function TarjetaCuenta({
               {guardandoActivo ? "Desactivando…" : "Desactivar cuenta"}
             </button>
           ) : (
-            <form action={accionActivo} onSubmit={() => enviar("activo")}>
-              <input type="hidden" name="id" value={cuenta.id} />
-              <input type="hidden" name="activo" value="true" />
+            <>
+              <form action={accionActivo} onSubmit={() => enviar("activo")}>
+                <input type="hidden" name="id" value={cuenta.id} />
+                <input type="hidden" name="activo" value="true" />
+                <button
+                  type="submit"
+                  disabled={guardandoActivo}
+                  aria-describedby={idNombre}
+                  className="rounded-xl px-3.5 py-2 text-sm font-semibold disabled:opacity-50"
+                  style={ESTILO_SECUNDARIO}
+                >
+                  {guardandoActivo ? "Reactivando…" : "Reactivar cuenta"}
+                </button>
+              </form>
+              {/* Solo una cuenta desactivada se puede eliminar: la baja es el
+                  paso que corta las sesiones y se puede deshacer; esto es el
+                  final, para limpiar la lista. */}
               <button
-                type="submit"
-                disabled={guardandoActivo}
+                ref={botonEliminar}
+                type="button"
+                onClick={() => setConfirmando(confirmando === "eliminar" ? null : "eliminar")}
+                aria-expanded={confirmando === "eliminar"}
                 aria-describedby={idNombre}
+                disabled={eliminando}
                 className="rounded-xl px-3.5 py-2 text-sm font-semibold disabled:opacity-50"
                 style={ESTILO_SECUNDARIO}
               >
-                {guardandoActivo ? "Reactivando…" : "Reactivar cuenta"}
+                {eliminando ? "Eliminando…" : "Eliminar cuenta"}
               </button>
-            </form>
+            </>
           )}
 
           <button
@@ -497,6 +536,24 @@ function TarjetaCuenta({
               style={{ background: "var(--color-acento-600)" }}
             >
               Sí, desactivar
+            </button>
+          </form>
+        </Confirmacion>
+      )}
+
+      {!esMiCuenta && confirmando === "eliminar" && (
+        <Confirmacion
+          texto={`Se elimina la cuenta de ${cuenta.nombre} (${cuenta.email}) y no se puede deshacer: si vuelve, hay que darla de alta de nuevo. Lo que revisó y firmó sigue en el historial con su nombre.`}
+          onCancelar={cancelar}
+        >
+          <form action={accionEliminar} onSubmit={() => enviar("eliminar")}>
+            <input type="hidden" name="id" value={cuenta.id} />
+            <button
+              type="submit"
+              className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white"
+              style={{ background: "var(--color-acento-600)" }}
+            >
+              Sí, eliminar
             </button>
           </form>
         </Confirmacion>

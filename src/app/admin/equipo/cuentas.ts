@@ -12,8 +12,9 @@
  * corre scrypt.
  *
  * Reglas:
- *  - Nadie se cambia el rol, se desactiva ni se restablece la contrasena a si
- *    mismo: la propia se cambia desde /admin/password, pidiendo la actual.
+ *  - Nadie se cambia el rol, se desactiva, se elimina ni se restablece la
+ *    contrasena a si mismo: la propia se cambia desde /admin/password,
+ *    pidiendo la actual.
  *  - El panel nunca queda sin un administrador activo. Se cuenta ADENTRO de la
  *    transaccion, con las filas bloqueadas: dos administradores que se
  *    degradan el uno al otro a la vez hacen fila, y el segundo ve que ya no
@@ -29,6 +30,7 @@
  *    contrasena suben `version_sesion`: todas las sesiones abiertas de esa
  *    cuenta dejan de valer en el pedido siguiente (ver `sesionVigente` en
  *    src/lib/sesion.ts).
+ *  - Solo se elimina una cuenta que ya estaba desactivada (ver `eliminarCuenta`).
  *  - Cada cambio deja su fila en `bitacora_equipo` en la misma transaccion.
  *
  * Bloqueos: primero TODOS los administradores activos, en orden de id, y
@@ -257,6 +259,56 @@ export async function cambiarActivo(
       mensaje: activo
         ? "Cuenta reactivada: ya puede volver a ingresar con su contraseña."
         : "Cuenta desactivada: sus sesiones abiertas se cerraron y no puede volver a ingresar.",
+    };
+  });
+}
+
+/**
+ * Elimina una cuenta que ya estaba desactivada. Se pide la baja antes a
+ * proposito: desactivar corta las sesiones y es reversible, y borrar es el
+ * paso final, para limpiar la lista de quienes ya no van a volver.
+ *
+ * Lo que la cuenta hizo no se pierde. Todas las FK que apuntan a `admins` son
+ * `ON DELETE SET NULL` y cada fila guarda el nombre (o el correo) aparte: las
+ * revisiones, las bitacoras y los informes se siguen leyendo igual. La fila de
+ * `eliminacion` se escribe ANTES del DELETE, con el id de la cuenta, y el
+ * borrado la deja en null como a las demas: el correo es lo que la identifica.
+ *
+ * No hace falta contar administradores: una cuenta desactivada ya no contaba.
+ */
+export async function eliminarCuenta(
+  firmante: Autorizacion,
+  cuentaId: number,
+): Promise<Resultado> {
+  if (cuentaId === firmante.adminId) {
+    return { ok: false, error: "No podés eliminar tu propia cuenta." };
+  }
+
+  return db.transaction(async (tx): Promise<Resultado> => {
+    const administradores = await bloquearAdministradores(tx);
+    if (!firmanteVigente(administradores, firmante)) return SESION_NO_VIGENTE;
+
+    const cuenta = await bloquearCuenta(tx, cuentaId);
+    if (!cuenta) return NO_EXISTE;
+    if (cuenta.activo) {
+      return {
+        ok: false,
+        error: "Solo se puede eliminar una cuenta desactivada. Desactivala primero.",
+      };
+    }
+
+    await tx.insert(bitacoraEquipo).values({
+      adminId: firmante.adminId,
+      adminNombre: firmante.nombre,
+      objetivoId: cuenta.id,
+      objetivoEmail: cuenta.email,
+      accion: "eliminacion",
+      rolAnterior: cuenta.rol,
+    });
+    await tx.delete(admins).where(eq(admins.id, cuenta.id));
+    return {
+      ok: true,
+      mensaje: `Cuenta de ${cuenta.nombre} eliminada. Lo que hizo sigue en el historial.`,
     };
   });
 }

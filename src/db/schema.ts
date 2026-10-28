@@ -140,13 +140,19 @@ export const accionRevision = pgEnum("accion_revision", [
   "descarte",
 ]);
 
-/** Cambios sobre las cuentas del backoffice (tabla `bitacora_equipo`). */
+/**
+ * Cambios sobre las cuentas del backoffice (tabla `bitacora_equipo`).
+ * `eliminacion` es el borrado de una cuenta que ya estaba desactivada: la fila
+ * de la bitacora conserva el correo, y las FK que apuntaban a la cuenta pasan a
+ * null (todas son `onDelete: "set null"` y guardan el nombre aparte).
+ */
 export const accionEquipo = pgEnum("accion_equipo", [
   "alta",
   "cambio_rol",
   "desactivacion",
   "reactivacion",
   "cambio_password",
+  "eliminacion",
 ]);
 
 /**

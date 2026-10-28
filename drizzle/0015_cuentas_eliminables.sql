@@ -1,0 +1,11 @@
+-- Una cuenta del panel que ya estaba desactivada se puede eliminar desde
+-- /admin/equipo. El borrado deja su fila en `bitacora_equipo` con la accion
+-- nueva `eliminacion` y el correo de la cuenta; lo que la cuenta firmo
+-- (revisiones, bitacoras, informes) no se pierde: esas FK son
+-- `ON DELETE SET NULL` y cada fila guarda el nombre aparte.
+--
+-- Solo agrega un valor al enum, con IF NOT EXISTS: correrla dos veces no hace
+-- nada. Postgres permite ADD VALUE dentro de la transaccion del migrador porque
+-- el valor no se usa en la misma transaccion. Va ANTES del deploy del codigo
+-- que lo escribe.
+ALTER TYPE "public"."accion_equipo" ADD VALUE IF NOT EXISTS 'eliminacion';
