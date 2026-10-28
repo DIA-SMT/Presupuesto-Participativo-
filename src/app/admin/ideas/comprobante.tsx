@@ -22,7 +22,7 @@
  * esquema lo marca como dato interno, y el papel no lo necesita.
  */
 import DocumentoIdea from "@/components/DocumentoIdea";
-import { formatearFecha } from "@/lib/formato";
+import { codigoDePropuesta, formatearFecha } from "@/lib/formato";
 import type { IdeaCargada } from "./operaciones";
 
 export default function Comprobante({
@@ -41,8 +41,9 @@ export default function Comprobante({
       <DocumentoIdea
         datos={{
           titulo: idea.titulo,
-          categoria: idea.categoria,
           barrio: idea.barrio ?? "",
+          referenciasUbicacion: idea.referenciasUbicacion ?? "",
+          organizacion: idea.organizacion ?? "",
           distrito: idea.distrito,
           punto: { lat: idea.lat, lon: idea.lon },
           solucion: idea.solucion ?? "",
@@ -53,6 +54,7 @@ export default function Comprobante({
         poligono={poligono}
         comprobante={{
           numero: idea.numero,
+          propuesta: codigoDePropuesta(idea.distrito, idea.numero),
           codigo: idea.codigo,
           fecha: formatearFecha(idea.fecha),
         }}
@@ -60,8 +62,8 @@ export default function Comprobante({
       <div className="comprobante-instrucciones">
         <p>
           <strong>Para saber cómo sigue tu idea</strong>, entrá a{" "}
-          <strong>{sitio}/ideas/seguimiento</strong> y escribí el número de la idea y el código de
-          seguimiento. Vas a ver en qué etapa está y la devolución del equipo técnico.
+          <strong>{sitio}/ideas/seguimiento</strong> y escribí el número de la idea (el que sigue a la P del
+          código de la propuesta) y el código de seguimiento. Vas a ver en qué etapa está y la devolución del equipo técnico.
         </p>
         <p>
           Guardá este papel: el código no se puede recuperar desde el sitio. Si lo perdés,

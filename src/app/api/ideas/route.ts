@@ -27,7 +27,7 @@ import { altaIdea } from "@/lib/idea-esquema";
 import { cargaFueraDeEtapa } from "@/lib/modo-prueba";
 import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 import { exigirMismoOrigen } from "@/lib/origen";
-import { hoyEnTucuman } from "@/lib/formato";
+import { codigoDePropuesta, hoyEnTucuman } from "@/lib/formato";
 import { cerrarSesionVotante, getSesionVotante } from "@/lib/sesion";
 import { resumenDeError } from "@/lib/errores-base";
 
@@ -155,9 +155,13 @@ export async function POST(request: Request) {
         titulo: datos.titulo,
         categoria: datos.categoria,
         barrio: datos.barrio,
+        referenciasUbicacion: datos.referenciasUbicacion,
         problema: datos.problema,
         solucion: datos.solucion,
         beneficios: datos.beneficios,
+        organizacion: datos.organizacion,
+        // Opcional y solo para el equipo: se borra al cerrar la edicion.
+        autorTelefono: datos.autorTelefono || null,
         lat: datos.lat,
         lon: datos.lon,
         canal: "web",
@@ -199,11 +203,13 @@ export async function POST(request: Request) {
 
     // El codigo de seguimiento es lo unico que le permite a la persona ver
     // despues como sigue su idea: la pantalla de "idea recibida" lo muestra y
-    // pide anotarlo. No se guarda en la base, se recalcula desde el id.
+    // pide anotarlo. No se guarda en la base, se recalcula desde el id. El de
+    // la propuesta (D05-P012) es el mismo que el equipo escribe en el papel.
     return Response.json(
       {
         numero: creada.numero,
         distrito: creada.distrito,
+        propuesta: codigoDePropuesta(creada.distrito, creada.numero),
         codigo: codigoSeguimiento(creada.id),
       },
       { status: 201 },

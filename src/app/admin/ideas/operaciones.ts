@@ -37,7 +37,8 @@ import {
 } from "@/lib/etapas";
 import { formatearFechaCorta, hoyEnTucuman } from "@/lib/formato";
 import { distritoDePunto } from "@/lib/geo-servidor";
-import { contenidoIdea, LARGOS, MINIMOS } from "@/lib/idea-esquema";
+import { hashearDni } from "@/lib/empadronamiento";
+import { contenidoIdea, LARGOS, MINIMOS, telefono } from "@/lib/idea-esquema";
 import { normalizar, normalizarParrafo } from "@/lib/texto";
 import {
   filaRevision,
@@ -107,12 +108,16 @@ const MENSAJE_DEL_CAMPO: Record<string, string> = {
   canalDetalle: `Contá de dónde vino, por ejemplo “Asamblea del distrito 7, 12/10/2026” o “Mesa de entradas”: entre 3 y ${LARGO_CANAL_DETALLE} caracteres.`,
   fecha: "Revisá la fecha en que se presentó.",
   autorNombre: `El nombre de quien la presentó no puede pasar de ${LARGOS.autorNombre} caracteres.`,
+  dni: "El DNI tiene que tener 7 u 8 números (los puntos no hacen falta).",
+  autorTelefono: "Revisá el teléfono: entre 6 y 15 números, con espacios o guiones si querés.",
+  organizacion: `El nombre de la organización no puede pasar de ${LARGOS.organizacion} caracteres.`,
+  referenciasUbicacion: `“¿Dónde ocurre?” no puede pasar de ${LARGOS.referenciasUbicacion} caracteres.`,
   titulo: `El título tiene que tener entre ${MINIMOS.titulo} y ${LARGOS.titulo} caracteres.`,
   categoria: "Elegí una categoría.",
   barrio: `El barrio no puede pasar de ${LARGOS.barrio} caracteres.`,
-  solucion: `“Qué se propone” tiene que tener entre ${MINIMOS.solucion} y ${LARGOS.solucion} caracteres.`,
-  problema: `“Por qué hace falta” tiene que tener entre ${MINIMOS.problema} y ${LARGOS.problema} caracteres.`,
-  beneficios: `“Quiénes se benefician” no puede pasar de ${LARGOS.beneficios} caracteres.`,
+  solucion: `“Qué les gustaría mejorar o cambiar” tiene que tener entre ${MINIMOS.solucion} y ${LARGOS.solucion} caracteres.`,
+  problema: `“Qué problema comparten en el barrio” tiene que tener entre ${MINIMOS.problema} y ${LARGOS.problema} caracteres.`,
+  beneficios: `“A quiénes beneficiaría” no puede pasar de ${LARGOS.beneficios} caracteres.`,
   integradaEn: "La idea en la que se integra no es válida.",
   id: "La idea no es válida.",
 };
@@ -145,6 +150,13 @@ export function errorDeEscritura(causa: unknown, generico: string): string {
  * largos, de src/lib/idea-esquema.ts) mas lo que solo sabe el equipo: por donde
  * llego, de donde exactamente, cuando se presento y quien la presento.
  *
+ * Desde el formulario 2026 la pantalla copia el papel campo por campo: nombre,
+ * DNI y telefono de la persona de contacto, la organizacion, y las cinco
+ * preguntas. Del papel NO entran el domicilio de la persona ni el de la
+ * organizacion, ni los dos referentes: quedan en el papel archivado (se decidio
+ * guardar lo minimo). El DNI no se guarda: se hashea para atar la idea al
+ * padron. La categoria tampoco se pide: la asigna quien evalua.
+ *
  * El correo NO esta, ni opcional: los avisos por mail estan apagados
  * (src/lib/aviso-por-mail.ts) y un dato personal sin una finalidad que se
  * cumpla no se junta. Si el formulario lo mandara igual, zod lo descarta: los
@@ -155,6 +167,14 @@ const esquemaAlta = contenidoIdea.extend({
   canalDetalle: z.string().trim().min(3).max(LARGO_CANAL_DETALLE),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   autorNombre: z.string().trim().max(LARGOS.autorNombre).optional(),
+  dni: z
+    .string()
+    .trim()
+    .transform((valor) => valor.replace(/[.\s-]/g, ""))
+    .pipe(z.literal("").or(z.string().regex(/^\d{7,8}$/)))
+    .optional(),
+  autorTelefono: z.literal("").or(telefono).optional(),
+  organizacion: z.string().trim().max(LARGOS.organizacion).optional(),
 });
 
 /** Lo que la pantalla muestra al terminar: el comprobante y el codigo. */
@@ -166,8 +186,10 @@ export type IdeaCargada = {
   distrito: number;
   anio: number;
   titulo: string;
-  categoria: string;
+  categoria: string | null;
   barrio: string | null;
+  referenciasUbicacion: string | null;
+  organizacion: string | null;
   problema: string | null;
   solucion: string | null;
   beneficios: string | null;
@@ -248,11 +270,15 @@ export async function registrarAlta(
     {
       edicionId: edicion.id,
       titulo: datos.titulo,
-      categoria: datos.categoria,
       barrio: datos.barrio,
+      referenciasUbicacion: datos.referenciasUbicacion,
       problema: datos.problema,
       solucion: datos.solucion,
       beneficios: datos.beneficios,
+      // Solo si el papel dice que la presenta una organizacion.
+      organizacion: casilla(crudo.conOrganizacion) ? datos.organizacion : null,
+      autorTelefono: datos.autorTelefono || null,
+      autorDniHash: datos.dni ? hashearDni(datos.dni) : null,
       lat: punto.lat,
       lon: punto.lon,
       ubicacionAproximada: aproximada,
@@ -309,6 +335,8 @@ export async function registrarAlta(
       titulo: creada.titulo,
       categoria: creada.categoria,
       barrio: creada.barrio,
+      referenciasUbicacion: creada.referenciasUbicacion,
+      organizacion: creada.organizacion,
       problema: creada.problema,
       solucion: creada.solucion,
       beneficios: creada.beneficios,
@@ -333,11 +361,14 @@ export async function registrarAlta(
 const esquemaCorreccion = z.object({
   id: z.coerce.number().int().positive(),
   titulo: z.string().trim().min(MINIMOS.titulo).max(LARGOS.titulo),
-  categoria: z.string().trim().min(1).max(60),
+  // "" deja la idea sin categoria: desde el formulario 2026 entra asi y la
+  // asigna quien evalua, y corregirle una errata antes no puede obligar a elegir.
+  categoria: z.string().trim().max(60),
   barrio: z.string().trim().max(LARGOS.barrio).optional(),
   problema: z.string().trim().max(LARGOS.problema).optional(),
   solucion: z.string().trim().max(LARGOS.solucion).optional(),
   beneficios: z.string().trim().max(LARGOS.beneficios).optional(),
+  referenciasUbicacion: z.string().trim().max(LARGOS.referenciasUbicacion).optional(),
   // "" es "no integrada en ninguna". El literal va primero: coerce("") da 0.
   integradaEn: z.union([z.literal(""), z.coerce.number().int().positive()]).optional(),
 });
@@ -386,12 +417,15 @@ export async function aplicarCorreccion(
   const integradaEn =
     datos.integradaEn === undefined || datos.integradaEn === "" ? null : datos.integradaEn;
 
-  const [categoria] = await db
-    .select({ id: categorias.id, nombre: categorias.nombre })
-    .from(categorias)
-    .where(eq(categorias.slug, datos.categoria))
-    .limit(1);
-  if (!categoria) return { ok: false, error: "Categoría desconocida." };
+  let categoria: { id: number; nombre: string } | null = null;
+  if (datos.categoria) {
+    [categoria = null] = await db
+      .select({ id: categorias.id, nombre: categorias.nombre })
+      .from(categorias)
+      .where(eq(categorias.slug, datos.categoria))
+      .limit(1);
+    if (!categoria) return { ok: false, error: "Categoría desconocida." };
+  }
 
   return db.transaction(async (tx): Promise<Resultado> => {
     // Primero la edicion (FOR SHARE) y despues la idea (FOR UPDATE), como toda
@@ -412,6 +446,7 @@ export async function aplicarCorreccion(
         problema: ideas.problema,
         solucion: ideas.solucion,
         beneficios: ideas.beneficios,
+        referenciasUbicacion: ideas.referenciasUbicacion,
         categoriaId: ideas.categoriaId,
         categoria: categorias.nombre,
         lat: ideas.lat,
@@ -549,28 +584,35 @@ export async function aplicarCorreccion(
       problema: normalizarParrafo(datos.problema),
       solucion: normalizarParrafo(datos.solucion),
       beneficios: normalizarParrafo(datos.beneficios),
+      referenciasUbicacion: normalizarParrafo(datos.referenciasUbicacion),
     };
 
     const cambios: string[] = [];
     if (nuevo.titulo !== actual.titulo) {
       cambios.push(`Título: ${citar(actual.titulo)} → ${citar(nuevo.titulo)}`);
     }
-    if (categoria.id !== actual.categoriaId) {
-      cambios.push(`Categoría: ${actual.categoria ?? "sin categoría"} → ${categoria.nombre}`);
+    if ((categoria?.id ?? null) !== actual.categoriaId) {
+      cambios.push(
+        `Categoría: ${actual.categoria ?? "sin categoría"} → ${categoria?.nombre ?? "sin categoría"}`,
+      );
     }
     if (nuevo.barrio !== actual.barrio) {
       cambios.push(`Barrio: ${citar(actual.barrio)} → ${citar(nuevo.barrio)}`);
     }
-    if (nuevo.solucion !== actual.solucion) {
-      cambios.push(`Qué se propone: ${citar(actual.solucion)} → ${citar(nuevo.solucion)}`);
-    }
+    // Con las palabras del papel 2026, en su orden.
     if (nuevo.problema !== actual.problema) {
-      cambios.push(`Por qué hace falta: ${citar(actual.problema)} → ${citar(nuevo.problema)}`);
+      cambios.push(`Problema: ${citar(actual.problema)} → ${citar(nuevo.problema)}`);
+    }
+    if (nuevo.referenciasUbicacion !== actual.referenciasUbicacion) {
+      cambios.push(
+        `Dónde ocurre: ${citar(actual.referenciasUbicacion)} → ${citar(nuevo.referenciasUbicacion)}`,
+      );
+    }
+    if (nuevo.solucion !== actual.solucion) {
+      cambios.push(`Qué mejorar: ${citar(actual.solucion)} → ${citar(nuevo.solucion)}`);
     }
     if (nuevo.beneficios !== actual.beneficios) {
-      cambios.push(
-        `Quiénes se benefician: ${citar(actual.beneficios)} → ${citar(nuevo.beneficios)}`,
-      );
+      cambios.push(`A quiénes beneficia: ${citar(actual.beneficios)} → ${citar(nuevo.beneficios)}`);
     }
     if (punto && puntoCambio) {
       const distritoAntes = distritoActual === null ? "sin distrito" : `Distrito ${distritoActual}`;
@@ -599,7 +641,7 @@ export async function aplicarCorreccion(
       .set({
         ...nuevo,
         barrioNormalizado: nuevo.barrio ? normalizar(nuevo.barrio) : null,
-        categoriaId: categoria.id,
+        categoriaId: categoria?.id ?? null,
         ubicacionAproximada: aproximada,
         integradaEnId: integradaEn,
         ...(punto && puntoCambio ? { lat: String(punto.lat), lon: String(punto.lon) } : {}),

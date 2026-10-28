@@ -39,48 +39,77 @@ import { ETIQUETA_ROL } from "@/lib/formato";
 import { salirAdmin } from "./acciones";
 import { BotonRecorrido } from "./recorrido/recorrido";
 
-type Enlace = { href: string; texto: string; soloAdmin?: boolean };
+type Enlace = {
+  href: string;
+  texto: string;
+  soloAdmin?: boolean;
+  /** No se ofrece a quien solo lee: la pantalla es para escribir. */
+  soloEscritura?: boolean;
+};
+
+type Seccion = Enlace & { pantallas: Enlace[] };
 
 /**
- * Las pantallas del panel.
+ * Las secciones del panel: tres, cada una con sus pantallas.
  *
- * Eran nueve, agrupadas en tres bloques con separadores. El panel se recorto a
- * lo que el equipo hace de verdad —leer las propuestas, evaluarlas y
- * exportarlas— y se fueron los grupos, sus titulos y la linea que los
- * separaba. Con las que volvieron en la Fase 2 siguen siendo pocas, en una
- * sola fila.
+ * Eran seis solapas sueltas en una fila (Propuestas, Tablero, Migue, Etapa del
+ * proceso, Contenido, Equipo) y el jefe del programa pidio un panel "mucho mas
+ * predictivo": que se sepa donde esta cada cosa sin probar solapa por solapa.
+ * Se agruparon por lo que hace el equipo:
+ *
+ *  - Propuestas: lo de todos los dias. Las tarjetas para evaluar, la carga
+ *    del papel y las estadisticas de la edicion (el viejo Tablero).
+ *  - Proceso: lo que se toca pocas veces al año. La etapa y el cronograma, el
+ *    contenido del sitio y lo que preguntan los vecinos a Migue.
+ *  - Equipo: las cuentas del panel.
+ *
+ * Las rutas NO cambiaron (/admin/tablero sigue siendo el Tablero): los enlaces
+ * que el equipo tiene guardados, el recorrido guiado y los redirects de
+ * /admin/bandeja siguen andando sin redirigir nada.
  *
  * "Mi contraseña" no esta aca: es de la cuenta, no del proceso, y vive en el
- * bloque de la derecha. Tampoco hay enlace a /admin/bandeja: /admin ES la
- * bandeja de revision.
+ * bloque de la derecha.
  */
-const ENLACES: Enlace[] = [
-  { href: "/admin", texto: "Propuestas" },
-  { href: "/admin/tablero", texto: "Tablero" },
-  { href: "/admin/migue", texto: "Migue" },
-  // Para todos los roles: ahi el moderador carga el cronograma y el lector
-  // consulta la etapa. La pantalla deja en solo lectura lo que cada rol no
-  // puede tocar. Era solo para admin de cuando la pantalla era solo la etapa, y
-  // el cronograma de los moderadores quedaba escondido.
-  { href: "/admin/ediciones", texto: "Etapa del proceso" },
-  // Volvieron en la Fase 2 (se habian sacado en 98d0f8d): sin ellas, dar de alta
-  // a un evaluador o cargar el reglamento se hacia por consola contra
-  // produccion. Solo admin: no son tareas de todos los dias.
-  { href: "/admin/contenido", texto: "Contenido", soloAdmin: true },
-  { href: "/admin/equipo", texto: "Equipo", soloAdmin: true },
+const SECCIONES: Seccion[] = [
+  {
+    href: "/admin",
+    texto: "Propuestas",
+    pantallas: [
+      { href: "/admin", texto: "Tablero de propuestas" },
+      { href: "/admin/ideas/nueva", texto: "Cargar una propuesta", soloEscritura: true },
+      { href: "/admin/tablero", texto: "Estadísticas" },
+    ],
+  },
+  {
+    href: "/admin/ediciones",
+    texto: "Proceso",
+    pantallas: [
+      // Para todos los roles: ahi el moderador carga el cronograma y el lector
+      // consulta la etapa. La pantalla deja en solo lectura lo que cada rol no
+      // puede tocar.
+      { href: "/admin/ediciones", texto: "Etapa y cronograma" },
+      // Solo admin: no son tareas de todos los dias.
+      { href: "/admin/contenido", texto: "Contenido del sitio", soloAdmin: true },
+      { href: "/admin/migue", texto: "Lo que preguntan a Migue" },
+    ],
+  },
+  { href: "/admin/equipo", texto: "Equipo", soloAdmin: true, pantallas: [] },
 ];
 
 /**
- * "/admin" es prefijo de todas las rutas del panel, asi que solo se marca
- * cuando es la ruta exacta. Las demas secciones se marcan tambien en sus
- * subrutas, para que una pantalla de detalle no apague la seccion.
+ * Si una pantalla es la de `href`. "/admin" es prefijo de todas las rutas del
+ * panel, asi que solo vale exacta; las demas valen tambien en sus subrutas.
+ * La ficha de una idea se abre adentro de /admin, asi que no hace falta mas.
  */
 function estaActivo(pathname: string, href: string): boolean {
-  // "Propuestas" es la bandeja y tambien lo que se hace desde ella: cargar una
-  // idea (/admin/ideas/nueva) no es otra seccion, y sin esto ninguna solapa
-  // quedaba marcada en esa pantalla.
-  if (href === "/admin") return pathname === "/admin" || pathname.startsWith("/admin/ideas/");
+  if (href === "/admin") return pathname === "/admin";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** La seccion es la actual si alguna de sus pantallas lo es. */
+function seccionActiva(pathname: string, seccion: Seccion): boolean {
+  if (estaActivo(pathname, seccion.href)) return true;
+  return seccion.pantallas.some((pantalla) => estaActivo(pathname, pantalla.href));
 }
 
 export default function CabeceraPanel({
@@ -100,28 +129,33 @@ export default function CabeceraPanel({
   // formulario de ingreso. En /admin/ingresar nunca hay una sesion que mostrar.
   if (pathname === "/admin/ingresar") return null;
 
-  // Contenido y Equipo no se le ofrecen a quien no los puede usar. Esconder
-  // el enlace es cosmetico: la autorizacion real la hace cada pagina y cada
-  // accion releyendo el rol de la base.
-  const enlaces = ENLACES.filter((enlace) => !enlace.soloAdmin || rol === "admin");
+  // Contenido y Equipo no se le ofrecen a quien no los puede usar, ni la carga
+  // a quien solo lee. Esconder el enlace es cosmetico: la autorizacion real la
+  // hace cada pagina y cada accion releyendo el rol de la base.
+  const visible = (enlace: Enlace) =>
+    (!enlace.soloAdmin || rol === "admin") && (!enlace.soloEscritura || rol !== "lector");
+  const secciones = SECCIONES.filter(visible);
+  const actual = secciones.find((seccion) => seccionActiva(pathname, seccion));
+  const pantallas = actual?.pantallas.filter(visible) ?? [];
 
   return (
+    <div className="mb-6">
     <div
-      className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-2"
+      className="flex flex-wrap items-end justify-between gap-x-8 gap-y-2"
       style={{ borderBottom: "1px solid var(--borde)" }}
     >
       {/* -mb-px: la linea de la solapa actual se apoya sobre el borde de la
           barra en vez de quedar flotando arriba de el. */}
       <nav className="-mb-px flex flex-wrap items-end" aria-label="Secciones del panel">
         <ul className="flex flex-wrap items-end">
-          {enlaces.map((enlace) => (
-            <li key={enlace.href}>
+          {secciones.map((seccion) => (
+            <li key={seccion.href}>
               <Link
-                href={enlace.href}
-                aria-current={estaActivo(pathname, enlace.href) ? "page" : undefined}
-                className="solapa"
+                href={seccion.href}
+                aria-current={actual === seccion ? "page" : undefined}
+                className="solapa solapa-seccion"
               >
-                {enlace.texto}
+                {seccion.texto}
               </Link>
             </li>
           ))}
@@ -167,6 +201,29 @@ export default function CabeceraPanel({
           </form>
         </span>
       </section>
+    </div>
+
+      {/*
+        Las pantallas de la seccion actual, en una segunda fila de pastillas.
+        Con una sola pantalla (Equipo) no se dibuja: seria repetir la solapa.
+      */}
+      {pantallas.length > 1 && (
+        <nav aria-label={`Pantallas de ${actual?.texto ?? "la sección"}`} className="mt-3">
+          <ul className="flex flex-wrap gap-1.5">
+            {pantallas.map((pantalla) => (
+              <li key={pantalla.href}>
+                <Link
+                  href={pantalla.href}
+                  aria-current={estaActivo(pathname, pantalla.href) ? "page" : undefined}
+                  className="chip-orden"
+                >
+                  {pantalla.texto}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
     </div>
   );
 }

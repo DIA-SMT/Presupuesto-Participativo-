@@ -285,6 +285,9 @@ const salidaRevision = z.object({
 // compartidos con scripts/probar-redaccion.ts.
 // ---------------------------------------------------------------------------
 
+/** Lo que dice el prompt cuando la persona no eligio categoria (lo normal desde 2026). */
+const SIN_CATEGORIA = "sin elegir";
+
 function sistemaRevision(
   categorias: Array<{ slug: string; nombre: string; descripcion: string }>,
   categoriaElegida: string,
@@ -307,11 +310,11 @@ function sistemaRevision(
 
 # Los campos, como los ve la persona en el formulario
 
-- \`solucion\`: "¿Qué querés proponer?" — la obra o mejora que pide.
-- \`problema\`: "¿Por qué hace falta?" — qué pasa hoy y a quién afecta.
-- \`beneficios\`: "¿Quiénes se benefician?" — opcional.
-- \`titulo\`: el título de la idea.
-- \`categoria\`: la categoría elegida.
+- \`problema\`: "¿Qué problema comparten en el barrio?" — qué pasa hoy y a quién afecta.
+- \`solucion\`: "¿Qué les gustaría mejorar o cambiar?" — la obra o mejora que pide.
+- \`beneficios\`: "¿A quiénes beneficiaría?" — opcional.
+- \`titulo\`: el nombre de la propuesta.
+- \`categoria\`: la categoría, si la persona eligió una.
 
 En cada observación devolvés el campo al que corresponde, con esas claves.
 
@@ -319,7 +322,13 @@ En cada observación devolvés el campo al que corresponde, con esas claves.
 
 ${categorias.map((c) => `- ${c.nombre} (${c.slug}): ${c.descripcion}`).join("\n")}
 
-La persona eligió: ${categoriaElegida}. Si por el texto corresponde otra, decilo como un señalamiento con campo "categoria". Si corresponde, no digas nada sobre la categoría.
+${
+  categoriaElegida === SIN_CATEGORIA
+    ? // Desde el formulario 2026 la persona no elige la categoria: la asigna el
+      // equipo. Pedirle que la cambie seria pedirle algo que no tiene donde hacer.
+      "La persona no elige la categoría: la asigna el equipo al evaluar. No digas nada sobre la categoría."
+    : `La persona eligió: ${categoriaElegida}. Si por el texto corresponde otra, decilo como un señalamiento con campo "categoria". Si corresponde, no digas nada sobre la categoría.`
+}
 
 # Importante
 
@@ -453,7 +462,7 @@ export async function POST(request: Request) {
   const categorias = await getCategorias();
   const modelo = modeloPara("asistente");
   const nombreCategoria =
-    categorias.find((c) => c.slug === entrada.categoria)?.nombre ?? "sin elegir";
+    categorias.find((c) => c.slug === entrada.categoria)?.nombre ?? SIN_CATEGORIA;
   const ubicacion = [
     `<barrio>${entrada.barrio ?? "no indicado"}</barrio>`,
     `<distrito>${distrito ?? "no indicado"}</distrito>`,

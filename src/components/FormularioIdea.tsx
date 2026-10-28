@@ -8,8 +8,15 @@
  * el distrito con PostGIS, asi que no hay forma de cargar una coordenada
  * invalida ni de asignar mal el distrito.
  *
- * Datos personales: el telefono ya no se pide (la columna no existe) y el
- * correo HOY TAMPOCO: la casilla "Quiero dejar mi correo..." esta apagada con
+ * Las preguntas y su orden son las del formulario de papel 2026
+ * (PREGUNTAS_DE_LA_IDEA, src/lib/contenido-del-programa.ts): primero el
+ * problema, despues donde ocurre, que mejorar, a quienes beneficia y, al final,
+ * el nombre de la propuesta, la organizacion y un telefono opcional. La
+ * categoria ya no se pide: la asigna el equipo al evaluar.
+ *
+ * Datos personales: el telefono volvio con el formulario 2026, opcional, solo
+ * para el equipo y borrado al cerrar la edicion. El correo HOY NO se pide: la
+ * casilla "Quiero dejar mi correo..." esta apagada con
  * AVISO_POR_MAIL_HABILITADO (src/lib/aviso-por-mail.ts) porque el envio de
  * avisos no existe todavia. El codigo de la casilla queda, listo para cuando
  * exista: desmarcada por defecto y, sin marcarla, el correo ni siquiera se
@@ -65,14 +72,16 @@ import DocumentoIdea, {
 import Mapa from "@/components/Mapa";
 import type { PropuestaIA, RespuestaAsistente } from "@/app/api/ideas/asistente/route";
 import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
-
-type Categoria = { slug: string; nombre: string; descripcion: string };
+import {
+  ACLARACION_DE_LA_PROPUESTA,
+  PREGUNTAS_DE_LA_IDEA,
+} from "@/lib/contenido-del-programa";
 
 type Estado =
   | { tipo: "editando" }
   | { tipo: "revisando" }
   | { tipo: "enviando" }
-  | { tipo: "listo"; numero: number; distrito: number; codigo: string }
+  | { tipo: "listo"; numero: number; distrito: number; propuesta: string; codigo: string }
   | { tipo: "error"; mensaje: string };
 
 const LARGOS = {
@@ -80,10 +89,27 @@ const LARGOS = {
   problema: 3000,
   solucion: 4000,
   beneficios: 3000,
+  referenciasUbicacion: 1000,
 } as const;
 
 /** El barrio no esta en LARGOS porque no es un campo de redaccion. */
 const LARGO_BARRIO = 120;
+/** Los de src/lib/idea-esquema.ts, copiados por lo mismo que MINIMOS. */
+const LARGO_ORGANIZACION = 160;
+const LARGO_TELEFONO = 30;
+
+/**
+ * El telefono, con la misma regla que el servidor (`telefono` en
+ * idea-esquema.ts): numeros con espacios, guiones o parentesis, entre 6 y 15
+ * digitos. Vacio vale: es opcional.
+ */
+function telefonoValido(valor: string): boolean {
+  const limpio = valor.trim();
+  if (!limpio) return true;
+  if (!/^\+?[\d\s()\-/.]+$/.test(limpio)) return false;
+  const digitos = limpio.replace(/\D/g, "").length;
+  return digitos >= 6 && digitos <= 15;
+}
 
 /** Los tres campos largos, los unicos con ayuda de redaccion. */
 type CampoLargo = "problema" | "solucion" | "beneficios";
@@ -102,18 +128,22 @@ const MINIMOS = { titulo: 8, problema: 30, solucion: 30 } as const;
  * Una pregunta a la vez (pedido del jefe del programa, 26/08/2026): con seis
  * campos vacios en pantalla la persona no sabe donde esta ni cuanto le falta.
  *
- * El titulo y la categoria van en el ULTIMO paso y no en el primero, que es el
- * cambio menos obvio de la lista: pedirle un titulo que resuma la propuesta a
- * alguien que todavia no la escribio es la parte mas dificil del formulario, y
- * en el ultimo paso ya tiene todo escrito para poder resumirlo.
+ * El orden es el del formulario de papel 2026, que se reparte en las asambleas:
+ * quien llena el papel y quien entra a la web contestan lo mismo en el mismo
+ * orden. El nombre de la propuesta va en el ULTIMO paso, igual que en el papel:
+ * pedirle un titulo a alguien que todavia no escribio la propuesta es la parte
+ * mas dificil, y al final ya tiene todo escrito para poder resumirlo.
  */
 const PASOS: ReadonlyArray<{ corto: string; titulo: string; opcional?: boolean }> = [
-  { corto: "Dónde", titulo: "¿Dónde sería?" },
-  { corto: "Qué", titulo: "¿Qué querés proponer?" },
-  { corto: "Por qué", titulo: "¿Por qué hace falta?" },
-  { corto: "Quiénes", titulo: "¿Quiénes se benefician?", opcional: true },
-  { corto: "Revisar", titulo: "Revisá y enviá" },
+  { corto: "Problema", titulo: PREGUNTAS_DE_LA_IDEA.problema.pregunta },
+  { corto: "Dónde", titulo: PREGUNTAS_DE_LA_IDEA.referenciasUbicacion.pregunta },
+  { corto: "Mejora", titulo: PREGUNTAS_DE_LA_IDEA.solucion.pregunta },
+  { corto: "Quiénes", titulo: PREGUNTAS_DE_LA_IDEA.beneficios.pregunta, opcional: true },
+  { corto: "Enviar", titulo: PREGUNTAS_DE_LA_IDEA.titulo.pregunta },
 ];
+
+/** En que paso esta cada cosa: los numeros se usan en varios lugares. */
+const PASO = { problema: 1, lugar: 2, solucion: 3, beneficios: 4 } as const;
 
 const ULTIMO = PASOS.length;
 
@@ -149,7 +179,13 @@ function textoParaMostrar(causa: unknown, siNoEsNuestro: string): string {
  * Los campos de una linea del ultimo paso, que son los unicos desde donde un
  * Enter envia la idea (ver `cortarEnterQueEnvia`).
  */
-const CAMPOS_QUE_ENVIAN_CON_ENTER = new Set(["titulo", "autorNombre", "autorEmail"]);
+const CAMPOS_QUE_ENVIAN_CON_ENTER = new Set([
+  "titulo",
+  "organizacion",
+  "autorTelefono",
+  "autorNombre",
+  "autorEmail",
+]);
 
 /**
  * Como se llama cada campo EN PANTALLA.
@@ -161,30 +197,27 @@ const CAMPOS_QUE_ENVIAN_CON_ENTER = new Set(["titulo", "autorNombre", "autorEmai
  * formulario. Ahora el modelo dice QUE falta y el formulario dice DONDE.
  */
 const PREGUNTA_DEL_CAMPO: Record<string, string> = {
-  solucion: "¿Qué querés proponer?",
-  problema: "¿Por qué hace falta?",
-  beneficios: "¿Quiénes se benefician?",
-  titulo: "Título de la idea",
-  categoria: "Categoría",
+  problema: PREGUNTAS_DE_LA_IDEA.problema.pregunta,
+  solucion: PREGUNTAS_DE_LA_IDEA.solucion.pregunta,
+  beneficios: PREGUNTAS_DE_LA_IDEA.beneficios.pregunta,
+  titulo: "Nombre de la propuesta",
 };
 
 /** Los campos que la IA puede reescribir, en el orden en que se muestran. */
 type CampoPropuesta = "titulo" | "solucion" | "problema" | "beneficios";
 const CAMPOS_PROPUESTA: Array<{ campo: CampoPropuesta; etiqueta: string }> = [
-  { campo: "titulo", etiqueta: PREGUNTA_DEL_CAMPO.titulo },
-  { campo: "solucion", etiqueta: PREGUNTA_DEL_CAMPO.solucion },
   { campo: "problema", etiqueta: PREGUNTA_DEL_CAMPO.problema },
+  { campo: "solucion", etiqueta: PREGUNTA_DEL_CAMPO.solucion },
   { campo: "beneficios", etiqueta: PREGUNTA_DEL_CAMPO.beneficios },
+  { campo: "titulo", etiqueta: PREGUNTA_DEL_CAMPO.titulo },
 ];
 
 export default function FormularioIdea({
-  categorias,
   abierta,
   conIA,
   anio,
   autor,
 }: {
-  categorias: Categoria[];
   abierta: boolean;
   /**
    * La persona que ingreso con CIDITUC, o null en modo prueba. Con autor, el
@@ -253,11 +286,15 @@ export default function FormularioIdea({
    */
   const [valores, setValores] = useState({
     titulo: "",
-    categoria: "",
     barrio: "",
+    referenciasUbicacion: "",
     problema: "",
     solucion: "",
     beneficios: "",
+    /** "" sin contestar, "si" o "no": "¿En nombre de una organización?". */
+    conOrganizacion: "",
+    organizacion: "",
+    autorTelefono: "",
     autorNombre: "",
     autorEmail: "",
   });
@@ -279,7 +316,7 @@ export default function FormularioIdea({
   const [puntoPorGps, setPuntoPorGps] = useState(false);
   /** Que bloque del documento se esta editando, para marcarlo alla. */
   const [bloqueActivo, setBloqueActivo] = useState<BloqueActivo>(null);
-  /** En que paso esta la persona. Arranca en 1: primero el lugar. */
+  /** En que paso esta la persona. Arranca en 1: primero el problema. */
   const [paso, setPaso] = useState(1);
   /** En el telefono el documento se abre a pantalla completa. */
   const ventanaDoc = useRef<HTMLDialogElement>(null);
@@ -297,8 +334,13 @@ export default function FormularioIdea({
    * con "an invalid form control is not focusable" y sin decirle nada a nadie.
    */
   function faltaEnElPaso(n: number): string | null {
-    if (n === 1) {
-      if (!punto) return "Marcá en el mapa dónde sería la obra.";
+    if (n === PASO.problema) {
+      return largos.problema >= MINIMOS.problema
+        ? null
+        : `Contá un poco más cuál es el problema: necesita al menos ${MINIMOS.problema} caracteres.`;
+    }
+    if (n === PASO.lugar) {
+      if (!punto) return "Marcá en el mapa dónde ocurre.";
       // Mientras se consulta, `distrito` es null: sin esto, quien apretaba
       // "Siguiente" en ese momento leia que su punto quedaba fuera de la ciudad.
       if (ubicando) return "Esperá un momento: estamos ubicando el punto en el mapa.";
@@ -306,21 +348,21 @@ export default function FormularioIdea({
       if (!distrito) return "Ese punto queda fuera de los 20 distritos. Marcá más cerca.";
       return null;
     }
-    if (n === 2) {
+    if (n === PASO.solucion) {
       return largos.solucion >= MINIMOS.solucion
         ? null
-        : `Contá un poco más qué querés proponer: necesita al menos ${MINIMOS.solucion} caracteres.`;
+        : `Contá un poco más qué les gustaría mejorar o cambiar: necesita al menos ${MINIMOS.solucion} caracteres.`;
     }
-    if (n === 3) {
-      return largos.problema >= MINIMOS.problema
-        ? null
-        : `Contá un poco más por qué hace falta: necesita al menos ${MINIMOS.problema} caracteres.`;
-    }
-    if (n === 4) return null; // opcional
+    if (n === PASO.beneficios) return null; // opcional
     if (!valores.titulo.trim() || valores.titulo.trim().length < MINIMOS.titulo) {
-      return `El título es muy corto: necesita al menos ${MINIMOS.titulo} caracteres.`;
+      return `El nombre de la propuesta es muy corto: necesita al menos ${MINIMOS.titulo} caracteres.`;
     }
-    if (!valores.categoria) return "Elegí una categoría.";
+    if (valores.conOrganizacion === "si" && !valores.organizacion.trim()) {
+      return "Escribí el nombre de la organización, o marcá que no la presentás en nombre de una.";
+    }
+    if (!telefonoValido(valores.autorTelefono)) {
+      return "Revisá el teléfono: entre 6 y 15 números, con espacios o guiones si querés. Es opcional.";
+    }
     if (avisos && !valores.autorEmail.trim()) {
       return "Dejaste marcada la casilla del correo: escribilo o desmarcala.";
     }
@@ -351,8 +393,8 @@ export default function FormularioIdea({
   // contexto de la ayuda, y se escriben al aceptar un texto generado, sin
   // volver controlado el formulario.
   const refTitulo = useRef<HTMLInputElement>(null);
-  const refCategoria = useRef<HTMLSelectElement>(null);
   const refBarrio = useRef<HTMLInputElement>(null);
+  const refReferencias = useRef<HTMLTextAreaElement>(null);
   const refProblema = useRef<HTMLTextAreaElement>(null);
   const refSolucion = useRef<HTMLTextAreaElement>(null);
   const refBeneficios = useRef<HTMLTextAreaElement>(null);
@@ -360,6 +402,7 @@ export default function FormularioIdea({
   const REF_DEL_CAMPO = {
     titulo: refTitulo,
     barrio: refBarrio,
+    referenciasUbicacion: refReferencias,
     solucion: refSolucion,
     problema: refProblema,
     beneficios: refBeneficios,
@@ -599,7 +642,6 @@ export default function FormularioIdea({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           titulo: valores.titulo || null,
-          categoria: valores.categoria || null,
           barrio: valores.barrio || null,
           problema: valores.problema || null,
           solucion: valores.solucion || null,
@@ -794,11 +836,16 @@ export default function FormularioIdea({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           titulo: datos.get("titulo"),
-          categoria: datos.get("categoria"),
           barrio: datos.get("barrio") || null,
+          referenciasUbicacion: datos.get("referenciasUbicacion") || null,
           problema: datos.get("problema"),
           solucion: datos.get("solucion"),
           beneficios: datos.get("beneficios") || null,
+          // La organizacion viaja solo si se contesto "Sí": un nombre escrito y
+          // despues cambiado a "No" queda en el campo, oculto, y no tiene que ir.
+          organizacion:
+            valores.conOrganizacion === "si" ? datos.get("organizacion") || null : null,
+          autorTelefono: datos.get("autorTelefono") || null,
           lat: punto.lat,
           lon: punto.lon,
           // Con sesion el servidor usa el nombre de la cuenta de CIDITUC.
@@ -815,6 +862,7 @@ export default function FormularioIdea({
       const cuerpo = (await respuesta.json().catch(() => ({}))) as {
         numero?: number;
         distrito?: number;
+        propuesta?: string;
         codigo?: string;
         error?: string;
       };
@@ -826,6 +874,7 @@ export default function FormularioIdea({
         tipo: "listo",
         numero: cuerpo.numero,
         distrito: cuerpo.distrito ?? distrito,
+        propuesta: cuerpo.propuesta ?? `P${String(cuerpo.numero).padStart(3, "0")}`,
         codigo: cuerpo.codigo,
       });
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -860,9 +909,9 @@ export default function FormularioIdea({
             style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
           >
             <p className="text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
-              Número de tu idea
+              Código de tu propuesta
             </p>
-            <p className="mt-1 font-mono text-2xl font-bold">#{estado.numero}</p>
+            <p className="mt-1 font-mono text-2xl font-bold">{estado.propuesta}</p>
           </div>
           <div
             className="rounded-2xl px-5 py-4"
@@ -881,12 +930,15 @@ export default function FormularioIdea({
         </div>
 
         <p className="mt-4 max-w-prose text-[0.9375rem] font-semibold leading-relaxed">
-          Anotá los dos datos o sacale una foto a esta pantalla.
+          Anotá los dos códigos o sacale una foto a esta pantalla.
         </p>
         <p className="mt-1 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-          El código no se vuelve a mostrar y no lo podés recuperar desde el sitio. Con el número y el
-          código consultás cuando quieras en qué etapa está tu idea y leés la devolución del equipo,
-          sin depender de que te escribamos.
+          El código de seguimiento no se vuelve a mostrar y no lo podés recuperar desde el sitio. Con
+          los dos consultás cuando quieras en qué etapa está tu propuesta y leés la devolución del
+          equipo, sin depender de que te llamemos.
+        </p>
+        <p className="mt-3 max-w-prose text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+          {ACLARACION_DE_LA_PROPUESTA}
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -935,15 +987,22 @@ export default function FormularioIdea({
    */
   const edicionDelDocumento: EdicionDocumento = {
     onEscribir: escribirDesdeDocumento,
-    onElegirCategoria: (slug) => {
-      if (refCategoria.current) refCategoria.current.value = slug;
-      anotarValor("categoria", slug);
-    },
     onFocoBloque: setBloqueActivo,
-    categorias,
-    categoriaSlug: valores.categoria,
     topes: { ...LARGOS, barrio: LARGO_BARRIO },
     deshabilitado: !abierta || ocupado,
+  };
+
+  /** Lo que dibuja el documento, igual en el panel de al lado y en el telefono. */
+  const datosDelDocumento = {
+    titulo: valores.titulo,
+    barrio: valores.barrio,
+    distrito,
+    punto,
+    referenciasUbicacion: valores.referenciasUbicacion,
+    solucion: valores.solucion,
+    problema: valores.problema,
+    beneficios: valores.beneficios,
+    organizacion: valores.conOrganizacion === "si" ? valores.organizacion : "",
   };
 
   return (
@@ -988,10 +1047,27 @@ export default function FormularioIdea({
         el envio con "an invalid form control is not focusable", sin decirle nada
         a nadie), y por eso la validacion la hace faltaEnElPaso.
       */}
-      {/* --- Paso 1: el lugar ---------------------------------------------- */}
-      <section className={paso === 1 ? "" : "hidden"}>
-        <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-          Tocá el mapa en el lugar de la obra. El distrito y el barrio se completan solos.
+      {/* --- Paso 2: el lugar ---------------------------------------------- */}
+      <section className={paso === PASO.lugar ? "space-y-1" : "hidden"}>
+        <Campo
+          etiqueta="Las referencias del lugar"
+          ayuda={`${PREGUNTAS_DE_LA_IDEA.referenciasUbicacion.ayuda} Es opcional: lo que vale es el punto del mapa.`}
+        >
+          <textarea
+            ref={refReferencias}
+            name="referenciasUbicacion"
+            rows={2}
+            maxLength={LARGOS.referenciasUbicacion}
+            disabled={!abierta || ocupado}
+            placeholder="En la esquina de… frente a la escuela…"
+            onInput={(evento) => anotarValor("referenciasUbicacion", evento.currentTarget.value)}
+            onFocus={() => setBloqueActivo("referenciasUbicacion")}
+            className="w-full resize-y rounded-xl px-3 py-2.5 text-sm outline-none"
+            style={campoEstilo}
+          />
+        </Campo>
+        <p className="pt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
+          Y marcalo en el mapa: tocá el lugar. El distrito y el barrio se completan solos.
         </p>
 
         {/* En el telefono marcar un punto con el dedo es incomodo, y el vecino
@@ -1079,7 +1155,7 @@ export default function FormularioIdea({
             sigue faltando lo mismo. Se dice una vez, cuando empieza a escribir.
           */}
           <p
-            className={paso === 2 ? "text-sm leading-relaxed" : "hidden"}
+            className={paso === PASO.problema ? "text-sm leading-relaxed" : "hidden"}
             style={{ color: "var(--texto-suave)" }}
           >
             Escribilo con tus palabras, como puedas.{" "}
@@ -1095,51 +1171,24 @@ export default function FormularioIdea({
             )}
           </p>
 
+          {/* La categoria ya no se pide: la asigna el equipo al evaluar. */}
           <div className={paso === ULTIMO ? "" : "hidden"}>
-          <Campo etiqueta="Título de la idea" ayuda="Una línea que resuma la propuesta.">
+          <Campo etiqueta="Nombre de la propuesta" ayuda={PREGUNTAS_DE_LA_IDEA.titulo.ayuda}>
             <input
               ref={refTitulo}
               name="titulo"
               maxLength={LARGOS.titulo}
               disabled={!abierta || ocupado}
               onInput={(evento) => anotarValor("titulo", evento.currentTarget.value)}
-              placeholder="Puesta en valor de la plaza del barrio…"
+              placeholder="Una plaza para el barrio…"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
           </Campo>
-
-          <Campo etiqueta="Categoría">
-            <select
-              ref={refCategoria}
-              name="categoria"
-              disabled={!abierta || ocupado}
-              onChange={(evento) => anotarValor("categoria", evento.currentTarget.value)}
-              defaultValue=""
-              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-              style={campoEstilo}
-            >
-              <option value="" disabled>
-                Elegí una categoría
-              </option>
-              {categorias.map((categoria) => (
-                <option key={categoria.slug} value={categoria.slug}>
-                  {categoria.nombre}
-                </option>
-              ))}
-            </select>
-            <ul className="mt-2 space-y-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-              {categorias.map((categoria) => (
-                <li key={categoria.slug}>
-                  <strong>{categoria.nombre}:</strong> {categoria.descripcion}
-                </li>
-              ))}
-            </ul>
-          </Campo>
           </div>
 
           {/* El barrio va con el lugar: lo completa el mapa. */}
-          <div className={paso === 1 ? "" : "hidden"}>
+          <div className={paso === PASO.lugar ? "" : "hidden"}>
           <Campo
             etiqueta="Barrio"
             ayuda={
@@ -1169,18 +1218,16 @@ export default function FormularioIdea({
               clic del campo etiquetado. El <div> mantiene al par junto pese al
               space-y de la seccion. */}
           {/*
-            El orden de estas dos preguntas esta invertido respecto de las
-            columnas de la base, y es a proposito (pedido de Lucas, 26/08/2026):
-            la gente llega con "quiero una plaza", no con "el problema es la
-            carencia de espacios verdes". Primero se le pregunta QUE quiere
-            (columna `solucion`) y despues POR QUE hace falta (columna
-            `problema`). Las columnas siguen significando lo mismo que siempre;
-            lo unico que cambia es el orden en pantalla y como se pregunta.
+            El orden es el del papel 2026: primero el problema (columna
+            `problema`) y despues que mejorar (columna `solucion`). Del 26/08 al
+            formulario 2026 fue al reves, primero "¿Qué querés proponer?": el
+            papel que se reparte en las asambleas pregunta primero por el
+            problema, y la web lo sigue para que las dos vias pidan lo mismo.
           */}
-          <div className={paso === 2 ? "" : "hidden"}>
+          <div className={paso === PASO.solucion ? "" : "hidden"}>
             <Campo
-              etiqueta="¿Qué querés proponer?"
-              ayuda="Contá qué obra o mejora querés para tu barrio. Con tus palabras alcanza."
+              etiqueta="Qué les gustaría mejorar o cambiar"
+              ayuda={PREGUNTAS_DE_LA_IDEA.solucion.ayuda}
             >
               <textarea
                 ref={refSolucion}
@@ -1197,11 +1244,8 @@ export default function FormularioIdea({
             </Campo>
           </div>
 
-          <div className={paso === 3 ? "" : "hidden"}>
-            <Campo
-              etiqueta="¿Por qué hace falta?"
-              ayuda="¿Qué pasa hoy en el barrio? ¿A quiénes afecta?"
-            >
+          <div className={paso === PASO.problema ? "" : "hidden"}>
+            <Campo etiqueta="El problema" ayuda={PREGUNTAS_DE_LA_IDEA.problema.ayuda}>
               <textarea
                 ref={refProblema}
                 name="problema"
@@ -1223,10 +1267,10 @@ export default function FormularioIdea({
             la solucion que la persona ya escribio. De ahi que el boton pida esos
             dos campos y no este.
           */}
-          <div className={paso === 4 ? "" : "hidden"}>
+          <div className={paso === PASO.beneficios ? "" : "hidden"}>
             <Campo
-              etiqueta="¿Quiénes se benefician?"
-              ayuda="Opcional. La IA puede escribirlo a partir de lo que contaste arriba."
+              etiqueta="A quiénes beneficiaría"
+              ayuda={`${PREGUNTAS_DE_LA_IDEA.beneficios.ayuda} Es opcional${conIA ? ": la IA puede escribirlo a partir de lo que contaste" : ""}.`}
             >
               <textarea
                 ref={refBeneficios}
@@ -1244,12 +1288,60 @@ export default function FormularioIdea({
         </section>
 
         <section className={paso === ULTIMO ? "space-y-4" : "hidden"}>
-          <h3 className="text-base font-bold">{autor ? "Tus datos" : "Tus datos (opcionales)"}</h3>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">{PREGUNTAS_DE_LA_IDEA.organizacion.pregunta}</legend>
+            <div className="flex gap-5 text-sm">
+              {(["si", "no"] as const).map((opcion) => (
+                <label key={opcion} className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="conOrganizacion"
+                    value={opcion}
+                    checked={valores.conOrganizacion === opcion}
+                    disabled={!abierta || ocupado}
+                    onChange={() => anotarValor("conOrganizacion", opcion)}
+                  />
+                  {opcion === "si" ? "Sí" : "No, la presento yo"}
+                </label>
+              ))}
+            </div>
+            {valores.conOrganizacion === "si" && (
+              <Campo etiqueta="Nombre de la organización" ayuda={PREGUNTAS_DE_LA_IDEA.organizacion.ayuda}>
+                <input
+                  name="organizacion"
+                  maxLength={LARGO_ORGANIZACION}
+                  disabled={!abierta || ocupado}
+                  onInput={(evento) => anotarValor("organizacion", evento.currentTarget.value)}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={campoEstilo}
+                />
+              </Campo>
+            )}
+          </fieldset>
+
+          <h3 className="pt-2 text-base font-bold">{autor ? "Tus datos" : "Tus datos (opcionales)"}</h3>
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
             Ninguno de estos datos se publica. Al enviar la idea te vamos a dar un{" "}
-            <strong>código de seguimiento</strong>: con ese código y el número de tu idea podés ver
-            cuando quieras cómo sigue, sin dejarnos ningún dato de contacto.
+            <strong>código de seguimiento</strong>: con ese código y el de tu propuesta podés ver
+            cuando quieras cómo sigue.
           </p>
+
+          <Campo
+            etiqueta="Teléfono de contacto (opcional)"
+            ayuda="Por si el equipo necesita consultarte algo de la propuesta. Solo lo ve el equipo y se borra cuando cierra la edición."
+          >
+            <input
+              name="autorTelefono"
+              type="tel"
+              autoComplete="tel"
+              maxLength={LARGO_TELEFONO}
+              disabled={!abierta || ocupado}
+              onInput={(evento) => anotarValor("autorTelefono", evento.currentTarget.value)}
+              placeholder="381 555-1234"
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={campoEstilo}
+            />
+          </Campo>
 
           {autor ? (
             /*
@@ -1332,6 +1424,16 @@ export default function FormularioIdea({
             </div>
           )}
         </section>
+
+        {/* La aclaracion del pie del papel, con las mismas palabras, antes de enviar. */}
+        {paso === ULTIMO && (
+          <p
+            className="rounded-xl px-4 py-3 text-xs leading-relaxed"
+            style={{ background: "var(--fondo-suave)", color: "var(--texto-suave)" }}
+          >
+            {ACLARACION_DE_LA_PROPUESTA}
+          </p>
+        )}
 
         {estado.tipo === "error" && (
           <p
@@ -1545,18 +1647,7 @@ export default function FormularioIdea({
             poligono={poligono}
             activo={bloqueActivo}
             edicion={edicionDelDocumento}
-            datos={{
-              titulo: valores.titulo,
-              // El nombre de la categoria, no el slug: esto lo lee una persona.
-              categoria:
-                categorias.find((c) => c.slug === valores.categoria)?.nombre ?? "",
-              barrio: valores.barrio,
-              distrito,
-              punto,
-              solucion: valores.solucion,
-              problema: valores.problema,
-              beneficios: valores.beneficios,
-            }}
+            datos={datosDelDocumento}
           />
         </div>
 
@@ -1626,16 +1717,7 @@ export default function FormularioIdea({
             poligono={poligono}
             activo={bloqueActivo}
             edicion={edicionDelDocumento}
-            datos={{
-              titulo: valores.titulo,
-              categoria: categorias.find((c) => c.slug === valores.categoria)?.nombre ?? "",
-              barrio: valores.barrio,
-              distrito,
-              punto,
-              solucion: valores.solucion,
-              problema: valores.problema,
-              beneficios: valores.beneficios,
-            }}
+            datos={datosDelDocumento}
           />
         </div>
       </dialog>

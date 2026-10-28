@@ -13,9 +13,9 @@
  * sitio no contiene DNIs en claro.
  */
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, esBaseRemota } from "@/db";
-import { distritos, ediciones, votantes, votos } from "@/db/schema";
+import { distritos, ediciones, ideas, votantes, votos } from "@/db/schema";
 import { puedeDeclararDistrito } from "./etapas";
 
 /**
@@ -192,6 +192,18 @@ export async function empadronar(datos: DatosEmpadronamiento): Promise<{
   } catch (causa) {
     throw errorSinDatosPersonales(causa);
   }
+
+  // Las ideas que la persona presento en papel antes de tener lugar en el padron
+  // quedaron con el hash de su DNI (`ideas.autor_dni_hash`, cargado desde el
+  // panel): ahora que tiene fila, se atan a ella. Solo las que no tienen dueño,
+  // y sin que un error aca le corte el ingreso: el vinculo es un extra.
+  await db
+    .update(ideas)
+    .set({ votanteId: fila.id })
+    .where(and(eq(ideas.autorDniHash, dniHash), isNull(ideas.votanteId)))
+    .catch((causa: unknown) => {
+      console.error("[empadronar] no se pudieron atar las ideas en papel", errorSinDatosPersonales(causa).message);
+    });
 
   return { votanteId: fila.id, distrito: fila.distritoId, nombre: fila.nombre };
 }

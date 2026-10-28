@@ -184,6 +184,20 @@ export function formatearNumero(valor: number): string {
   return enteros.format(valor);
 }
 
+/**
+ * El codigo de la propuesta del formulario 2026, "D05-P012": el distrito y el
+ * numero de la idea en la edicion. El papel trae el casillero vacio
+ * ("Código: D___ P___") y el equipo lo completa con lo que muestra el panel al
+ * cargarla. No se guarda: sale de dos columnas que ya existen, y el numero es
+ * el identificador que no cambia (si una correccion muda la idea de distrito,
+ * el papel archivado se sigue encontrando por la P).
+ */
+export function codigoDePropuesta(distrito: number | null, numero: number | null): string {
+  const d = distrito === null ? "--" : String(distrito).padStart(2, "0");
+  const p = numero === null ? "---" : String(numero).padStart(3, "0");
+  return `D${d}-P${p}`;
+}
+
 const fechaLarga = new Intl.DateTimeFormat("es-AR", {
   day: "numeric",
   month: "long",

@@ -34,7 +34,7 @@
  */
 import { and, eq, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { categorias, ediciones, ideas } from "@/db/schema";
+import { categorias, ediciones, ideas, votantes } from "@/db/schema";
 import type { CanalCarga, EtapaEdicion } from "@/db/queries";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import {
@@ -51,12 +51,26 @@ export type TransaccionAlta = Parameters<Parameters<typeof db.transaction>[0]>[0
 export type DatosIdeaNueva = {
   edicionId: number;
   titulo: string;
-  /** Slug de la categoria, como lo manda el formulario. */
-  categoria: string;
+  /**
+   * Slug de la categoria, si vino. Desde el formulario 2026 la persona no la
+   * elige: la idea entra sin categoria y la asigna el equipo al evaluar.
+   */
+  categoria?: string | null;
   barrio?: string | null;
+  /** "¿Dónde ocurre?": calles, esquina, altura, un punto cercano. */
+  referenciasUbicacion?: string | null;
   problema: string;
   solucion: string;
   beneficios?: string | null;
+  /** En nombre de que organizacion se presenta; null, a titulo propio. */
+  organizacion?: string | null;
+  /** Telefono de contacto opcional, solo para el equipo. */
+  autorTelefono?: string | null;
+  /**
+   * DNI ya hasheado (`hashearDni`) de una idea en papel. El alta busca con el
+   * la fila del padron y, si existe, completa `votanteId`.
+   */
+  autorDniHash?: string | null;
   lat: number;
   lon: number;
   /** true cuando quien carga no sabe el lugar exacto (un papel sin direccion). */
@@ -99,15 +113,20 @@ export type IdeaCreada = {
   distrito: number;
   slug: string;
   /**
-   * El nombre de la categoria, para el comprobante. Sale de la misma lectura que
+   * El nombre de la categoria, para el comprobante, o null si entro sin
+   * categoria (lo normal desde el formulario 2026). Sale de la misma lectura que
    * valida el slug: pedirlo despues del alta era una consulta mas con la idea ya
    * guardada, y si fallaba el panel decia "no se pudo guardar" de una idea que
    * si quedo (y el reintento la cargaba dos veces).
    */
-  categoria: string;
+  categoria: string | null;
   /** El titulo y el barrio tal como quedaron guardados, ya normalizados. */
   titulo: string;
   barrio: string | null;
+  referenciasUbicacion: string | null;
+  organizacion: string | null;
+  /** Si la idea quedo atada a una fila del padron (por la sesion o por el DNI). */
+  conVotante: boolean;
   problema: string | null;
   solucion: string | null;
   beneficios: string | null;
@@ -151,21 +170,42 @@ export async function crearIdea(
     };
   }
 
-  const [categoria] = await db
-    .select({ id: categorias.id, nombre: categorias.nombre })
-    .from(categorias)
-    .where(eq(categorias.slug, datos.categoria))
-    .limit(1);
-  if (!categoria) {
-    return { ok: false, motivo: "categoria", mensaje: "Categoría desconocida." };
+  // Sin categoria es lo normal: la asigna el equipo al evaluar. Una que viene
+  // tiene que existir.
+  let categoria: { id: number; nombre: string } | null = null;
+  if (datos.categoria) {
+    [categoria = null] = await db
+      .select({ id: categorias.id, nombre: categorias.nombre })
+      .from(categorias)
+      .where(eq(categorias.slug, datos.categoria))
+      .limit(1);
+    if (!categoria) {
+      return { ok: false, motivo: "categoria", mensaje: "Categoría desconocida." };
+    }
   }
 
   const titulo = normalizarTitulo(datos.titulo);
   const base = slugificar(titulo);
   const barrio = normalizarBarrio(datos.barrio);
+  const referenciasUbicacion = normalizarParrafo(datos.referenciasUbicacion);
   const problema = normalizarParrafo(datos.problema);
   const solucion = normalizarParrafo(datos.solucion);
   const beneficios = normalizarParrafo(datos.beneficios);
+  const organizacion = (datos.organizacion ?? "").replace(/\s+/g, " ").trim() || null;
+  const autorTelefono = (datos.autorTelefono ?? "").replace(/\s+/g, " ").trim() || null;
+
+  // Una idea en papel trae el DNI: si esa persona ya esta en el padron, la idea
+  // queda atada a su fila como si la hubiera presentado con CIDITUC. Si todavia
+  // no esta, queda el hash, y `empadronar` la ata cuando entre por primera vez.
+  let votanteId = datos.votanteId ?? null;
+  if (!votanteId && datos.autorDniHash) {
+    const [delPadron] = await db
+      .select({ id: votantes.id })
+      .from(votantes)
+      .where(eq(votantes.dniHash, datos.autorDniHash))
+      .limit(1);
+    votanteId = delPadron?.id ?? null;
+  }
 
   return db.transaction(async (tx): Promise<IdeaCreada | RechazoAlta> => {
     const [edicion] = await tx
@@ -201,15 +241,17 @@ export async function crearIdea(
       .values({
         edicionId: datos.edicionId,
         distritoId: distrito,
-        categoriaId: categoria.id,
+        categoriaId: categoria?.id ?? null,
         numero,
         titulo,
         slug,
         barrio,
         barrioNormalizado: barrio ? normalizar(barrio) : null,
+        referenciasUbicacion,
         problema,
         solucion,
         beneficios,
+        organizacion,
         lat: String(datos.lat),
         lon: String(datos.lon),
         ubicacionAproximada: datos.ubicacionAproximada ?? false,
@@ -217,7 +259,9 @@ export async function crearIdea(
         canal: datos.canal,
         canalDetalle: datos.canalDetalle || null,
         autorNombre: datos.autorNombre || null,
-        votanteId: datos.votanteId ?? null,
+        votanteId,
+        autorDniHash: datos.autorDniHash ?? null,
+        autorTelefono,
         // El contacto entra SOLO con consentimiento, y queda registrada la
         // version del texto que la persona acepto.
         autorEmail: datos.contacto?.email ?? null,
@@ -239,9 +283,12 @@ export async function crearIdea(
       numero,
       distrito,
       slug,
-      categoria: categoria.nombre,
+      categoria: categoria?.nombre ?? null,
       titulo,
       barrio,
+      referenciasUbicacion,
+      organizacion,
+      conVotante: votanteId !== null,
       problema,
       solucion,
       beneficios,

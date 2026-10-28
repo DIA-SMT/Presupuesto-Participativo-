@@ -21,17 +21,28 @@
  * telefono.
  */
 import { useId, type ReactNode } from "react";
+import {
+  ACLARACION_DE_LA_PROPUESTA,
+  PREGUNTAS_DE_LA_IDEA,
+} from "@/lib/contenido-del-programa";
 
+/**
+ * Lo que dice la propuesta. Desde el formulario 2026 el documento sigue las
+ * preguntas del papel, en su orden, y ya no lleva categoria: la persona no la
+ * elige, la asigna el equipo al evaluar.
+ */
 export type DatosDocumento = {
   titulo: string;
-  /** Nombre de la categoria, no el slug: esto lo lee una persona. */
-  categoria: string;
   barrio: string;
   distrito: number | null;
   punto: { lat: number; lon: number } | null;
+  /** "¿Dónde ocurre?": las referencias escritas del lugar. */
+  referenciasUbicacion: string;
   solucion: string;
   problema: string;
   beneficios: string;
+  /** La organizacion en cuyo nombre se presenta, o "" si ninguna. */
+  organizacion: string;
 };
 
 /**
@@ -41,15 +52,28 @@ export type DatosDocumento = {
  */
 export type Comprobante = {
   numero: number;
+  /** El codigo de la propuesta, D05-P012: el que se escribe en el papel. */
+  propuesta: string;
   codigo: string;
   fecha: string;
 };
 
-/** Cual de los tres bloques se esta editando, para marcarlo. */
-export type BloqueActivo = "solucion" | "problema" | "beneficios" | null;
+/** Cual de los bloques se esta editando, para marcarlo. */
+export type BloqueActivo =
+  | "problema"
+  | "referenciasUbicacion"
+  | "solucion"
+  | "beneficios"
+  | null;
 
 /** Los campos del documento que se escriben. El distrito y el punto salen del mapa. */
-export type CampoEditable = "titulo" | "barrio" | "solucion" | "problema" | "beneficios";
+export type CampoEditable =
+  | "titulo"
+  | "barrio"
+  | "referenciasUbicacion"
+  | "solucion"
+  | "problema"
+  | "beneficios";
 
 /**
  * Lo que hace falta para que el documento se pueda escribir encima.
@@ -63,10 +87,7 @@ export type CampoEditable = "titulo" | "barrio" | "solucion" | "problema" | "ben
  */
 export type EdicionDocumento = {
   onEscribir: (campo: CampoEditable, valor: string) => void;
-  onElegirCategoria: (slug: string) => void;
   onFocoBloque: (bloque: BloqueActivo) => void;
-  categorias: ReadonlyArray<{ slug: string; nombre: string }>;
-  categoriaSlug: string;
   topes: Record<CampoEditable, number>;
   deshabilitado: boolean;
 };
@@ -106,16 +127,16 @@ export default function DocumentoIdea({
             <CampoDoc
               campo="titulo"
               valor={datos.titulo}
-              vacio="Sin título todavía"
+              vacio="Sin nombre todavía"
               clase="doc-titulo-texto"
               unaLinea
-              ariaLabel="Título de la idea"
+              ariaLabel="Nombre de la propuesta"
               edicion={edicion}
             />
           </h2>
         ) : (
           <h2 className={datos.titulo.trim() ? "doc-titulo" : "doc-titulo doc-vacio"}>
-            {datos.titulo.trim() || "Sin título todavía"}
+            {datos.titulo.trim() || "Sin nombre todavía"}
           </h2>
         )}
 
@@ -144,13 +165,11 @@ export default function DocumentoIdea({
               datos.barrio.trim() || "sin indicar"
             )}
           </Dato>
-          <Dato etiqueta="Categoría">
-            {edicion ? (
-              <CategoriaDoc edicion={edicion} nombre={datos.categoria} />
-            ) : (
-              datos.categoria.trim() || "sin elegir"
-            )}
-          </Dato>
+          {/* Solo si la presenta una organizacion: "a titulo propio" no
+              necesita renglon. */}
+          {datos.organizacion.trim() && (
+            <Dato etiqueta="Organización">{datos.organizacion.trim()}</Dato>
+          )}
         </dl>
 
         {datos.punto && (
@@ -167,20 +186,11 @@ export default function DocumentoIdea({
         )}
       </header>
 
-      {/* El orden es el de las preguntas del formulario, no el de las columnas
-          de la base: primero que se propone, despues por que hace falta. */}
+      {/* El orden y las preguntas son los del formulario de papel 2026 (ver
+          PREGUNTAS_DE_LA_IDEA): primero el problema, despues donde ocurre,
+          que mejorar y a quienes beneficia. */}
       <Bloque
-        titulo="Qué se propone"
-        activo={activo === "solucion"}
-        campo="solucion"
-        valor={datos.solucion}
-        idRotulo={`${id}-solucion`}
-        edicion={edicion}
-      >
-        {datos.solucion.trim() || null}
-      </Bloque>
-      <Bloque
-        titulo="Por qué hace falta"
+        titulo={PREGUNTAS_DE_LA_IDEA.problema.pregunta}
         activo={activo === "problema"}
         campo="problema"
         valor={datos.problema}
@@ -190,7 +200,28 @@ export default function DocumentoIdea({
         {datos.problema.trim() || null}
       </Bloque>
       <Bloque
-        titulo="Quiénes se benefician"
+        titulo={PREGUNTAS_DE_LA_IDEA.referenciasUbicacion.pregunta}
+        activo={activo === "referenciasUbicacion"}
+        vacio="Sin referencias escritas: vale el punto del mapa."
+        campo="referenciasUbicacion"
+        valor={datos.referenciasUbicacion}
+        idRotulo={`${id}-referencias`}
+        edicion={edicion}
+      >
+        {datos.referenciasUbicacion.trim() || null}
+      </Bloque>
+      <Bloque
+        titulo={PREGUNTAS_DE_LA_IDEA.solucion.pregunta}
+        activo={activo === "solucion"}
+        campo="solucion"
+        valor={datos.solucion}
+        idRotulo={`${id}-solucion`}
+        edicion={edicion}
+      >
+        {datos.solucion.trim() || null}
+      </Bloque>
+      <Bloque
+        titulo={PREGUNTAS_DE_LA_IDEA.beneficios.pregunta}
         activo={activo === "beneficios"}
         vacio="Opcional. Todavía sin completar."
         campo="beneficios"
@@ -204,8 +235,8 @@ export default function DocumentoIdea({
       {comprobante ? (
         <footer className="doc-comprobante">
           <div>
-            <p className="doc-rotulo">Número de la idea</p>
-            <p className="doc-dato-grande">#{comprobante.numero}</p>
+            <p className="doc-rotulo">Código de la propuesta</p>
+            <p className="doc-dato-grande">{comprobante.propuesta}</p>
           </div>
           <div>
             <p className="doc-rotulo">Código de seguimiento</p>
@@ -222,6 +253,9 @@ export default function DocumentoIdea({
           publicarla · Este documento no es una resolución
         </footer>
       )}
+
+      {/* La aclaracion del pie del papel, con las mismas palabras. */}
+      <p className="doc-aclaracion">{ACLARACION_DE_LA_PROPUESTA}</p>
 
       <style>{estilos}</style>
     </article>
@@ -328,8 +362,7 @@ function CampoDoc({
   ariaLabel?: string;
   edicion: EdicionDocumento;
 }) {
-  const bloque: BloqueActivo =
-    campo === "solucion" || campo === "problema" || campo === "beneficios" ? campo : null;
+  const bloque: BloqueActivo = campo === "titulo" || campo === "barrio" ? null : campo;
 
   return (
     <div className={unaLinea ? "doc-campo doc-campo-corto" : "doc-campo"}>
@@ -376,52 +409,6 @@ function CampoDoc({
         */
       />
     </div>
-  );
-}
-
-/**
- * La categoria dentro del documento.
- *
- * Es lo unico que no se escribe: son tres opciones fijas. Va un <select> NATIVO
- * pintado como el texto de al lado, y no un menu propio, porque el nativo trae
- * hecho todo lo que habria que reimplementar: el menu del sistema en la
- * computadora, la rueda en Android, el rotor de VoiceOver, las flechas, Home y
- * End, y escribir la inicial para saltar a una opcion.
- *
- * Trabaja con SLUGS aunque muestre nombres: el formulario guarda el slug, y si
- * de aca saliera el nombre la validacion no encontraria la categoria y el envio
- * fallaria con "Elegí una categoría" sin que se entienda por que.
- *
- * Para el papel no se imprime el <select> —cada navegador dibuja distinto uno
- * con `appearance: none`— sino el <span> de al lado, que vive escondido en
- * pantalla y aparece solo en la hoja.
- */
-function CategoriaDoc({
-  edicion,
-  nombre,
-}: {
-  edicion: EdicionDocumento;
-  nombre: string;
-}) {
-  return (
-    <span className="doc-cat">
-      <select
-        className={`doc-cat-select${edicion.categoriaSlug ? "" : " doc-vacio"}`}
-        value={edicion.categoriaSlug}
-        disabled={edicion.deshabilitado}
-        aria-label="Categoría"
-        onChange={(evento) => edicion.onElegirCategoria(evento.target.value)}
-        /* Sin `name`, por lo mismo que el textarea de CampoDoc. */
-      >
-        <option value="">sin elegir</option>
-        {edicion.categorias.map((categoria) => (
-          <option key={categoria.slug} value={categoria.slug}>
-            {categoria.nombre}
-          </option>
-        ))}
-      </select>
-      <span className="doc-cat-papel">{nombre.trim() || "sin elegir"}</span>
-    </span>
   );
 }
 
@@ -681,39 +668,11 @@ const estilos = `
   color: var(--marca-texto);
 }
 
-.doc-cat {
-  display: inline-block;
-}
-.doc-cat-select {
-  appearance: none;
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--marca-texto);
-  background: none;
-  border: 0;
-  border-bottom: 1px dotted var(--borde-control);
-  padding: 0;
-  min-height: 1.5rem;
-  max-width: 100%;
-}
-.doc-cat-select:disabled {
-  color: var(--marca-texto);
-  -webkit-text-fill-color: var(--marca-texto);
-  opacity: 1;
-}
-/* Solo para el papel: en pantalla manda el <select>. Se esconde con display y
-   no con visibility, o el !important de la hoja de impresion lo destaparia. */
-.doc-cat-papel {
-  display: none;
-}
-
 /* El zoom automatico de iOS se dispara abajo de 16px. Va en los DOS hijos, o el
    espejo mediria un alto que el campo no tiene. Nada de maximum-scale=1 en el
    viewport: eso rompe el criterio 1.4.4. */
 @media (pointer: coarse) {
-  .doc-campo > *,
-  .doc-cat-select {
+  .doc-campo > * {
     font-size: 1rem;
   }
 }
@@ -738,6 +697,17 @@ const estilos = `
   font-family: var(--font-sans);
   font-size: 0.6875rem;
   line-height: 1.5;
+  color: var(--texto-suave);
+}
+
+/* La aclaracion del pie del formulario de papel: va siempre, tambien en el
+   comprobante, en letra chica y centrada como en el papel. */
+.doc-aclaracion {
+  margin-top: 1rem;
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  text-align: center;
   color: var(--texto-suave);
 }
 
@@ -825,9 +795,8 @@ const estilos = `
    * "visibility: visible !important" de arriba destaparia el campo y el texto
    * saldria dos veces, uno encima del otro.
    */
-  .doc-campo-entrada, .doc-cat-select { display: none !important; }
+  .doc-campo-entrada { display: none !important; }
   .doc-campo { border-bottom: 0 !important; }
-  .doc-cat-papel { display: inline !important; }
 
   /* El corte de linea que se neutralizo en pantalla vuelve para el papel, asi
      la hoja sale igual que antes de que el documento fuera editable. */

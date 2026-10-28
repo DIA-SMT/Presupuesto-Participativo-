@@ -47,7 +47,7 @@ export type IdeaAlcanzada = {
   numero: number;
   titulo: string;
   estado: string;
-  /** Tiene nombre o correo sin purgar: lo que el UPDATE borraria. */
+  /** Tiene nombre, correo o telefono sin purgar: lo que el UPDATE borraria. */
   conContacto: boolean;
   /** Se presento ingresando con CIDITUC: el nombre tambien esta en el padron. */
   conVotante: boolean;
@@ -162,7 +162,7 @@ export async function armarPurga(consultar: Consultar, opciones: OpcionesPurga):
     }>(sql`
       SELECT i.id, i.numero, left(i.titulo, 80) AS titulo, i.estado,
              (i.contacto_purgado_en IS NULL
-               AND (i.autor_email IS NOT NULL OR i.autor_nombre IS NOT NULL)) AS con_contacto,
+               AND (i.autor_email IS NOT NULL OR i.autor_nombre IS NOT NULL OR i.autor_telefono IS NOT NULL)) AS con_contacto,
              i.votante_id IS NOT NULL AS con_votante
         FROM ideas i
         JOIN ediciones e ON e.id = i.edicion_id
@@ -186,7 +186,7 @@ export async function armarPurga(consultar: Consultar, opciones: OpcionesPurga):
            e.etapa,
            count(*) FILTER (
              WHERE i.contacto_purgado_en IS NULL
-               AND (i.autor_email IS NOT NULL OR i.autor_nombre IS NOT NULL)
+               AND (i.autor_email IS NOT NULL OR i.autor_nombre IS NOT NULL OR i.autor_telefono IS NOT NULL)
            )::int AS con_contacto
       FROM ediciones e
       JOIN ideas i ON i.edicion_id = e.id
@@ -215,6 +215,7 @@ export async function aplicarPurga(consultar: Consultar, opciones: OpcionesPurga
     UPDATE ideas i
        SET autor_email = NULL,
            autor_nombre = NULL,
+           autor_telefono = NULL,
            autor_avisos = false,
            contacto_purgado_en = now(),
            updated_at = now()
@@ -222,7 +223,7 @@ export async function aplicarPurga(consultar: Consultar, opciones: OpcionesPurga
      WHERE e.id = i.edicion_id
        AND ${condicionDe(opciones)}
        AND i.contacto_purgado_en IS NULL
-       AND (i.autor_email IS NOT NULL OR i.autor_nombre IS NOT NULL)
+       AND (i.autor_email IS NOT NULL OR i.autor_nombre IS NOT NULL OR i.autor_telefono IS NOT NULL)
     RETURNING i.id
   `);
   return borradas.map((fila) => Number(fila.id));

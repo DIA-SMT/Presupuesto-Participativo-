@@ -15,7 +15,7 @@ import { getSesionAdmin } from "@/lib/sesion";
 import PanelTablero, { type ClaveOrden, type Direccion } from "./panel";
 import type { FilaMatriz } from "./graficos";
 
-export const metadata = { title: "Tablero" };
+export const metadata = { title: "Estadísticas" };
 
 /**
  * Columnas por las que se puede ordenar la tabla de distritos.
@@ -50,7 +50,7 @@ export default async function AdminTablero({ searchParams }: Props) {
   if (ediciones.length === 0) {
     return (
       <div>
-        <h1 className="text-2xl font-bold">Tablero</h1>
+        <h1 className="text-2xl font-bold">Estadísticas</h1>
         <p className="mt-2 text-sm" style={{ color: "var(--texto-suave)" }}>
           No hay ninguna edición cargada. Corré <code>npm run setup</code> o creá una desde la
           pantalla de ediciones.

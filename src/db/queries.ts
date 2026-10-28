@@ -101,6 +101,8 @@ export type IdeaVista = {
   problema: string | null;
   solucion: string | null;
   beneficios: string | null;
+  /** "¿Dónde ocurre?": las referencias escritas del lugar. Publico, como el barrio. */
+  referenciasUbicacion: string | null;
   motivoEstado: string | null;
   fecha: string | null;
   anio: number;
@@ -128,6 +130,7 @@ const camposIdea = {
   problema: ideas.problema,
   solucion: ideas.solucion,
   beneficios: ideas.beneficios,
+  referenciasUbicacion: ideas.referenciasUbicacion,
   motivoEstado: ideas.motivoEstado,
   fecha: ideas.fecha,
   anio: ediciones.anio,
@@ -162,6 +165,7 @@ function aVista(fila: Record<string, unknown>): IdeaVista {
     problema: (fila.problema as string | null) ?? null,
     solucion: (fila.solucion as string | null) ?? null,
     beneficios: (fila.beneficios as string | null) ?? null,
+    referenciasUbicacion: (fila.referenciasUbicacion as string | null) ?? null,
     motivoEstado: (fila.motivoEstado as string | null) ?? null,
     fecha: (fila.fecha as string | null) ?? null,
     anio: Number(fila.anio),
@@ -950,6 +954,7 @@ export const ORDENES_BANDEJA = [
   "votos",
   "distrito",
   "estado",
+  "presupuesto",
 ] as const;
 
 export type OrdenBandeja = (typeof ORDENES_BANDEJA)[number];
@@ -1041,6 +1046,10 @@ const ORDENES: Record<
   votos: { columna: ideas.votos, porDefecto: "desc" },
   distrito: { columna: distritos.numero, porDefecto: "asc" },
   estado: { columna: ideas.estado, porDefecto: "asc" },
+  // Por el presupuesto que estimo el equipo. Las que no tienen estimacion van
+  // siempre al final, en las dos direcciones (ver listarIdeasBandeja): "de
+  // menor a mayor" no puede empezar por las que nadie miro.
+  presupuesto: { columna: ideas.presupuestoEstimado, porDefecto: "desc" },
 };
 
 /**
@@ -1107,11 +1116,15 @@ function condicionesBandeja(filtro: FiltroBandeja, omitir: DimensionBandeja[] = 
     //  - el titulo con las tildes sacadas por `translate` (una vuelta de SQL,
     //    sin extensiones; son ~100 ideas por edicion, no necesita indice);
     //  - el barrio contra `barrio_normalizado`, que ya viene sin tildes.
+    // Y por el codigo de la propuesta, que es lo que el equipo tiene escrito en
+    // el papel: "D05-P012", "P12", "#12" o "12" encuentran la idea numero 12.
+    const numeroDelCodigo = /^(?:d\s*\d{1,2}\s*-?\s*)?(?:p|#)?\s*(\d{1,6})$/i.exec(texto)?.[1];
     const busqueda = or(
       ilike(ideas.titulo, patron),
       sql`translate(${ideas.titulo},
         'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun') ILIKE ${patronSinTildes}`,
       like(ideas.barrioNormalizado, patronSinTildes),
+      numeroDelCodigo ? eq(ideas.numero, Number(numeroDelCodigo)) : undefined,
     );
     if (busqueda) condiciones.push(busqueda);
   }
@@ -1135,6 +1148,11 @@ export type FilaBandeja = {
   tieneContacto: boolean;
   publicada: boolean;
   votos: number;
+  /** Lo que estimo el equipo al evaluarla, o null si nadie lo estimo todavia. */
+  presupuestoEstimado: number | null;
+  /** La organizacion que la presenta, si la presenta una. */
+  organizacion: string | null;
+  canal: CanalCarga;
   createdAt: Date;
   estadoActualizadoEn: Date | null;
   revisadoPor: string | null;
@@ -1177,6 +1195,9 @@ export async function listarIdeasBandeja(
         WHEN ${ideas.autorEmail} IS NOT NULL THEN 1 ELSE 0 END`,
       publicada: ideas.publicada,
       votos: ideas.votos,
+      presupuestoEstimado: ideas.presupuestoEstimado,
+      organizacion: ideas.organizacion,
+      canal: ideas.canal,
       createdAt: ideas.createdAt,
       estadoActualizadoEn: ideas.estadoActualizadoEn,
       revisadoPor: admins.nombre,
@@ -1189,7 +1210,14 @@ export async function listarIdeasBandeja(
     // Despues del orden elegido, siempre las mas antiguas arriba y el id como
     // ultimo criterio: sin un desempate estable, dos paginas del mismo filtro
     // pueden repetir o saltear filas (las ideas migradas comparten createdAt).
-    .orderBy(ordenar(columna), asc(ideas.createdAt), asc(ideas.id));
+    .orderBy(
+      ...(filtro.orden === "presupuesto"
+        ? [asc(sql`${ideas.presupuestoEstimado} IS NULL`)]
+        : []),
+      ordenar(columna),
+      asc(ideas.createdAt),
+      asc(ideas.id),
+    );
 
   // El total se cuenta aparte, con las MISMAS condiciones y sin limite: es lo
   // que hace posible paginar. Solo necesita los joins de distritos y de
@@ -1225,6 +1253,10 @@ export async function listarIdeasBandeja(
       tieneContacto: Number(f.tieneContacto) === 1,
       publicada: Boolean(f.publicada),
       votos: Number(f.votos ?? 0),
+      presupuestoEstimado:
+        f.presupuestoEstimado === null ? null : Number(f.presupuestoEstimado),
+      organizacion: f.organizacion,
+      canal: f.canal,
       createdAt: f.createdAt,
       estadoActualizadoEn: f.estadoActualizadoEn,
       revisadoPor: f.revisadoPor,
@@ -1254,6 +1286,21 @@ export type IdeaAdmin = IdeaVista & {
    * padron no tiene nada que hacer en la pantalla.
    */
   autorConCidituc: boolean;
+  /**
+   * Se presento en papel con el DNI (hasheado en `ideas.autor_dni_hash`). El
+   * hash no sale de la base: solo si lo hay.
+   */
+  autorConDni: boolean;
+  /** La organizacion en cuyo nombre se presenta, o null. */
+  organizacion: string | null;
+  /**
+   * El telefono de contacto. Es el UNICO dato de contacto que la ficha muestra
+   * en claro, porque es para que el equipo llame: no sale en ninguna consulta
+   * publica, ni en listados, ni en el chat. Null tambien despues de la purga.
+   */
+  autorTelefono: string | null;
+  /** Lo que estimo el equipo al evaluarla. */
+  presupuestoEstimado: number | null;
   /** Nunca el mail: solo si hay contacto para avisarle al autor. */
   tieneContacto: boolean;
   autorAvisos: boolean;
@@ -1287,6 +1334,11 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
       autorNombre: ideas.autorNombre,
       autorConCidituc: sql<number>`CASE
         WHEN ${ideas.votanteId} IS NOT NULL THEN 1 ELSE 0 END`,
+      autorConDni: sql<number>`CASE
+        WHEN ${ideas.autorDniHash} IS NOT NULL THEN 1 ELSE 0 END`,
+      organizacion: ideas.organizacion,
+      autorTelefono: ideas.autorTelefono,
+      presupuestoEstimado: ideas.presupuestoEstimado,
       tieneContacto: sql<number>`CASE
         WHEN ${ideas.autorEmail} IS NOT NULL THEN 1 ELSE 0 END`,
       autorAvisos: ideas.autorAvisos,
@@ -1326,6 +1378,11 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     cargadoPor: fila.cargadoPor,
     autorNombre: fila.autorNombre,
     autorConCidituc: Number(fila.autorConCidituc) === 1,
+    autorConDni: Number(fila.autorConDni) === 1,
+    organizacion: fila.organizacion,
+    autorTelefono: fila.autorTelefono,
+    presupuestoEstimado:
+      fila.presupuestoEstimado === null ? null : Number(fila.presupuestoEstimado),
     tieneContacto: Number(fila.tieneContacto) === 1,
     autorAvisos: Boolean(fila.autorAvisos),
     autorAvisosVersion: fila.autorAvisosVersion,

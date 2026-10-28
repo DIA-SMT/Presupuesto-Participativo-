@@ -918,6 +918,39 @@ export async function reabrirRevision(
 // ---------------------------------------------------------------------------
 
 /** Monto para el historial y los mensajes. `null` es "sin asignar". */
+/**
+ * El monto de un campo de presupuesto: null si quedo vacio (es una decision
+ * explicita, deja el presupuesto sin asignar) o un error para la pantalla.
+ *
+ * Solo un numero en pesos, con hasta dos decimales y coma o punto decimal. Los
+ * separadores de miles se rechazan a proposito: "1.500" es ambiguo (mil
+ * quinientos o uno con cinco) y esto es plata.
+ */
+function leerMonto(
+  valor: FormDataEntryValue | null,
+): { ok: true; monto: number | null } | { ok: false; error: string } {
+  const crudo = String(valor ?? "").trim();
+  if (crudo === "") return { ok: true, monto: null };
+  if (!/^\d{1,12}([.,]\d{1,2})?$/.test(crudo)) {
+    return {
+      ok: false,
+      error:
+        "Escribí el monto en pesos, sin puntos de miles ni símbolos: por ejemplo 1500000 o 1500000,50.",
+    };
+  }
+  const monto = Number(crudo.replace(",", "."));
+  if (!Number.isFinite(monto) || monto < 0) {
+    return { ok: false, error: "El presupuesto no puede ser negativo." };
+  }
+  if (monto > MAXIMO_PRESUPUESTO) {
+    return {
+      ok: false,
+      error: `El presupuesto no puede pasar de ${montoEnPesos(MAXIMO_PRESUPUESTO)}.`,
+    };
+  }
+  return { ok: true, monto };
+}
+
 function montoEnPesos(valor: number | null): string {
   if (valor === null) return "sin asignar";
   return valor.toLocaleString("es-AR", {
@@ -958,32 +991,9 @@ export async function guardarPresupuestoIdea(
   const id = Number(formulario.get("id"));
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Idea inválida." };
 
-  const crudo = String(formulario.get("presupuestoTotal") ?? "").trim();
-
-  // El campo vacio es una decision explicita: deja el presupuesto sin asignar.
-  let nuevo: number | null = null;
-  if (crudo !== "") {
-    // Solo un numero en pesos, con hasta dos decimales y coma o punto decimal.
-    // Los separadores de miles se rechazan a proposito: "1.500" es ambiguo
-    // (mil quinientos o uno con cinco) y esto es plata.
-    if (!/^\d{1,12}([.,]\d{1,2})?$/.test(crudo)) {
-      return {
-        ok: false,
-        error:
-          "Escribí el monto en pesos, sin puntos de miles ni símbolos: por ejemplo 1500000 o 1500000,50.",
-      };
-    }
-    nuevo = Number(crudo.replace(",", "."));
-    if (!Number.isFinite(nuevo) || nuevo < 0) {
-      return { ok: false, error: "El presupuesto no puede ser negativo." };
-    }
-    if (nuevo > MAXIMO_PRESUPUESTO) {
-      return {
-        ok: false,
-        error: `El presupuesto no puede pasar de ${montoEnPesos(MAXIMO_PRESUPUESTO)}.`,
-      };
-    }
-  }
+  const leido = leerMonto(formulario.get("presupuestoTotal"));
+  if (!leido.ok) return leido;
+  const nuevo = leido.monto;
 
   const [previa] = await db
     .select({ presupuestoTotal: ideas.presupuestoTotal })
@@ -1053,6 +1063,92 @@ export async function guardarPresupuestoIdea(
         ? "Presupuesto sin asignar. Quedó registrado en el historial."
         : `Presupuesto guardado: ${montoEnPesos(nuevo)}. Quedó registrado en el historial.`,
   };
+}
+
+/**
+ * El presupuesto que estima el equipo al evaluar una idea
+ * (`ideas.presupuesto_estimado`). Es el numero con el que el panel ordena y
+ * compara las propuestas ("de mayor a menor presupuesto"); no es el monto de la
+ * obra, que va en `guardarPresupuestoIdea` cuando la idea gana.
+ *
+ * Moderador o mas: lo carga quien evalua. Como el monto de obra, no mira la
+ * etapa (no cambia que se vota ni como se cuenta) y deja su fila en
+ * `revisiones` en la misma transaccion. No es publico: no lo devuelve ninguna
+ * consulta del sitio ni del chat.
+ */
+export async function estimarPresupuesto(
+  _previo: Resultado | null,
+  formulario: FormData,
+): Promise<Resultado> {
+  const sesion = await exigirAdmin("moderador");
+  if (!sesion) return sinPermiso("moderador");
+
+  const id = Number(formulario.get("id"));
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Idea inválida." };
+
+  const leido = leerMonto(formulario.get("presupuestoEstimado"));
+  if (!leido.ok) return leido;
+  const nuevo = leido.monto;
+
+  try {
+    const resultado = await db.transaction(async (tx): Promise<Resultado> => {
+      // La fila se bloquea para que dos estimaciones a la vez no dejen en el
+      // historial un "antes" que ya no era el de la base.
+      const [previa] = await tx
+        .select({ estimado: ideas.presupuestoEstimado })
+        .from(ideas)
+        .where(eq(ideas.id, id))
+        .for("update");
+      if (!previa) return { ok: false, error: "La idea no existe." };
+      const anterior = previa.estimado === null ? null : Number(previa.estimado);
+      if (anterior === nuevo) {
+        return {
+          ok: false,
+          error:
+            nuevo === null
+              ? "La idea ya estaba sin estimar."
+              : `La estimación ya era ${montoEnPesos(nuevo)}.`,
+        };
+      }
+
+      await tx
+        .update(ideas)
+        .set({
+          presupuestoEstimado: nuevo === null ? null : nuevo.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(ideas.id, id));
+      await tx.insert(revisiones).values(
+        filaRevision({
+          ideaId: id,
+          sesion,
+          accion: "presupuesto",
+          nota: `Presupuesto estimado por el equipo: de ${
+            anterior === null ? "sin estimar" : montoEnPesos(anterior)
+          } a ${nuevo === null ? "sin estimar" : montoEnPesos(nuevo)}.`,
+        }),
+      );
+      return {
+        ok: true,
+        mensaje:
+          nuevo === null
+            ? "Estimación borrada. Quedó registrado en el historial."
+            : `Estimación guardada: ${montoEnPesos(nuevo)}.`,
+      };
+    });
+    if (resultado.ok) revalidatePath("/admin");
+    return resultado;
+  } catch (causa) {
+    console.error("[admin] estimarPresupuesto fallo", resumenDeError(causa));
+    if (/presupuesto_estimado/i.test(mensajeDeError(causa))) {
+      return {
+        ok: false,
+        error:
+          "Falta aplicar la migración 0016 en esta base (npm run db:migrate). Sin ella no hay dónde guardar la estimación.",
+      };
+    }
+    return { ok: false, error: "No se pudo guardar la estimación." };
+  }
 }
 
 // ---------------------------------------------------------------------------
