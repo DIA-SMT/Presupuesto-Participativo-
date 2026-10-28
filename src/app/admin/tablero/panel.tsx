@@ -196,7 +196,7 @@ export default function PanelTablero({
         pantalla tiene que estar siempre en el mismo lugar para quien la abre
         todos los dias.
       */}
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div data-recorrido="tablero-resumen" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Tarjeta
           titulo="Ideas presentadas"
           valor={formatearNumero(resumen.ideas)}
@@ -473,7 +473,7 @@ export default function PanelTablero({
       </section>
 
       {/* --- Ejecucion presupuestaria ------------------------------------- */}
-      <section className="mt-10">
+      <section data-recorrido="tablero-ejecucion" className="mt-10">
         <h2 className="text-xl font-bold">Ejecución presupuestaria</h2>
         <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
           Solo los proyectos proclamados ganadores. El monto de la etapa es el que se cargó para la

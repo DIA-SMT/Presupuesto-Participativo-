@@ -408,7 +408,7 @@ export default function PanelBandeja({
             (y la accion igual lo rechaza).
           */}
           {!soloLectura && (
-            <Link
+            <Link data-recorrido="bandeja-cargar"
               href="/admin/ideas/nueva"
               className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white"
               style={{ background: "var(--color-marca-700)" }}
@@ -457,7 +457,7 @@ export default function PanelBandeja({
           enlace={enlaceFiltro}
           limpiar={armarEnlace(vista, VISTA_LIMPIA)}
         />
-        <form
+        <form data-recorrido="bandeja-buscador"
           method="get"
           action={RUTA}
           // Con JavaScript el campo ya navego solo; el submit solo llega cuando
@@ -515,7 +515,7 @@ export default function PanelBandeja({
         usa todo el ancho. Cuando entran las dos, la tabla se lleva el doble.
       */}
       <div className="mt-6 grid gap-6 2xl:grid-cols-[minmax(0,2.2fr)_minmax(22rem,1fr)] 2xl:items-start">
-        <section>
+        <section data-recorrido="bandeja-listado">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             {/*
               aria-live: como el listado ahora cambia solo, sin que nadie
@@ -806,7 +806,7 @@ export default function PanelBandeja({
 
         {/* La ficha queda fija al costado, con scroll propio: el historial de una
             idea trabajada puede ser mas alto que la pantalla. */}
-        <section
+        <section data-recorrido="bandeja-ficha"
           id="ficha"
           className="xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
         >

@@ -428,3 +428,96 @@ test("una cuenta desactivada no puede cambiar su contrasena con una sesion vieja
   assert.equal(await cuentas.cambiarPasswordPropia(firmaEvaluador, "hash"), null);
   assert.notEqual((await leerCuenta(evaluador)).passwordHash, "hash");
 });
+
+// ---------------------------------------------------------------------------
+// Eliminacion
+// ---------------------------------------------------------------------------
+
+/** Las filas de la bitacora sobre un correo: sobreviven al borrado de la cuenta. */
+async function bitacoraPorCorreo(email: string) {
+  return base.consultar<{
+    accion: string;
+    admin_id: number | null;
+    admin_nombre: string;
+    objetivo_id: number | null;
+    rol_anterior: string | null;
+  }>(base.sql`
+    SELECT accion, admin_id, admin_nombre, objetivo_id, rol_anterior
+      FROM bitacora_equipo
+     WHERE objetivo_email = ${email}
+     ORDER BY id
+  `);
+}
+
+async function existeCuenta(id: number) {
+  const filas = await base.consultar<{ id: number }>(base.sql`
+    SELECT id FROM admins WHERE id = ${id}
+  `);
+  return filas.length > 0;
+}
+
+test("una cuenta desactivada se elimina y su historial queda, con el correo y el nombre", async () => {
+  const jefa = await crearCuenta({ rol: "admin", nombre: "Jefa" });
+  const evaluador = await crearCuenta({ rol: "moderador", nombre: "Evaluador" });
+  const { email } = await leerCuenta(evaluador);
+
+  // Algo que firmo la cuenta misma: cambio su contrasena.
+  assert.notEqual(await cuentas.cambiarPasswordPropia(await autorizacionDe(evaluador), "h"), null);
+  assert.equal((await cuentas.cambiarActivo(await autorizacionDe(jefa), evaluador, false)).ok, true);
+
+  const resultado = await cuentas.eliminarCuenta(await autorizacionDe(jefa), evaluador);
+  assert.equal(resultado.ok, true);
+  assert.equal(await existeCuenta(evaluador), false);
+
+  // Las tres filas siguen: la FK paso a null y el correo y el nombre quedaron.
+  const filas = await bitacoraPorCorreo(email);
+  assert.deepEqual(
+    filas.map((fila) => fila.accion),
+    ["cambio_password", "desactivacion", "eliminacion"],
+  );
+  for (const fila of filas) assert.equal(fila.objetivo_id, null);
+  assert.equal(filas[0].admin_id, null);
+  assert.equal(filas[0].admin_nombre, "Evaluador");
+  assert.equal(filas[2].admin_id, jefa);
+  assert.equal(filas[2].admin_nombre, "Jefa");
+  assert.equal(filas[2].rol_anterior, "moderador");
+});
+
+test("una cuenta activa no se elimina: primero hay que desactivarla", async () => {
+  const jefa = await crearCuenta({ rol: "admin" });
+  const evaluador = await crearCuenta({ rol: "moderador" });
+
+  const resultado = await cuentas.eliminarCuenta(await autorizacionDe(jefa), evaluador);
+  assert.equal(resultado.ok, false);
+  assert.equal(await existeCuenta(evaluador), true);
+  assert.equal((await bitacoraDe(evaluador)).length, 0);
+});
+
+test("nadie elimina su propia cuenta", async () => {
+  const jefa = await crearCuenta({ rol: "admin" });
+  await crearCuenta({ rol: "admin" });
+
+  const resultado = await cuentas.eliminarCuenta(await autorizacionDe(jefa), jefa);
+  assert.equal(resultado.ok, false);
+  assert.equal(await existeCuenta(jefa), true);
+});
+
+test("un administrador cuya sesion se corto no elimina cuentas", async () => {
+  const jefa = await crearCuenta({ rol: "admin" });
+  const otra = await crearCuenta({ rol: "admin" });
+  const evaluador = await crearCuenta({ rol: "lector", activo: false });
+  const firmaVieja = await autorizacionDe(jefa);
+
+  // Otra administradora le cambia el rol a la jefa: su sesion queda vieja.
+  assert.equal((await cuentas.cambiarRol(await autorizacionDe(otra), jefa, "moderador")).ok, true);
+
+  const resultado = await cuentas.eliminarCuenta(firmaVieja, evaluador);
+  assert.equal(resultado.ok, false);
+  assert.equal(await existeCuenta(evaluador), true);
+});
+
+test("una cuenta que no existe da un error claro", async () => {
+  const jefa = await crearCuenta({ rol: "admin" });
+  const resultado = await cuentas.eliminarCuenta(await autorizacionDe(jefa), 999_999);
+  assert.deepEqual(resultado, { ok: false, error: "La cuenta no existe." });
+});

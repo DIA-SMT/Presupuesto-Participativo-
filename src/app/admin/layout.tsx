@@ -2,6 +2,7 @@ import { unstable_rethrow } from "next/navigation";
 import { getSesionAdmin, type SesionAdmin } from "@/lib/sesion";
 import { salirAdmin } from "./acciones";
 import CabeceraPanel from "./navegacion";
+import RecorridoPanel from "./recorrido/recorrido";
 
 export const metadata = { robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -49,6 +50,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <CabeceraPanel nombre={nombreVisible(sesion)} email={sesion.email} rol={sesion.rol} />
         ))}
       {children}
+      {/* Despues de elegir la contrasena: con la provisoria, el panel todavia
+          no es suyo y solo ve /admin/password. */}
+      {sesion && !sesion.debeCambiarPassword && (
+        <RecorridoPanel rol={sesion.rol} />
+      )}
     </div>
   );
 }

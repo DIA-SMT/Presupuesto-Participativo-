@@ -2,7 +2,8 @@
 
 /**
  * Acciones de la pantalla de equipo (/admin/equipo): alta de cuentas, cambio de
- * rol, baja y restablecimiento de la contrasena. Solo para el rol admin.
+ * rol, baja, eliminacion y restablecimiento de la contrasena. Solo para el rol
+ * admin.
  *
  * Aca queda lo que es del pedido: la sesion (`exigirAdmin`), leer el
  * formulario, generar y hashear la provisoria, y avisarle a la pantalla. Lo que
@@ -16,7 +17,13 @@ import type { RolAdmin } from "@/db/queries";
 import { hashearPassword } from "@/lib/password";
 import { resumenDeError } from "@/lib/errores-base";
 import { esViolacionDeUnico, exigirAdmin, sinPermiso, type Resultado } from "../comun";
-import { cambiarActivo, cambiarRol, darDeAlta, restablecerPassword } from "./cuentas";
+import {
+  cambiarActivo,
+  cambiarRol,
+  darDeAlta,
+  eliminarCuenta,
+  restablecerPassword,
+} from "./cuentas";
 
 const ROLES = ["admin", "moderador", "lector"] as const;
 
@@ -158,4 +165,29 @@ export async function restablecerPasswordAdmin(
   refrescarEquipo();
   if (!resultado.ok) return resultado;
   return { ...resultado, passwordProvisoria: provisoria };
+}
+
+/**
+ * Elimina una cuenta que ya estaba desactivada. La regla (solo desactivadas,
+ * nunca la propia) y la fila de la bitacora viven en `eliminarCuenta`.
+ */
+export async function eliminarAdmin(
+  _previo: Resultado | null,
+  formulario: FormData,
+): Promise<Resultado> {
+  const sesion = await exigirAdmin("admin");
+  if (!sesion) return sinPermiso("admin");
+
+  const id = idDeCuenta(formulario);
+  if (id === null) return { ok: false, error: "Cuenta inválida." };
+
+  let resultado: Resultado;
+  try {
+    resultado = await eliminarCuenta(sesion, id);
+  } catch (causa) {
+    console.error("[admin] eliminarAdmin fallo", causa);
+    resultado = { ok: false, error: "No se pudo eliminar la cuenta." };
+  }
+  refrescarEquipo();
+  return resultado;
 }

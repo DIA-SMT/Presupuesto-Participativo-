@@ -45,6 +45,7 @@ const QUE_SE_HIZO: Record<AccionEquipo, string> = {
   cambio_rol: "cambio de rol",
   cambio_password: "contrasena restablecida",
   desactivacion: "desactivada",
+  eliminacion: "eliminada",
 };
 
 function salirConUso(mensaje: string): never {
