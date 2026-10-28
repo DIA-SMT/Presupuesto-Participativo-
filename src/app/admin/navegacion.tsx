@@ -37,6 +37,7 @@ import { usePathname } from "next/navigation";
 import type { RolAdmin } from "@/db/queries";
 import { ETIQUETA_ROL } from "@/lib/formato";
 import { salirAdmin } from "./acciones";
+import { BotonRecorrido } from "./recorrido/recorrido";
 
 type Enlace = { href: string; texto: string; soloAdmin?: boolean };
 
@@ -127,7 +128,7 @@ export default function CabeceraPanel({
         </ul>
       </nav>
 
-      <section aria-label="Tu cuenta" className="cuenta-panel">
+      <section data-recorrido="cuenta" aria-label="Tu cuenta" className="cuenta-panel">
         <span className="cuenta-panel-avatar" aria-hidden="true">
           {iniciales(nombre, email)}
         </span>
@@ -148,6 +149,8 @@ export default function CabeceraPanel({
           sesion en el servidor), por eso va dentro de un form.
         */}
         <span className="cuenta-panel-acciones">
+          {/* Vuelve a abrir el recorrido guiado del panel (recorrido/recorrido.tsx). */}
+          <BotonRecorrido />
           <Link
             href="/admin/password"
             aria-current={estaActivo(pathname, "/admin/password") ? "page" : undefined}

@@ -150,6 +150,13 @@
    * unicamente como color de letra, asi que se redefinen abajo directamente.
    */
   --marca-texto: #084fc4;
+  /*
+   * El velo del recorrido guiado del panel (src/app/admin/recorrido): lo que
+   * oscurece la pantalla alrededor de lo que se señala. En oscuro va mas
+   * cerrado, porque un negro al 55% sobre un fondo que ya es casi negro no se
+   * distinguia.
+   */
+  --velo-recorrido: rgba(8, 12, 20, 0.55);
   color-scheme: light;
 }
 
@@ -197,6 +204,7 @@
     --grafico-integrada: #a78bfa;
     --grafico-ganadora: #f4dc00;
     --grafico-descartada: #3b4a63;
+    --velo-recorrido: rgba(0, 0, 0, 0.78);
     color-scheme: dark;
   }
 }
@@ -231,6 +239,7 @@
     --grafico-integrada: #a78bfa;
     --grafico-ganadora: #f4dc00;
     --grafico-descartada: #3b4a63;
+    --velo-recorrido: rgba(0, 0, 0, 0.78);
     color-scheme: dark;
 }
 

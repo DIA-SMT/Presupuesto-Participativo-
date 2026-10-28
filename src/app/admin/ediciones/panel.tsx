@@ -176,7 +176,7 @@ export default function PanelEdiciones({
                   {/* La etapa solo se ofrece sobre la edicion activa: es la
                       unica que el sitio publico mira. */}
                   {edicion.activa ? (
-                    <div className="mt-5">
+                    <div data-recorrido="ediciones-etapa" className="mt-5">
                       <SelectorEtapa
                         edicionId={edicion.id}
                         etapa={edicion.etapa}
@@ -269,7 +269,7 @@ function FormularioEdicion({
   const [estado, accion, pendiente] = useActionState(guardarEdicion, null);
 
   return (
-    <form action={accion} className="mt-5">
+    <form data-recorrido="ediciones-fechas" action={accion} className="mt-5">
       <input type="hidden" name="id" value={edicion.id} />
       <h3 className="text-sm font-bold">Fechas y presupuesto</h3>
       <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
@@ -489,7 +489,7 @@ function Cronograma({
   const [agregando, setAgregando] = useState(false);
 
   return (
-    <div>
+    <div data-recorrido="ediciones-cronograma">
       <h3 className="text-sm font-bold">Cronograma público ({edicion.hitos.length})</h3>
       <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
         Si la edición está activa, se publica en la portada y en “Cómo participar”. El orden más
@@ -827,7 +827,7 @@ function FormularioNuevaEdicion() {
   const [estado, accion, pendiente] = useActionState(crearEdicion, null);
 
   return (
-    <div className="superficie rounded-2xl p-6">
+    <div data-recorrido="ediciones-nueva" className="superficie rounded-2xl p-6">
       <h2 className="text-lg font-bold">Nueva edición</h2>
       <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
         Nace inactiva y en etapa “Presentación de ideas”. Después cargale las fechas, armá el

@@ -130,7 +130,7 @@ export default async function AdminContenido({ searchParams }: Props) {
         </p>
       )}
 
-      <nav
+      <nav data-recorrido="contenido-secciones"
         aria-label="Secciones del contenido"
         className="mt-6 flex flex-wrap items-end"
         style={{ borderBottom: "1px solid var(--borde)" }}
