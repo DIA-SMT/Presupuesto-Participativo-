@@ -247,7 +247,7 @@ export default function Panorama({
         columna angosta sus veinte barras quedaban finitas y mudas. Las
         categorias y el trabajo van debajo, lado a lado.
       */}
-      <div id="panorama-graficos" className="mt-3 grid gap-4">
+      <div data-recorrido="bandeja-graficos" id="panorama-graficos" className="mt-3 grid gap-4">
         {graficos && (
           <ColumnasDistrito
             distritos={panorama.porDistrito}
@@ -293,7 +293,7 @@ function TarjetasEstado({
   );
 
   return (
-    <ul
+    <ul data-recorrido="bandeja-estados"
       className="grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3"
       aria-label="Filtrar por estado"
     >

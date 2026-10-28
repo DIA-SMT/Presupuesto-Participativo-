@@ -213,7 +213,7 @@ export default function PanelEquipo({
       </section>
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[1.6fr_1fr] lg:items-start">
-        <section aria-labelledby="titulo-cuentas">
+        <section data-recorrido="equipo-cuentas" aria-labelledby="titulo-cuentas">
           <h2 id="titulo-cuentas" className="text-lg font-bold">
             Cuentas
           </h2>
@@ -232,7 +232,7 @@ export default function PanelEquipo({
           </ul>
         </section>
 
-        <aside className="superficie rounded-2xl p-6" aria-labelledby="titulo-alta">
+        <aside data-recorrido="equipo-alta" className="superficie rounded-2xl p-6" aria-labelledby="titulo-alta">
           <h2 id="titulo-alta" className="text-lg font-bold">
             Nueva cuenta
           </h2>

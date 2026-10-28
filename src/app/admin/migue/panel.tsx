@@ -130,7 +130,7 @@ export default function PanelMigue({
 
   return (
     <div>
-      <header>
+      <header data-recorrido="migue-encabezado">
         <h1 className="text-2xl font-bold">Migue</h1>
         <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
           Qué le pregunta la gente al asistente del sitio. Sirve para cuatro cosas: ver{" "}
@@ -269,7 +269,7 @@ function SinResolver({
   puedeCargarPreguntas: boolean;
 }) {
   return (
-    <section className="mt-8" aria-labelledby="titulo-sin-resolver">
+    <section data-recorrido="migue-sin-resolver" className="mt-8" aria-labelledby="titulo-sin-resolver">
       <h2 id="titulo-sin-resolver" className="text-xl font-bold">
         Lo que Migue no pudo contestar
       </h2>
