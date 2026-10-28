@@ -740,6 +740,19 @@
   border-radius: 0.5rem;
 }
 
+/*
+ * Las tarjetas de la boleta (src/components/PanelVotacion.tsx). Cada una es un
+ * <label> con su radio adentro, oculto con sr-only: el foco general
+ * (:focus-visible) se dibujaba sobre ese radio de 1px recortado y no se veia, y
+ * quien vota con teclado entraba al grupo sin saber en que proyecto estaba
+ * parado (WCAG 2.4.7). El foco va en la tarjeta entera, con el mismo trazo que
+ * el resto del sitio. Con el mouse no aparece: un clic no da :focus-visible.
+ */
+.opcion-boleta:has(input:focus-visible) {
+  outline: 3px solid var(--color-marca-600);
+  outline-offset: 2px;
+}
+
 /* MapLibre: el CSS propio se importa en el componente del mapa. */
 .maplibregl-popup-content {
   background: var(--fondo-tarjeta) !important;

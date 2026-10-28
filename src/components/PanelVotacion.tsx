@@ -28,6 +28,19 @@ import ElegirDistrito from "./ElegirDistrito";
 /** La ruta que cierra la sesion (src/app/api/auth/salir/route.ts). */
 const RUTA_SALIR = "/api/auth/salir";
 
+/**
+ * Cuando el pedido del voto no tuvo respuesta. `fetch` rechaza con un TypeError
+ * del navegador ("Failed to fetch", "Load failed", segun cual), en ingles, y el
+ * catch lo mostraba tal cual: lo mismo que ya se habia corregido en
+ * FormularioIdea (ver su ErrorParaMostrar). Aca hay que decir ademas lo que no
+ * sabemos: el voto pudo quedar registrado y perderse solo la respuesta. Recargar
+ * lo aclara sin riesgo: la cookie sigue (el Set-Cookie que la borra tampoco
+ * llego) y /votar mira la tabla de votos, asi que muestra "ya usaste tu voto" o
+ * la boleta; y un segundo intento rebota en la UNIQUE, no cuenta dos veces.
+ */
+const SIN_RESPUESTA_AL_VOTAR =
+  "No pudimos comunicarnos con el sitio, así que no sabemos si tu voto llegó. Revisá tu conexión y recargá la página: si quedó registrado te lo va a decir, y si no, vas a poder votar.";
+
 type Proyecto = {
   slug: string;
   titulo: string;
@@ -76,7 +89,7 @@ export default function PanelVotacion({
   const preguntaSalir = sesion.nombre ? `¿No sos ${sesion.nombre}?` : "¿No sos vos?";
 
   async function votar() {
-    if (!elegido) return;
+    if (!elegido || estado.tipo === "enviando") return;
     setEstado({ tipo: "enviando" });
     try {
       const respuesta = await fetch("/api/votos", {
@@ -109,17 +122,19 @@ export default function PanelVotacion({
         });
         return;
       }
-      if (!respuesta.ok) throw new Error(cuerpo.error ?? "No se pudo registrar el voto.");
+      if (!respuesta.ok) {
+        setEstado({ tipo: "error", mensaje: cuerpo.error ?? "No se pudo registrar el voto." });
+        return;
+      }
       setEstado({
         tipo: "votado",
         proyecto: cuerpo.proyecto ?? elegido.titulo,
         sesionCerrada: true,
       });
-    } catch (causa) {
-      setEstado({
-        tipo: "error",
-        mensaje: causa instanceof Error ? causa.message : "No se pudo registrar el voto.",
-      });
+    } catch {
+      // Lo que contesto el servidor ya salio arriba con su mensaje: aca llega
+      // solo el fetch sin respuesta (ver SIN_RESPUESTA_AL_VOTAR).
+      setEstado({ tipo: "error", mensaje: SIN_RESPUESTA_AL_VOTAR });
     }
   }
 
@@ -169,7 +184,7 @@ export default function PanelVotacion({
           actual={sesion.distrito}
           sugerido={sesion.distrito ? null : sesion.sugerido}
           barrios={barrios}
-          onCancelar={sesion.distrito ? () => setCambiandoDistrito(false) : undefined}
+          onVolver={sesion.distrito ? () => setCambiandoDistrito(false) : undefined}
         />
         <div className="mt-5">
           <BotonSalir pregunta={preguntaSalir} />
@@ -207,7 +222,16 @@ export default function PanelVotacion({
         </div>
       ) : (
         <>
-          <fieldset className="mt-5 grid gap-3 sm:grid-cols-2">
+          {/* Quieta mientras se registra el voto. Con solo el boton
+              deshabilitado, tocar otra tarjeta pasaba el estado a "confirmando":
+              el boton volvia a habilitarse con el otro titulo, un segundo toque
+              mandaba otro POST que rebotaba en la UNIQUE, y si esa respuesta
+              llegaba ultima la pantalla final decia "ya usaste tu voto" sin
+              nombrar el proyecto que habia quedado. */}
+          <fieldset
+            disabled={estado.tipo === "enviando"}
+            className="mt-5 grid gap-3 sm:grid-cols-2"
+          >
             <legend className="sr-only">Proyectos de tu distrito</legend>
             {proyectos.map((proyecto) => {
               const seleccionado = elegido?.slug === proyecto.slug;
@@ -219,7 +243,9 @@ export default function PanelVotacion({
               return (
                 <label
                   key={proyecto.slug}
-                  className="superficie cursor-pointer rounded-2xl p-5 transition"
+                  // opcion-boleta (globals.css) dibuja el foco de teclado en la
+                  // tarjeta: el radio es sr-only y el suyo no se ve.
+                  className="opcion-boleta superficie cursor-pointer rounded-2xl p-5 transition"
                   // Cada lado por separado: mezclar `borderColor` con el atajo
                   // `borderLeft` hacia que React avisara al elegir un proyecto
                   // (cambiaba uno y no el otro) y el borde podia quedar mal.
@@ -238,6 +264,7 @@ export default function PanelVotacion({
                     value={proyecto.slug}
                     checked={seleccionado}
                     onChange={() => {
+                      if (estado.tipo === "enviando") return;
                       setElegido(proyecto);
                       setEstado({ tipo: "confirmando" });
                     }}

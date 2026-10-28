@@ -353,6 +353,19 @@ function CampoDoc({
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : idRotulo}
         onChange={(evento) => edicion.onEscribir(campo, evento.target.value)}
+        /*
+          Un campo de un renglon (titulo, barrio) no acepta Enter: el valor
+          termina en un <input> de texto, que no tiene saltos. Los saltos que
+          lleguen pegados los cambia por espacios `escribirDesdeDocumento`. El
+          Enter que cierra una composicion (IME) se deja pasar.
+        */
+        onKeyDown={
+          unaLinea
+            ? (evento) => {
+                if (evento.key === "Enter" && !evento.nativeEvent.isComposing) evento.preventDefault();
+              }
+            : undefined
+        }
         onFocus={() => edicion.onFocoBloque(bloque)}
         onBlur={() => edicion.onFocoBloque(null)}
         /*

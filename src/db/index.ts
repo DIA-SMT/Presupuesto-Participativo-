@@ -203,6 +203,79 @@ export function opcionesDePool(valor: string): Pick<PoolConfig, "connectionStrin
   return ssl ? { connectionString, ssl } : { connectionString };
 }
 
+export type ConexionEnCampos = {
+  host: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  database: string;
+  ssl?: ConnectionOptions;
+  avisos: string[];
+};
+
+/**
+ * Lo mismo que `opcionesDeConexion`, con la URL desarmada en campos sueltos
+ * (host, puerto, usuario, clave, base) en lugar de `connectionString`.
+ *
+ * Es para drizzle-kit (drizzle.config.ts): con credenciales `{ url }` abre
+ * `new pg.Pool({ connectionString: url })` y no le pasa ninguna opcion `ssl`
+ * (node_modules/drizzle-kit/bin.cjs), asi que contra Supabase, cuya URL no trae
+ * sslmode, `db:studio` viajaba en claro con la clave del dueno. La opcion `ssl`
+ * solo la respeta cuando las credenciales van separadas.
+ *
+ * El desarmado sigue a pg-connection-string, que es como node-postgres lee la
+ * URL: los parametros `?host=`, `?port=`, `?user=` y `?password=` mandan sobre
+ * los de la autoridad, usuario y clave van decodificados, y sin base en la
+ * ruta se usa el nombre del usuario. Cualquier otro parametro no tiene donde ir
+ * y se avisa que se ignora. scripts/tests/conexion-tls.test.ts lo compara con
+ * el ConnectionParameters real de pg.
+ */
+export function conexionEnCampos(
+  valor: string,
+  caPem = process.env.DATABASE_CA_PEM,
+): ConexionEnCampos {
+  const { connectionString, ssl, avisos } = opcionesDeConexion(valor, caPem);
+  let leida: URL;
+  try {
+    leida = new URL(connectionString);
+  } catch {
+    // Mismo cuidado que en `opcionesDeConexion`: el error de URL trae la clave.
+    throw new Error("DATABASE_URL no se puede leer como URL. Revisar el formato.");
+  }
+  const parametro = (nombre: string) => leida.searchParams.get(nombre) || undefined;
+
+  const host = parametro("host") ?? decodeURIComponent(leida.hostname);
+  if (!host) throw new Error("DATABASE_URL no dice a que host conectarse.");
+  const user = parametro("user") ?? (decodeURIComponent(leida.username) || undefined);
+  const password =
+    parametro("password") ?? (decodeURIComponent(leida.password) || undefined);
+  const puerto = parametro("port") ?? leida.port;
+  const database = decodeURI(leida.pathname.replace(/^\//, "")) || user;
+  if (!database) throw new Error("DATABASE_URL no dice a que base conectarse.");
+
+  const ignorados = [...new Set(leida.searchParams.keys())].filter(
+    (nombre) => !["host", "port", "user", "password"].includes(nombre),
+  );
+  if (ignorados.length > 0) {
+    avisos.push(
+      `[db] DATABASE_URL trae ${ignorados.join(", ")}: con la conexion en campos ` +
+        (ignorados.length === 1
+          ? "sueltos no tiene donde ir y se ignora."
+          : "sueltos no tienen donde ir y se ignoran."),
+    );
+  }
+
+  return {
+    host,
+    ...(puerto ? { port: Number(puerto) } : {}),
+    ...(user ? { user } : {}),
+    ...(password ? { password } : {}),
+    database,
+    ...(ssl ? { ssl } : {}),
+    avisos,
+  };
+}
+
 /** Ruta de la carpeta de datos de PGlite. */
 export const RUTA_PGLITE = url.startsWith("pglite:")
   ? url.slice("pglite:".length)

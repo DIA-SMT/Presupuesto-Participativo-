@@ -66,6 +66,14 @@ function enteroDe(argumentos: string[], flag: string): number | null {
   return valor;
 }
 
+/**
+ * La fecha de carga, en hora de Tucuman. Un `to_char` pelado usa la zona de la
+ * sesion (UTC en Supabase y en PGlite) y una idea de las 22:30 aparecia cargada
+ * al dia siguiente, justo el dato con que se separa una prueba de la demo de
+ * una idea de un vecino.
+ */
+const CARGADA = sql`to_char(i.created_at AT TIME ZONE 'America/Argentina/Tucuman', 'YYYY-MM-DD HH24:MI')`;
+
 async function listar() {
   const filas = await consultar(sql`
     SELECT e.anio,
@@ -73,7 +81,7 @@ async function listar() {
            left(i.titulo, 46) AS titulo,
            i.estado,
            i.publicada,
-           to_char(i.created_at, 'YYYY-MM-DD HH24:MI') AS cargada
+           ${CARGADA} AS cargada
       FROM ideas i
       JOIN ediciones e ON e.id = i.edicion_id
      WHERE i.canal = 'web'
@@ -107,7 +115,7 @@ async function borrar(argumentos: string[]) {
            i.canal,
            i.publicada,
            d.numero AS distrito,
-           to_char(i.created_at, 'YYYY-MM-DD HH24:MI') AS cargada,
+           ${CARGADA} AS cargada,
            (SELECT count(*) FROM revisiones r WHERE r.idea_id = i.id)::int AS revisiones
       FROM ideas i
       JOIN ediciones e ON e.id = i.edicion_id

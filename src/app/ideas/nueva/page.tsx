@@ -20,9 +20,10 @@ export default async function NuevaIdea() {
   const [textos, categorias] = await Promise.all([getTextos(), getCategorias()]);
 
   /*
-   * La etapa manda para el vecino. El equipo (o MODO_PRUEBA_IDEAS=1) puede
-   * cargar igual para recorrer el circuito completo y mostrarlo: el por que
-   * esta en src/lib/modo-prueba.ts. Los dos casos se distinguen para poder
+   * La etapa manda para el vecino. El equipo con permiso de escritura (o
+   * MODO_PRUEBA_IDEAS=1) puede cargar igual para recorrer el circuito completo
+   * y mostrarlo; una cuenta lectora no. El por que esta en
+   * src/lib/modo-prueba.ts. Los dos casos se distinguen para poder
    * decirlo en pantalla, que es lo que evita que una demostracion se confunda
    * con una carga real.
    */

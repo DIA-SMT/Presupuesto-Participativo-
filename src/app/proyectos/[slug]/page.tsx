@@ -15,10 +15,10 @@ import {
 import { vistaDe, type VistaDeEdicion } from "@/lib/edicion-en-vista";
 import { conEdicion, leerAnioPedido } from "@/lib/ediciones";
 import {
-  DESCRIPCION_ESTADO,
   ETAPAS_PRESUPUESTO,
   ETIQUETA_PRESUPUESTO,
   colorCategoria,
+  descripcionEstado,
   formatearFecha,
   formatearNumero,
   formatearPesos,
@@ -150,7 +150,7 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
         )}
 
         <p className="mt-4 text-sm" style={{ color: "var(--texto-suave)" }}>
-          {DESCRIPCION_ESTADO[idea.estado]}
+          {descripcionEstado(idea.estado, edicion.etapa)}
         </p>
       </header>
 

@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { getCuentaDeSesion, type CuentaDeSesion, type RolAdmin } from "@/db/queries";
 import { atributosCookie, borradoCookie, nombreCookie } from "@/lib/cookies";
+import { exigirSecretoDeSesion } from "@/lib/secreto-sesion";
 
 // En produccion llevan el prefijo __Host- (ver src/lib/cookies.ts): otro
 // sistema bajo *.smt.gob.ar no las puede plantar ni pisar. Escritura, lectura
@@ -25,11 +26,8 @@ const DURACION_VOTANTE = 60 * 60 * 4; // 4 horas: alcanza para votar
 const DURACION_ADMIN = 60 * 60 * 12;
 
 function clave(): Uint8Array {
-  const secreto = process.env.SESSION_SECRET;
-  if (!secreto || secreto.length < 32) {
-    throw new Error("SESSION_SECRET faltante o demasiado corto (minimo 32 caracteres).");
-  }
-  return new TextEncoder().encode(secreto);
+  // Rechaza tambien el valor de relleno de .env.example: ver src/lib/secreto-sesion.ts.
+  return new TextEncoder().encode(exigirSecretoDeSesion());
 }
 
 export type SesionVotante = {
@@ -67,8 +65,13 @@ async function leer<T>(token: string | undefined, tipo: string): Promise<T | nul
 
 // --- Votante ----------------------------------------------------------------
 
+/** El token de la cookie del votante. Separado para que las pruebas armen una sesion. */
+export async function firmarSesionVotante(datos: Omit<SesionVotante, "tipo">): Promise<string> {
+  return firmar({ tipo: "votante", ...datos }, DURACION_VOTANTE);
+}
+
 export async function crearSesionVotante(datos: Omit<SesionVotante, "tipo">) {
-  const token = await firmar({ tipo: "votante", ...datos }, DURACION_VOTANTE);
+  const token = await firmarSesionVotante(datos);
   (await cookies()).set(COOKIE_VOTANTE, token, {
     ...atributosCookie(),
     maxAge: DURACION_VOTANTE,
@@ -78,6 +81,22 @@ export async function crearSesionVotante(datos: Omit<SesionVotante, "tipo">) {
 export async function getSesionVotante(): Promise<SesionVotante | null> {
   const token = (await cookies()).get(COOKIE_VOTANTE)?.value;
   return leer<SesionVotante>(token, "votante");
+}
+
+/**
+ * Lo mismo, leyendo la cookie del encabezado del pedido. En una ruta es la
+ * misma cookie que devuelve `cookies()`; la diferencia es que no necesita el
+ * contexto de pedido de Next, asi que las pruebas pueden llamar a la ruta con
+ * un `Request` armado a mano (lo usa el asistente de carga).
+ */
+export async function getSesionVotanteDe(request: Request): Promise<SesionVotante | null> {
+  const encabezado = request.headers.get("cookie") ?? "";
+  const prefijo = `${COOKIE_VOTANTE}=`;
+  const par = encabezado
+    .split(";")
+    .map((parte) => parte.trim())
+    .find((parte) => parte.startsWith(prefijo));
+  return leer<SesionVotante>(par?.slice(prefijo.length), "votante");
 }
 
 /**

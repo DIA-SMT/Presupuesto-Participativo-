@@ -13,12 +13,13 @@ import { NextResponse } from "next/server";
 import { COOKIE_DESTINO, COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
 import { borradoCookie } from "@/lib/cookies";
 import { sugerenciaDeDistrito } from "@/lib/barrios";
-import { empadronar } from "@/lib/empadronamiento";
+import { CuentaYaEmpadronada, empadronar } from "@/lib/empadronamiento";
 import { crearSesionVotante } from "@/lib/sesion";
-import { getEdicionActiva } from "@/db/queries";
+import { getEdicionActiva, type Edicion } from "@/db/queries";
 import {
   PANTALLA_DEL_DESTINO,
-  destinoDeIngreso,
+  destinoDelIngreso,
+  esDestinoDeIngreso,
   etapaDejaIngresar,
   puertaDeIngreso,
   type DestinoIngreso,
@@ -81,7 +82,17 @@ export async function GET(request: Request) {
   const parametros = new URL(request.url).searchParams;
   // Para que entro la persona: lo dejo /auth/cidituc/ingresar. Se valida contra
   // la lista blanca otra vez: es una cookie, la escribe el navegador.
-  const destino = destinoDeIngreso((await cookies()).get(COOKIE_DESTINO)?.value);
+  const pedido = (await cookies()).get(COOKIE_DESTINO)?.value;
+  /*
+   * Sin la cookie (vencio, o la vuelta se abrio en otro navegador) el destino
+   * sale de la etapa: si no, en la etapa de ideas el error de abajo mandaba a
+   * la puerta de votar, cerrada y sin boton (ver `destinoDelIngreso`). Solo se
+   * consulta en ese caso, y una base que no contesta no cambia el error que se
+   * muestra: solo la puerta, que vuelve a ser la de votar.
+   */
+  const destino = esDestinoDeIngreso(pedido)
+    ? pedido
+    : destinoDelIngreso(null, (await getEdicionActiva().catch(() => null))?.etapa);
   const token = parametros.get("auth");
   if (!token) return volver(request, destino, "sin-token");
 
@@ -97,17 +108,46 @@ export async function GET(request: Request) {
     return volver(request, destino, "estado");
   }
 
-  const limite = await consumir(`cidituc:${hashearIp(ipDe(request))}`, 20, 600);
-  if (!limite.permitido) return volver(request, destino, "demasiados-intentos");
-
   /*
-   * Autenticar no es autorizar. El token prueba que la persona es quien dice
-   * ser ante el municipio, no que pueda votar aca. La "lista propia" de este
-   * sitio es la etapa del proceso: se abre sesion (y se suma la persona al
-   * padron) para votar en la votacion y para presentar una idea en la etapa
-   * de ideas, y en ningun otro momento (ver etapaDejaIngresar).
+   * El limite de intentos y la etapa son las primeras consultas a la base, y
+   * estaban fuera del try de abajo: con la base caida o el pooler saturado la
+   * excepcion salia de la ruta, Next respondia un 500 pelado (error.tsx no
+   * cubre rutas), la persona veia la pantalla de error del navegador con el
+   * token en la barra y en el historial, y las cookies de estado y destino
+   * quedaban vivas. Ahora vuelve a /ingresar como cualquier otra falla, con un
+   * motivo propio: no es el empadronamiento ni la credencial.
    */
-  const edicion = await getEdicionActiva();
+  let edicion: Edicion | null;
+  try {
+    /*
+     * Aca todavia no hay persona (eso lo dice consultarPerfil), asi que el
+     * tope solo puede ser por IP, y la IP la comparten una asamblea, un CIC o
+     * el CGNAT de una operadora: con 20 cada 10 minutos, el ingreso 21 de una
+     * mesa de votacion volvia con "demasiados-intentos". Es un tope grueso,
+     * contra una inundacion que le pegue a CIDITUC con tokens inventados (el
+     * `state` lo pasa cualquiera que mande cookie y parametro iguales), no
+     * contra una persona: cada ingreso de verdad es un viaje a CIDITUC y
+     * vuelta, y 120 cada 10 minutos son 12 por minuto desde una sola conexion.
+     */
+    const limite = await consumir(`cidituc:${hashearIp(ipDe(request))}`, 120, 600);
+    if (!limite.permitido) return volver(request, destino, "demasiados-intentos");
+
+    /*
+     * Autenticar no es autorizar. El token prueba que la persona es quien dice
+     * ser ante el municipio, no que pueda votar aca. La "lista propia" de este
+     * sitio es la etapa del proceso: se abre sesion (y se suma la persona al
+     * padron) para votar en la votacion y para presentar una idea en la etapa
+     * de ideas, y en ningun otro momento (ver etapaDejaIngresar).
+     */
+    edicion = await getEdicionActiva();
+  } catch (causa) {
+    // Como en el catch del empadronamiento: el resumen, nunca el token.
+    console.error(
+      "[cidituc] la base no respondio en la vuelta:",
+      causa instanceof Error ? causa.message : causa,
+    );
+    return volver(request, destino, "sin-servicio");
+  }
   const fueraDeEtapa =
     destino === "ideas" && edicion?.etapa !== "ideas" && (await puedeCargarFueraDeEtapa());
   if (!edicion || !etapaDejaIngresar(destino, edicion.etapa, fueraDeEtapa)) {
@@ -156,7 +196,14 @@ export async function GET(request: Request) {
       "[cidituc] no se pudo empadronar:",
       causa instanceof Error ? causa.message : causa,
     );
-    return volver(request, destino, "sin-padron");
+    // La cuenta ya ocupa otro lugar en el padron: cada reintento rebota igual,
+    // asi que no puede compartir el "proba de nuevo en un rato" de una base
+    // caida. Lo tiene que revisar el equipo (ver `CuentaYaEmpadronada`).
+    return volver(
+      request,
+      destino,
+      causa instanceof CuentaYaEmpadronada ? "cuenta-duplicada" : "sin-padron",
+    );
   }
 
   // El token de CIDITUC ya cumplio su funcion y no se guarda: conservarlo solo

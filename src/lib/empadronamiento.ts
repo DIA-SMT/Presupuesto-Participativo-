@@ -121,11 +121,27 @@ const sube = sql`(NOT ${votantes.verificado} AND excluded.verificado)`;
 const baja = sql`(${votantes.verificado} AND NOT excluded.verificado)`;
 
 /**
+ * La cuenta del proveedor ya ocupa un lugar en el padron con OTRO documento, y
+ * el alta rebota contra `votantes_proveedor_sub_idx` (ver src/db/schema.ts).
+ * Pasa si CIDITUC corrigio el documento de una cuenta que ya habia entrado, si
+ * el documento nuevo ya tenia su propia fila con otra cuenta, o si cambio
+ * DNI_PEPPER.
+ *
+ * Es una clase propia y no un Error comun porque, a diferencia de una base que
+ * no contesta, reintentar no lo arregla nunca: cada intento manda el mismo
+ * documento con la misma cuenta y rebota igual. El callback de CIDITUC la
+ * distingue para no mandar a la persona a insistir; hay que revisarlo a mano.
+ */
+export class CuentaYaEmpadronada extends Error {
+  readonly codigo = "cuenta-duplicada";
+}
+
+/**
  * Crea o actualiza el votante y devuelve su id interno.
  *
  * Si la cuenta del proveedor ya esta en el padron con OTRO documento, el alta
- * rebota contra `votantes_proveedor_sub_idx` y esto tira: es el caso en que la
- * misma persona abriria un segundo lugar en el padron (ver src/db/schema.ts).
+ * rebota contra `votantes_proveedor_sub_idx` y esto tira `CuentaYaEmpadronada`:
+ * es el caso en que la misma persona abriria un segundo lugar en el padron.
  */
 export async function empadronar(datos: DatosEmpadronamiento): Promise<{
   votanteId: number;
@@ -199,7 +215,7 @@ function errorSinDatosPersonales(causa: unknown): Error {
     if (typeof conDatos.constraint === "string") restriccion ??= conDatos.constraint;
   }
   if (restriccion === "votantes_proveedor_sub_idx") {
-    return new Error(
+    return new CuentaYaEmpadronada(
       "La cuenta del proveedor ya esta en el padron con otro documento " +
         "(votantes_proveedor_sub_idx): no se abre un segundo lugar para la misma " +
         "cuenta. Revisar a mano si cambio DNI_PEPPER o el documento de la cuenta.",

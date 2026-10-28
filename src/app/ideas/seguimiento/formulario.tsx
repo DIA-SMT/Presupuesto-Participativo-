@@ -13,7 +13,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { ChipEstado } from "@/components/ui";
-import { DESCRIPCION_ESTADO, formatearFecha } from "@/lib/formato";
+import { descripcionEstado, formatearFecha } from "@/lib/formato";
 
 /**
  * Estados en los que la evaluacion ya termino. Si una idea esta en uno de
@@ -34,6 +34,12 @@ const ORIGEN_FUERA_DEL_SITIO: Record<string, string> = {
 
 export type IdeaSeguida = {
   anio: number;
+  /**
+   * La etapa de la edicion de la idea: "factible" se describe distinto antes,
+   * durante y despues de la votacion (ver `descripcionEstado`). String por lo
+   * mismo que `estado`.
+   */
+  etapa: string;
   numero: number;
   titulo: string;
   estado: string;
@@ -191,7 +197,7 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
       </div>
 
       <p className="mt-4 text-[0.9375rem] leading-relaxed">
-        {DESCRIPCION_ESTADO[idea.estado] ??
+        {descripcionEstado(idea.estado, idea.etapa, idea.publicada) ??
           "El equipo del Presupuesto Participativo está trabajando sobre tu propuesta."}
       </p>
 

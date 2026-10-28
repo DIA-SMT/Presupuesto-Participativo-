@@ -3,12 +3,17 @@
 /**
  * Filtros del listado de proyectos. Escriben en la barra de direcciones, asi que
  * cualquier filtro se puede compartir por link y el navegador lo recuerda al
- * volver atras. Cada cambio parte de los parametros que ya estan en la URL, asi
- * que `?edicion=AAAA` viaja con cualquier filtro sin que haya que nombrarlo.
+ * volver atras. Cada cambio parte de los parametros de la URL (la que esta o la
+ * ultima pedida), asi que `?edicion=AAAA` viaja con cualquier filtro sin que
+ * haya que nombrarlo.
+ *
+ * Que URL pedir y cuando (la espera de la busqueda, "Limpiar filtros", un
+ * selector elegido mientras otra navegacion sigue en camino) lo decide
+ * src/lib/filtros-listado.ts; aca solo se muestra y se navega.
  */
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { PARAMETRO_EDICION } from "@/lib/ediciones";
+import { crearFiltrosDelListado } from "@/lib/filtros-listado";
 
 type Opcion = { valor: string; texto: string };
 
@@ -23,27 +28,35 @@ export default function Filtros({
   const parametros = useSearchParams();
   const [pendiente, iniciar] = useTransition();
   const [texto, setTexto] = useState(parametros.get("q") ?? "");
+  // Uno por montaje: guarda el temporizador de la busqueda, que tiene que
+  // sobrevivir a los renders para poder cancelarlo. `router.replace` e `iniciar`
+  // son estables, asi que capturarlos aca no deja nada viejo.
+  const [filtros] = useState(() =>
+    crearFiltrosDelListado(parametros.toString(), (href) =>
+      iniciar(() => router.replace(href)),
+    ),
+  );
+
+  const consultaEnUrl = parametros.toString();
+  // `useSearchParams` cambia recien cuando la navegacion termina (o cuando la
+  // URL cambia por afuera: el boton de atras, un enlace). Ahi se avisa.
+  useEffect(() => filtros.sincronizar(consultaEnUrl), [filtros, consultaEnUrl]);
+  // Y Buscar toma la `q` de esa URL. Next no vuelve a montar este componente
+  // cuando solo cambian los parametros (el link "Proyectos" del encabezado, el
+  // boton de atras), asi que el `useState` de `texto` no se relee: sin esto el
+  // campo seguiria diciendo "plaza" sobre un listado que ya no la busca. Se
+  // ajusta en el render contra la ultima consulta vista, no con un setTexto en
+  // el efecto (un render de mas: react-hooks/set-state-in-effect). Mientras la
+  // persona escribe, `textoParaMostrar` da null y lo suyo no se toca.
+  const [consultaVista, setConsultaVista] = useState(consultaEnUrl);
+  if (consultaVista !== consultaEnUrl) {
+    setConsultaVista(consultaEnUrl);
+    const textoDeLaUrl = filtros.textoParaMostrar(consultaEnUrl);
+    if (textoDeLaUrl !== null) setTexto(textoDeLaUrl);
+  }
+  useEffect(() => () => filtros.cancelar(), [filtros]);
 
   const actual = (clave: string) => parametros.get(clave) ?? "";
-
-  function navegar(cambios: Record<string, string>) {
-    const siguientes = new URLSearchParams(parametros.toString());
-    for (const [clave, valor] of Object.entries(cambios)) {
-      if (valor) siguientes.set(clave, valor);
-      else siguientes.delete(clave);
-    }
-    const consulta = siguientes.toString();
-    iniciar(() => router.replace(consulta ? `/proyectos?${consulta}` : "/proyectos"));
-  }
-
-  // La busqueda por texto espera a que la persona deje de escribir.
-  useEffect(() => {
-    const actualEnUrl = parametros.get("q") ?? "";
-    if (texto === actualEnUrl) return;
-    const temporizador = setTimeout(() => navegar({ q: texto }), 350);
-    return () => clearTimeout(temporizador);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [texto]);
 
   const hayFiltros = ["distrito", "categoria", "estado", "q", "ganadores"].some((clave) =>
     parametros.get(clave),
@@ -61,7 +74,10 @@ export default function Filtros({
           <input
             type="search"
             value={texto}
-            onChange={(evento) => setTexto(evento.target.value)}
+            onChange={(evento) => {
+              setTexto(evento.target.value);
+              filtros.buscar(evento.target.value);
+            }}
             placeholder="Plaza, club, barrio…"
             className="rounded-xl px-3 py-2.5 text-sm outline-none"
             style={{
@@ -75,7 +91,7 @@ export default function Filtros({
         <Selector
           etiqueta="Distrito"
           valor={actual("distrito")}
-          onCambio={(valor) => navegar({ distrito: valor })}
+          onCambio={(valor) => filtros.filtrar({ distrito: valor })}
           opciones={[
             { valor: "", texto: "Todos los distritos" },
             ...Array.from({ length: 20 }, (_, i) => ({
@@ -88,14 +104,14 @@ export default function Filtros({
         <Selector
           etiqueta="Categoría"
           valor={actual("categoria")}
-          onCambio={(valor) => navegar({ categoria: valor })}
+          onCambio={(valor) => filtros.filtrar({ categoria: valor })}
           opciones={[{ valor: "", texto: "Todas las categorías" }, ...categorias]}
         />
 
         <Selector
           etiqueta="Estado"
           valor={actual("estado")}
-          onCambio={(valor) => navegar({ estado: valor, ganadores: "" })}
+          onCambio={(valor) => filtros.filtrar({ estado: valor, ganadores: "" })}
           opciones={[{ valor: "", texto: "Todos los estados" }, ...estados]}
         />
       </div>
@@ -106,7 +122,7 @@ export default function Filtros({
             type="checkbox"
             checked={actual("ganadores") === "1"}
             onChange={(evento) =>
-              navegar({ ganadores: evento.target.checked ? "1" : "", estado: "" })
+              filtros.filtrar({ ganadores: evento.target.checked ? "1" : "", estado: "" })
             }
             className="h-4 w-4 rounded"
           />
@@ -118,16 +134,7 @@ export default function Filtros({
             type="button"
             onClick={() => {
               setTexto("");
-              // La edicion no es un filtro: limpiar los filtros de la 2025 deja
-              // la 2025 entera, no salta a la edicion activa.
-              const edicion = parametros.get(PARAMETRO_EDICION);
-              iniciar(() =>
-                router.replace(
-                  edicion
-                    ? `/proyectos?${new URLSearchParams({ [PARAMETRO_EDICION]: edicion })}`
-                    : "/proyectos",
-                ),
-              );
+              filtros.limpiar();
             }}
             className="text-sm underline"
             style={{ color: "var(--texto-suave)" }}

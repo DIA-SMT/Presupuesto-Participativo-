@@ -12,6 +12,7 @@ import test from "node:test";
 import type { ContextoDelSitio } from "../../src/lib/chat-contexto";
 import { responderSobreElSitio, temaDelSitio } from "../../src/lib/chat-sin-ia-sitio";
 import { sugerenciasDelChat } from "../../src/lib/chat-sugerencias";
+import { consultaResuelta } from "../../src/lib/chat-temas";
 import {
   PASOS_PARA_VOTAR,
   POR_QUE_NO_HAY_MONTOS,
@@ -38,6 +39,7 @@ function edicion(etapa: Etapa, fechas: Partial<Record<"ideasDesde" | "ideasHasta
 
 function contexto(cambios: Partial<ContextoDelSitio> = {}): ContextoDelSitio {
   return {
+    hoy: HOY,
     momento: "Edición 2026: la presentación de ideas está abierta hasta el 15 de noviembre de 2026.",
     acciones: [
       { href: "/ideas/nueva", texto: "Presentá tu idea" },
@@ -169,6 +171,44 @@ test("con reglamento publicado: los parrafos que hablan de eso", () => {
   assert.ok(respuesta);
   assert.match(respuesta.texto, /mayores de 16 años/);
   assert.doesNotMatch(respuesta.texto, /Artículo 3/);
+});
+
+test("pedir el reglamento en general no es 'no encontré eso': esta publicado y se enlaza", () => {
+  // Estas preguntas no dejan ninguna palabra que buscar: antes contestaban "No
+  // encontré eso en el reglamento" y el panel las contaba como sin resolver.
+  const ctx = contexto({
+    reglamento: {
+      publicado: true,
+      parrafos: [
+        "Artículo 1. El programa se organiza en 20 distritos.",
+        "Artículo 2. Pueden votar las personas mayores de 16 años que vivan en el distrito.",
+        "Artículo 3. Las ideas se presentan durante la etapa de ideas.",
+        "Artículo 4. Cada persona tiene un voto.",
+        "Artículo 5. Gana la idea más votada de cada distrito.",
+      ],
+    },
+  });
+  for (const pregunta of ["¿Dónde está el reglamento?", "¿Qué dice el reglamento?", "¿Cuáles son las reglas?"]) {
+    const respuesta = responder(pregunta, "ideas", ctx);
+    assert.ok(respuesta, pregunta);
+    assert.doesNotMatch(respuesta.texto, /No encontré/, pregunta);
+    assert.match(respuesta.texto, /^El reglamento está publicado/, pregunta);
+    assert.match(respuesta.texto, /Así empieza:\n\n- Artículo 1\./, pregunta);
+    assert.doesNotMatch(respuesta.texto, /Artículo 5/, "solo el comienzo, no el reglamento entero");
+    assert.deepEqual(respuesta.referencias.map((r) => r.url), ["/reglamento"], pregunta);
+    assert.equal(
+      consultaResuelta({ herramientas: ["buscador-local"], respuesta: respuesta.texto }),
+      true,
+      `${pregunta}: el panel la cuenta como resuelta`,
+    );
+  }
+
+  // Con palabras que buscar y sin ningun parrafo que las tenga, sigue siendo
+  // "no encontré": eso si es algo que el reglamento no dice.
+  const sinEso = responder("¿Qué dice el reglamento sobre los desempates?", "ideas", ctx);
+  assert.ok(sinEso);
+  assert.match(sinEso.texto, /^No encontré eso en el reglamento/);
+  assert.equal(consultaResuelta({ herramientas: ["buscador-local"], respuesta: sinEso.texto }), false);
 });
 
 test("los montos, las fechas, el seguimiento y como participar salen del contexto", () => {

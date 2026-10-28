@@ -19,7 +19,7 @@
  * usaba la rampa --color-acento-600 como color de letra.
  */
 import Link from "next/link";
-import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useId, useRef, useState } from "react";
 import { Chip } from "@/components/ui";
 import type { AccionEquipo, RolAdmin } from "@/db/queries";
 import { ETIQUETA_ROL, formatearNumero } from "@/lib/formato";
@@ -326,7 +326,8 @@ function TarjetaCuenta({
   // contrasena que usa hoy. El cambio de rol no, porque se deshace igual.
   const [confirmando, setConfirmando] = useState<"baja" | "clave" | null>(null);
   // Tres acciones en la misma tarjeta: se muestra el resultado de la ultima
-  // que se uso, no uno viejo de otra.
+  // que se uso, no uno viejo de otra. La provisoria no entra en esta regla
+  // (ver `provisoria`, mas abajo).
   const [ultima, setUltima] = useState<AccionDeTarjeta | null>(null);
   const [provisoriaOculta, setProvisoriaOculta] = useState<Resultado | null>(null);
 
@@ -367,10 +368,18 @@ function TarjetaCuenta({
 
   const resultado =
     ultima === "rol" ? estadoRol : ultima === "activo" ? estadoActivo : ultima === "clave" ? estadoClave : null;
+  // La provisoria se ve hasta "Ya la copié" o hasta que otro restablecimiento
+  // la reemplace, aunque despues se use otro boton de la tarjeta. Atada a `ultima`
+  // se iba con el click siguiente, antes de que contestara el servidor: con
+  // una cuenta de baja, el mensaje del restablecimiento pide reactivarla, y
+  // "Reactivar cuenta" la borraba de la pantalla sin que se pudiera recuperar
+  // (en la base queda el hash). El mensaje de esa otra accion va aparte.
   const provisoria =
-    ultima === "clave" && estadoClave?.ok && estadoClave.passwordProvisoria && provisoriaOculta !== estadoClave
-      ? estadoClave.passwordProvisoria
+    estadoClave?.ok && estadoClave.passwordProvisoria && provisoriaOculta !== estadoClave
+      ? { valor: estadoClave.passwordProvisoria, mensaje: estadoClave.mensaje }
       : null;
+  // Si la ultima fue el restablecimiento, su mensaje ya va dentro del recuadro.
+  const resultadoAparte = provisoria && ultima === "clave" ? null : resultado;
 
   return (
     <div className="superficie rounded-2xl px-5 py-4">
@@ -414,7 +423,14 @@ function TarjetaCuenta({
               <span className="text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
                 Rol
               </span>
+              {/* La key es el rol guardado. El formulario se resetea solo al
+                  terminar la accion, y un select sin controlar vuelve a la
+                  opcion que tenia al montarse: React no le aplica un
+                  defaultValue nuevo. Sin la key, despues de cambiar el rol se
+                  seguia viendo el anterior, y otro "Cambiar rol" lo deshacia.
+                  Asi se vuelve a montar con el que trae la revalidacion. */}
               <select
+                key={cuenta.rol}
                 name="rol"
                 defaultValue={cuenta.rol}
                 aria-describedby={idNombre}
@@ -521,22 +537,26 @@ function TarjetaCuenta({
       )}
 
       <div ref={aviso} tabIndex={-1}>
-        {provisoria && estadoClave?.ok ? (
+        {provisoria && (
           <ContrasenaProvisoria
-            valor={provisoria}
-            mensaje={estadoClave.mensaje}
+            valor={provisoria.valor}
+            // El mensaje del restablecimiento solo mientras es lo ultimo que
+            // se hizo: despues de reactivar, "reactivala para que pueda
+            // ingresar" ya no vale, y lo que paso lo dice el aviso de abajo.
+            mensaje={ultima === "clave" ? provisoria.mensaje : undefined}
             onOcultar={ocultarProvisoria}
           />
-        ) : (
-          resultado && (
-            <p
-              role={resultado.ok ? "status" : "alert"}
-              className="mt-3 text-sm"
-              style={{ color: resultado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
-            >
-              {resultado.ok ? (resultado.mensaje ?? "Listo.") : resultado.error}
-            </p>
-          )
+        )}
+        {resultadoAparte && (
+          <p
+            role={resultadoAparte.ok ? "status" : "alert"}
+            className="mt-3 text-sm"
+            style={{
+              color: resultadoAparte.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)",
+            }}
+          >
+            {resultadoAparte.ok ? (resultadoAparte.mensaje ?? "Listo.") : resultadoAparte.error}
+          </p>
         )}
       </div>
     </div>
@@ -650,11 +670,33 @@ function FormularioAlta() {
   // Como en las tarjetas: el boton se deshabilita mientras crea, asi que el
   // resultado se lleva el foco; y al ocultar la provisoria el foco vuelve al
   // correo, listo para la proxima alta.
+  const formulario = useRef<HTMLFormElement>(null);
   const campoCorreo = useRef<HTMLInputElement>(null);
   const aviso = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (estado?.ok) formulario.current?.reset();
     if (estado) aviso.current?.focus();
   }, [estado]);
+
+  /*
+   * Un <form action> se resetea solo al terminar cada envio, salga bien o mal:
+   * un "Ya hay una cuenta con…" o un correo que el servidor no acepta borraban
+   * el correo y el nombre que habia que corregir, y el rol volvia a Lector sin
+   * que se notara (el envio siguiente creaba la cuenta como lectora). Por eso
+   * el envio pasa por aca: con preventDefault React no corre la accion del
+   * <form> ni lo resetea, y el formulario se vacia a mano, arriba, solo cuando
+   * la cuenta se creo. Controlar los campos no alcanzaba: un <select>
+   * controlado no sobrevive al reset (React no le marca la opcion por
+   * defecto) y mostraba un rol distinto del que despues se mandaba.
+   *
+   * La action queda puesta igual: antes de que cargue React es la que hace que
+   * el formulario no se mande solo, por GET y con el correo en la URL.
+   */
+  function enviar(evento: React.SubmitEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => accion(datos));
+  }
 
   function ocultarProvisoria() {
     setProvisoriaOculta(estado);
@@ -663,7 +705,7 @@ function FormularioAlta() {
 
   return (
     <>
-      <form action={accion} className="mt-4 grid gap-3">
+      <form ref={formulario} action={accion} onSubmit={enviar} className="mt-4 grid gap-3">
         <label className="grid gap-1 text-sm">
           <span className="font-medium">Correo</span>
           <input

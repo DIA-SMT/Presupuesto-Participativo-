@@ -10,12 +10,12 @@ import {
   ordenDeIdeasPara,
 } from "@/db/queries";
 import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
-import { conEdicion, votacionTerminada } from "@/lib/ediciones";
+import { conEdicion, ganadorPorProclamar, votacionTerminada } from "@/lib/ediciones";
 import {
-  DESCRIPCION_ESTADO,
   ETIQUETA_ESTADO,
   ETIQUETA_ETAPA,
   colorCategoria,
+  descripcionEstado,
   formatearNumero,
 } from "@/lib/formato";
 
@@ -51,6 +51,10 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
   if (!distrito) notFound();
 
   const ganador = distrito.ganador;
+  const yaVoto = votacionTerminada(edicion.etapa);
+  // Ya voto pero el ganador todavia no se proclamo (se proclama de a un
+  // distrito desde el panel): decir que "no tiene proyecto ganador" era falso.
+  const porProclamar = !ganador && ganadorPorProclamar(edicion.etapa, distrito.conFactibles);
   const colorDeCategoria = colorCategoria(ganador?.categoriaSlug, ganador?.categoriaColor);
   const otras = distrito.ideas.filter((idea) => !idea.ganador);
   const conPunto = distrito.ideas.filter((idea) => idea.lat !== null);
@@ -59,9 +63,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
   // es la obra que gano en la ultima edicion que si voto (la de 2025 con la
   // 2026 recien abierta). Se busca solo en ese caso.
   const anterior =
-    !ganador && !votacionTerminada(edicion.etapa)
-      ? await getUltimaEdicionTerminadaConGanadores()
-      : null;
+    !ganador && !yaVoto ? await getUltimaEdicionTerminadaConGanadores() : null;
   const ganadorAnterior =
     anterior && anterior.id !== edicion.id
       ? (anterior.ganadores.find((g) => g.distrito === numero) ?? null)
@@ -115,11 +117,15 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
       </header>
 
       <dl className="mt-8 grid gap-3 sm:grid-cols-3">
-        <Dato valor={String(distrito.ideas.length)} etiqueta="ideas presentadas" />
+        {/* Solo las publicadas: las del formulario entran sin publicar hasta que
+            el equipo las revisa, y "0 ideas presentadas" con ideas recibidas era
+            falso. */}
+        <Dato valor={String(distrito.ideas.length)} etiqueta="ideas publicadas" />
         {/* Recien cuando la votacion termino: antes, "—" en "votos del proyecto
             ganador" se leia como un distrito que se quedo sin nada. Despues si:
-            es el distrito que quedo sin ganador. */}
-        {votacionTerminada(edicion.etapa) && (
+            es el distrito que quedo sin ganador. Y no mientras espera su
+            proclamacion, por lo mismo. */}
+        {yaVoto && !porProclamar && (
           <Dato
             valor={ganador ? formatearNumero(ganador.votos) : "—"}
             etiqueta="votos del proyecto ganador"
@@ -128,7 +134,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
         {/*
           El tercer dato grande del distrito era "estado de la obra", y mostraba
           el `preparacion` que ponia el ETL por defecto: un dato inventado con el
-          tamano de un titular. Los otros dos —ideas presentadas y votos— si son
+          tamano de un titular. Los otros dos —ideas publicadas y votos— si son
           reales, y quedan.
         */}
       </dl>
@@ -179,7 +185,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
             </Link>
           </article>
         </section>
-      ) : !votacionTerminada(edicion.etapa) ? (
+      ) : !yaVoto ? (
         // Antes de que termine la votacion no hay ganador todavia, y "no tiene
         // proyecto ganador" se leia como que el distrito se habia quedado sin
         // nada. Con la 2026 recien abierta pasaba en los 20 distritos.
@@ -206,11 +212,20 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
             </p>
           )}
         </div>
+      ) : porProclamar ? (
+        <div className="mt-10">
+          <Aviso>
+            La votación de la edición {edicion.anio} terminó y el proyecto ganador de este distrito
+            todavía no se proclamó. Se publica acá cuando se proclame.
+          </Aviso>
+        </div>
       ) : (
         <div className="mt-10">
           <Aviso tono="atencion">
             Este distrito no tiene proyecto ganador en la edición {edicion.anio}.
-            {distrito.ideas.length === 1
+            {/* Solo si de verdad fue asi: con una sola idea factible que no se
+                llego a proclamar, la frase era falsa. */}
+            {distrito.ideas.length === 1 && distrito.ideas[0].estado === "no_factible"
               ? " Se presentó una sola idea y fue declarada no factible."
               : ""}
           </Aviso>
@@ -223,7 +238,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
         <p className="mt-2 max-w-prose text-sm" style={{ color: "var(--texto-suave)" }}>
           {/* Una edicion recien abierta no tiene ideas: "0 de las 0" no dice nada. */}
           {distrito.ideas.length === 0
-            ? `Todavía no hay ideas presentadas en este distrito en la edición ${edicion.anio}.`
+            ? `Todavía no hay ideas publicadas en este distrito en la edición ${edicion.anio}.`
             : `${conPunto.length} de las ${distrito.ideas.length} ideas tienen una ubicación en el mapa. Los puntos con borde punteado son aproximados: no marcan el lugar exacto de la obra.`}
         </p>
         <div className="mt-4">
@@ -265,7 +280,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
           </h2>
           <div className="flex flex-wrap gap-2">
             {[...porEstado.entries()].map(([estado, cantidad]) => (
-              <span key={estado} title={DESCRIPCION_ESTADO[estado]}>
+              <span key={estado} title={descripcionEstado(estado, edicion.etapa)}>
                 <Chip>
                   {cantidad} {ETIQUETA_ESTADO[estado] ?? estado}
                 </Chip>

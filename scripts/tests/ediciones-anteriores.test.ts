@@ -191,6 +191,49 @@ test("/api/proyectos: los errores tambien llevan CORS, para que se lea el motivo
   assert.match((await (await pedir("?edicion=1999")).json()).error, /No hay una edición 1999/);
 });
 
+test("/api/proyectos: el CSV no deja que un titulo o un barrio se abra como formula", async () => {
+  const { db, schema, sql } = base;
+  const { GET } = await import("../../src/app/api/proyectos/route");
+
+  // Texto libre del vecino, publicado: un barrio que es una formula y un
+  // titulo legitimo que Excel tambien leeria como una.
+  const [idea] = await db
+    .insert(schema.ideas)
+    .values({
+      edicionId: id2025,
+      distritoId: 1,
+      titulo: "- Arreglo de veredas",
+      slug: "formula-csv",
+      estado: "factible",
+      publicada: true,
+      barrio: '=HYPERLINK("https://sitio-falso.example/login","Ver ficha oficial")',
+      barrioNormalizado: "hyperlink",
+      lat: "-26.8300000",
+      lon: "-65.2000000",
+    })
+    .returning({ id: schema.ideas.id });
+
+  try {
+    const csv = await (
+      await GET(new Request("http://localhost/api/proyectos?edicion=2025&formato=csv"))
+    ).text();
+    const fila = csv.split("\n").find((linea) => linea.includes("/proyectos/formula-csv"));
+    assert.ok(fila, "la idea sale en el CSV");
+
+    assert.ok(fila.includes(",'- Arreglo de veredas,"), fila);
+    assert.ok(
+      fila.includes(`,"'=HYPERLINK(""https://sitio-falso.example/login"",""Ver ficha oficial"")",`),
+      fila,
+    );
+    // Los numeros negativos siguen siendo numeros: el apostrofo es solo para texto.
+    assert.ok(fila.includes(",-26.83,-65.2,"), fila);
+    assert.ok(!fila.includes("'-26"), fila);
+  } finally {
+    // Las pruebas de abajo cuentan las ideas de la 2025.
+    await db.delete(schema.ideas).where(sql`${schema.ideas.id} = ${idea.id}`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Descartadas
 //

@@ -36,8 +36,11 @@ import {
 import {
   getTokensUsadosHoy,
   getVotosPorIdea,
+  registrarConsumoDeRespaldo,
   type EstadoIdea,
 } from "@/db/queries";
+import { sinCaracteresDeControl } from "@/lib/texto-limpio";
+import { resumenDeError } from "@/lib/errores-base";
 import {
   ETAPAS,
   esEtapa,
@@ -47,17 +50,28 @@ import {
   votosDeLaEdicion,
   type Etapa,
 } from "@/lib/etapas";
-import { generarInforme, tieneMaterial } from "@/lib/informe-impacto";
+import {
+  generarInforme,
+  InformeInvalido,
+  tieneMaterial,
+} from "@/lib/informe-impacto";
 // `mensajeDeError` ya existe aca abajo con otro proposito (encadenar causas):
 // el del proveedor se importa con otro nombre para no pisarlo.
 import {
+  CONSUMO_VACIO,
   gastoDelDiaAgotado,
   hayClave,
   mensajeDeError as mensajeDelProveedor,
+  modeloPara,
+  motivoDeFalla,
+  type Consumo,
 } from "@/lib/modelo";
+import { MAXIMO_PRESUPUESTO } from "@/lib/formato";
 import { hashearPassword, verificarPassword } from "@/lib/password";
 import { MINIMO_PASSWORD } from "@/lib/politica-password";
-import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
+import { consumir, ipDeCabeceras } from "@/lib/rate-limit";
+import { topeDeIngresoAdmin } from "@/lib/tope-ingreso-admin";
+import { topeDePasswordPropia } from "@/lib/tope-password-propia";
 import { cerrarSesionAdmin, crearSesionAdmin } from "@/lib/sesion";
 import {
   bloqueoPorEtapa,
@@ -67,10 +81,17 @@ import {
   filaSistema,
   leerIdeaEnJuego,
   mensajeDeError,
+  motivoPorRanking,
   opcional,
+  reglaParaEvaluar,
+  reglaParaProclamar,
+  reglaParaPublicar,
+  reglaParaReabrir,
   sinPermiso,
+  tomarIdeaParaCambiar,
   type Resultado,
 } from "./comun";
+import { fechaValida } from "./contenido/escritura";
 import { cambiarPasswordPropia } from "./equipo/cuentas";
 
 
@@ -167,21 +188,12 @@ export async function ingresarAdmin(
   const password = String(formulario.get("password") ?? "");
   if (!email || !password) return { ok: false, error: "Completá el correo y la contraseña." };
 
-  // Tope de intentos por IP, igual que el login ciudadano de
-  // /api/auth/ingresar. Este login es la puerta del backoffice: sin limite,
-  // una contrasena debil se rompe por fuerza bruta sin dejar rastro.
-  const limite = await consumir(
-    `login-admin:${hashearIp(ipDeCabeceras(await headers()))}`,
-    10,
-    600,
-  );
-  if (!limite.permitido) {
-    const minutos = Math.max(1, Math.ceil(limite.reiniciaEn / 60));
-    return {
-      ok: false,
-      error: `Demasiados intentos. Probá de nuevo en ${minutos} ${minutos === 1 ? "minuto" : "minutos"}.`,
-    };
-  }
+  // Tope de intentos por IP y por cuenta (ver src/lib/tope-ingreso-admin.ts).
+  // Este login es la puerta del backoffice: sin limite, una contrasena debil
+  // se rompe por fuerza bruta sin dejar rastro. Va antes de buscar la cuenta,
+  // y el de la cuenta corre para cualquier correo, exista o no.
+  const tope = await topeDeIngresoAdmin(ipDeCabeceras(await headers()), email);
+  if (tope) return { ok: false, error: tope };
 
   const [admin] = await db
     .select()
@@ -263,7 +275,25 @@ export async function cambiarMiPassword(
   if (!cuenta) return { ok: false, error: "La cuenta ya no existe." };
 
   if (!cuenta.debeCambiarPassword) {
-    if (!actual) return { ok: false, error: "Escribí tu contraseña actual." };
+    if (!actual) {
+      // Sin la actual y con la cuenta ya sin provisoria: casi siempre es una
+      // pantalla vieja, dibujada sin ese campo, de alguien que eligio su
+      // contraseña en otra pestaña (la cookie reemitida vale para las dos). Sin
+      // revalidar, Next no la vuelve a dibujar y el mensaje pedia un campo que no
+      // estaba. Asi el panel se redibuja con la sesion de hoy: aparece el campo,
+      // y el formulario, que queda en el mismo lugar del arbol, conserva el aviso.
+      revalidatePath("/admin", "layout");
+      return {
+        ok: false,
+        error: "Ya no tenés la contraseña provisoria: para cambiarla, escribí tu contraseña actual.",
+      };
+    }
+    // La respuesta de abajo dice si la actual es correcta: sin tope era una
+    // forma de probar contrasenas por fuera de los de `ingresarAdmin` (ver
+    // src/lib/tope-password-propia.ts). Cuenta antes de comparar, y solo aca:
+    // con una provisoria no se compara nada y no hay intento que contar.
+    const tope = await topeDePasswordPropia(sesion.adminId);
+    if (tope) return { ok: false, error: tope };
     if (!(await verificarPassword(actual, cuenta.passwordHash))) {
       return { ok: false, error: "La contraseña actual no es correcta." };
     }
@@ -335,36 +365,31 @@ export async function evaluarIdea(
     return { ok: false, error: "Datos inválidos." };
   }
 
-  const [previa] = await db
-    .select({ estado: ideas.estado, motivoEstado: ideas.motivoEstado, ganador: ideas.ganador })
-    .from(ideas)
-    .where(eq(ideas.id, datos.id))
-    .limit(1);
-  if (!previa) return { ok: false, error: "La idea no existe." };
-
-  if (previa.ganador) {
-    return {
-      ok: false,
-      error:
-        "Esta idea está proclamada como ganadora. Reabrí la revisión antes de cambiarle el estado.",
-    };
-  }
-
-  const devolucion = datos.devolucion || previa.motivoEstado;
-  if (faltaDevolucion(datos.estado, devolucion)) {
-    return { ok: false, error: ERROR_DEVOLUCION };
-  }
-
   const ahora = new Date();
   // Con la votacion abierta, evaluar no puede sacar a una idea de la votacion
   // ni meterla (ver puedeCambiarIdea). Si la etapa lo impide no se escribe
   // nada, ni siquiera la devolucion que venia en el mismo formulario.
+  //
+  // Todo se decide adentro, con la fila bloqueada, y no con una lectura previa:
+  // una proclamacion que se cuele en el medio dejaba un ganador con estado
+  // "no factible", y el historial con el estado anterior equivocado.
   const bloqueo = await db.transaction(async (tx) => {
-    const motivo = await bloqueoPorEtapa(tx, datos.id, {
-      accion: "evaluar",
-      estado: datos.estado,
-    });
-    if (motivo) return motivo;
+    const tomada = await tomarIdeaParaCambiar(
+      tx,
+      datos.id,
+      { accion: "evaluar", estado: datos.estado },
+      reglaParaEvaluar,
+    );
+    if (!tomada.ok) return tomada.motivo;
+
+    // La devolucion que la idea ya tiene cubre un "no" que llega sin texto
+    // nuevo, y es la que queda en el historial si no se escribio otra.
+    const [propia] = await tx
+      .select({ motivoEstado: ideas.motivoEstado })
+      .from(ideas)
+      .where(eq(ideas.id, datos.id));
+    const devolucion = datos.devolucion || propia?.motivoEstado || null;
+    if (faltaDevolucion(datos.estado, devolucion)) return ERROR_DEVOLUCION;
 
     await tx
       .update(ideas)
@@ -382,9 +407,9 @@ export async function evaluarIdea(
         ideaId: datos.id,
         sesion,
         accion: "evaluacion",
-        estadoAnterior: previa.estado,
+        estadoAnterior: tomada.vigente.estado,
         estadoNuevo: datos.estado,
-        nota: datos.devolucion || previa.motivoEstado,
+        nota: devolucion,
       }),
     );
     return null;
@@ -496,6 +521,23 @@ export async function generarInformeImpacto(
     generado = await generarInforme(idea);
   } catch (causa) {
     console.error("[informe]", causa);
+    // La falla tambien se anota, como en el chat y el asistente: si la
+    // respuesta llego y no servia, lo que se cobro cuenta para el tope diario;
+    // si fallo el proveedor, el motivo le dice al equipo que hacer (un 402 es
+    // credito que cargar).
+    const invalido = causa instanceof InformeInvalido ? causa : null;
+    await registrarCostoInforme({
+      titulo: idea.titulo,
+      resumen: null,
+      modelo: invalido?.modelo ?? modeloPara("informe"),
+      consumo: invalido?.consumo ?? CONSUMO_VACIO,
+      ms: Date.now() - inicio,
+      falla: invalido
+        ? invalido.motivoDeCorte === "length"
+          ? "salida-cortada"
+          : "salida-invalida"
+        : motivoDeFalla(causa),
+    });
     return {
       ok: false,
       error: mensajeDelProveedor(
@@ -536,28 +578,68 @@ export async function generarInformeImpacto(
     );
   });
 
-  // Registro de costo, en la misma tabla que el chat y el asistente.
-  try {
-    await db.insert(chatConsultas).values({
-      origen: "informe",
-      pregunta: idea.titulo,
-      respuesta: generado.datos.resumen,
-      herramientas: [],
-      modelo: generado.modelo,
-      tokensEntrada: generado.consumo.tokensEntrada,
-      tokensSalida: generado.consumo.tokensSalida,
-      cacheLectura: generado.consumo.cacheLectura,
-      ms,
-      ok: true,
-    });
-  } catch (causa) {
-    console.error("[informe] no se pudo registrar el costo", causa);
-  }
+  await registrarCostoInforme({
+    titulo: idea.titulo,
+    resumen: generado.datos.resumen,
+    modelo: generado.modelo,
+    consumo: generado.consumo,
+    ms,
+  });
 
   // Solo cambia una pantalla del backoffice: no hace falta tirar abajo el
   // cache del sitio publico entero como hacen las acciones que publican.
   revalidatePath("/admin");
   return { ok: true, mensaje: "Informe generado." };
+}
+
+/**
+ * Registro de costo del informe, en la misma tabla que el chat y el asistente:
+ * es lo que suma CHAT_TOPE_TOKENS_DIA. Con `falla`, la fila va con `ok` en
+ * false y la marca `falla:<motivo>` en `herramientas`, la misma que deja el
+ * chat (la tabla no tiene una columna para "que paso"). Si el registro falla,
+ * no cambia lo que ve la persona: va al log.
+ *
+ * No se exporta: en un archivo "use server" cada export es una accion que se
+ * puede invocar desde afuera.
+ */
+async function registrarCostoInforme(datos: {
+  titulo: string;
+  resumen: string | null;
+  modelo: string;
+  consumo: Consumo;
+  ms: number;
+  falla?: string;
+}) {
+  // El resumen lo escribe el modelo: un NUL hacia fallar el INSERT y el
+  // informe no contaba para el tope (ver src/lib/texto-limpio.ts).
+  try {
+    await db.insert(chatConsultas).values({
+      origen: "informe",
+      pregunta: sinCaracteresDeControl(datos.titulo),
+      respuesta: datos.resumen === null ? null : sinCaracteresDeControl(datos.resumen),
+      herramientas: datos.falla ? [`falla:${datos.falla}`] : [],
+      modelo: datos.modelo,
+      tokensEntrada: datos.consumo.tokensEntrada,
+      tokensSalida: datos.consumo.tokensSalida,
+      cacheLectura: datos.consumo.cacheLectura,
+      ms: datos.ms,
+      ok: !datos.falla,
+    });
+  } catch (causa) {
+    console.error("[informe] no se pudo registrar el costo", resumenDeError(causa));
+    // El costo cuenta para el tope aunque la fila completa no se haya guardado.
+    try {
+      await registrarConsumoDeRespaldo({
+        origen: "informe",
+        modelo: datos.modelo,
+        tokensEntrada: datos.consumo.tokensEntrada,
+        tokensSalida: datos.consumo.tokensSalida,
+        ipHash: null,
+      });
+    } catch (otra) {
+      console.error("[informe] tampoco se pudo registrar el consumo", resumenDeError(otra));
+    }
+  }
 }
 
 /** Publica una idea. La publicacion es una decision aparte del estado tecnico. */
@@ -597,28 +679,20 @@ async function cambiarPublicacion(
     };
   }
 
-  const [previa] = await db
-    .select({ publicada: ideas.publicada })
-    .from(ideas)
-    .where(eq(ideas.id, id))
-    .limit(1);
-  if (!previa) return { ok: false, error: "La idea no existe." };
-  if (previa.publicada === publicada) {
-    return {
-      ok: false,
-      error: publicada ? "La idea ya está publicada." : "La idea ya estaba sin publicar.",
-    };
-  }
-
   // Con la votacion abierta no se despublica una idea que se esta votando (sale
   // del ranking y sus votantes no pueden votar de nuevo) ni se publica una
   // factible (entra a competir a mitad de camino). El resto de las
-  // publicaciones no mueve la votacion y sigue permitido.
+  // publicaciones no mueve la votacion y sigue permitido. Si ya esta como se
+  // pide se mira con la fila bloqueada, no antes: dos despublicaciones a la vez
+  // dejaban dos filas en el historial para un solo cambio.
   const bloqueo = await db.transaction(async (tx) => {
-    const motivoEtapa = await bloqueoPorEtapa(tx, id, {
-      accion: publicada ? "publicar" : "despublicar",
-    });
-    if (motivoEtapa) return motivoEtapa;
+    const rechazo = await bloqueoPorEtapa(
+      tx,
+      id,
+      { accion: publicada ? "publicar" : "despublicar" },
+      (vigente) => reglaParaPublicar(vigente, publicada),
+    );
+    if (rechazo) return rechazo;
 
     await tx
       .update(ideas)
@@ -665,6 +739,7 @@ export async function proclamarGanador(
       titulo: ideas.titulo,
       estado: ideas.estado,
       publicada: ideas.publicada,
+      ganador: ideas.ganador,
       edicionId: ideas.edicionId,
       etapa: ediciones.etapa,
       distrito: distritos.numero,
@@ -688,35 +763,17 @@ export async function proclamarGanador(
   if (idea.distrito === null) {
     return { ok: false, error: "La idea no tiene distrito asignado: no se puede proclamar." };
   }
-  if (idea.estado !== "factible" || !idea.publicada) {
-    return {
-      ok: false,
-      error: "Solo se proclama un proyecto que esté declarado factible y publicado.",
-    };
-  }
+  // Se pregunta aca para contestar antes de calcular el ranking; la que vale es
+  // la de adentro de la transaccion, con la fila bloqueada.
+  const porLaIdea = reglaParaProclamar(idea);
+  if (porLaIdea) return { ok: false, error: porLaIdea };
 
   const distrito = Number(idea.distrito);
   const ranking = await getVotosPorIdea(idea.edicionId, distrito);
-  const primera = ranking[0];
-  if (!primera) {
-    return {
-      ok: false,
-      error: `El Distrito ${distrito} no tiene proyectos factibles publicados.`,
-    };
-  }
-  if (primera.id !== idea.id) {
-    return {
-      ok: false,
-      error: `El proyecto más votado del Distrito ${distrito} es “${primera.titulo}” con ${primera.votos} votos: no se puede proclamar otro.`,
-    };
-  }
-  const segunda = ranking[1];
-  if (segunda && segunda.votos === primera.votos) {
-    return {
-      ok: false,
-      error: `Hay empate en ${primera.votos} votos con “${segunda.titulo}”. El desempate lo resuelve el reglamento, no el panel.`,
-    };
-  }
+  const porRanking = motivoPorRanking(ranking, idea.id, distrito);
+  if (porRanking) return { ok: false, error: porRanking };
+  // Sin motivo, la idea es la primera del ranking y la unica con esos votos.
+  const votos = ranking[0].votos;
 
   // Un distrito, un ganador. Si ya hay uno proclamado hay que reabrir esa
   // revision primero: asi el cambio queda registrado en las dos ideas.
@@ -747,6 +804,11 @@ export async function proclamarGanador(
       if (!vigente) return "La idea no existe.";
       const veredicto = puedeProclamar(vigente.etapa);
       if (!veredicto.permitido) return veredicto.motivo;
+      // Lo que se miro antes de la transaccion se vuelve a mirar sobre la fila
+      // bloqueada: si en el medio alguien la evaluo "no factible" o la
+      // despublico, quedaba un ganador con ese estado o sin publicar.
+      const porLaVigente = reglaParaProclamar(vigente);
+      if (porLaVigente) return porLaVigente;
 
       await tx
         .update(ideas)
@@ -763,9 +825,9 @@ export async function proclamarGanador(
           ideaId: idea.id,
           sesion,
           accion: "proclamacion",
-          estadoAnterior: idea.estado,
+          estadoAnterior: vigente.estado,
           estadoNuevo: "ganador",
-          nota: nota || `Proyecto más votado del Distrito ${distrito}: ${primera.votos} votos.`,
+          nota: nota || `Proyecto más votado del Distrito ${distrito}: ${votos} votos.`,
         }),
       );
       return null;
@@ -809,29 +871,19 @@ export async function reabrirRevision(
     };
   }
 
-  const [previa] = await db
-    .select({ estado: ideas.estado, ganador: ideas.ganador })
-    .from(ideas)
-    .where(eq(ideas.id, id))
-    .limit(1);
-  if (!previa) return { ok: false, error: "La idea no existe." };
-  if (previa.estado === "pendiente" && !previa.ganador) {
-    return { ok: false, error: "La idea ya está pendiente de evaluación." };
-  }
-  if (previa.ganador && sesion.rol !== "admin") {
-    return {
-      ok: false,
-      error: "Dar marcha atrás a una proclamación la puede hacer solo un administrador.",
-    };
-  }
-
   const ahora = new Date();
   // Reabrir una idea que se esta votando la saca de la votacion (vuelve a
   // pendiente): con la votacion abierta no se puede. Reabrir un "no" o una
   // idea sin publicar no mueve la votacion y sigue permitido.
+  //
+  // Si es ganadora se mira con la fila bloqueada, no antes: un moderador que
+  // leia "no es ganadora" mientras un administrador la proclamaba deshacia la
+  // proclamacion, que es solo de un administrador.
   const bloqueo = await db.transaction(async (tx) => {
-    const motivoEtapa = await bloqueoPorEtapa(tx, id, { accion: "reabrir" });
-    if (motivoEtapa) return motivoEtapa;
+    const tomada = await tomarIdeaParaCambiar(tx, id, { accion: "reabrir" }, (vigente) =>
+      reglaParaReabrir(vigente, sesion.rol),
+    );
+    if (!tomada.ok) return tomada.motivo;
 
     await tx
       .update(ideas)
@@ -848,7 +900,7 @@ export async function reabrirRevision(
         ideaId: id,
         sesion,
         accion: "reapertura",
-        estadoAnterior: previa.estado,
+        estadoAnterior: tomada.vigente.estado,
         estadoNuevo: "pendiente",
         nota: motivo,
       }),
@@ -864,9 +916,6 @@ export async function reabrirRevision(
 // ---------------------------------------------------------------------------
 // Presupuesto asignado a un proyecto
 // ---------------------------------------------------------------------------
-
-/** Tope de `ideas.presupuesto_total`: numeric(14, 2), 12 digitos enteros. */
-const MAXIMO_PRESUPUESTO = 999_999_999_999.99;
 
 /** Monto para el historial y los mensajes. `null` es "sin asignar". */
 function montoEnPesos(valor: number | null): string {
@@ -1320,13 +1369,23 @@ export async function crearEdicion(
   return { ok: true, mensaje: `Edición ${anio} creada.` };
 }
 
+/**
+ * Una fecha "AAAA-MM-DD" que exista en el calendario, o vacio. La regex sola
+ * dejaba pasar un 30 de febrero, que la base rechaza al escribir: el error
+ * salia de la accion sin atrapar y tiraba la pantalla entera. Los campos
+ * `type="date"` no lo mandan nunca, pero un pedido armado a mano si.
+ */
+const fechaOVacio = z.union([z.string().refine(fechaValida), z.literal("")]);
+
 const esquemaEdicion = z.object({
   id: z.coerce.number().int().positive(),
-  ideasDesde: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
-  ideasHasta: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
-  votacionDesde: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
-  votacionHasta: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
-  presupuestoTotal: opcional(z.coerce.number().min(0)),
+  ideasDesde: fechaOVacio,
+  ideasHasta: fechaOVacio,
+  votacionDesde: fechaOVacio,
+  votacionHasta: fechaOVacio,
+  // Con tope: `ediciones.presupuesto_total` es numeric(14, 2) y un cero de mas
+  // en un monto ya grande hacia fallar el UPDATE por desborde.
+  presupuestoTotal: opcional(z.coerce.number().min(0).max(MAXIMO_PRESUPUESTO)),
 });
 
 /**
@@ -1341,19 +1400,26 @@ export async function guardarEdicion(
   const sesion = await exigirAdmin("admin");
   if (!sesion) return sinPermiso("admin");
 
-  let datos: z.infer<typeof esquemaEdicion>;
-  try {
-    datos = esquemaEdicion.parse({
-      id: formulario.get("id"),
-      ideasDesde: formulario.get("ideasDesde") ?? "",
-      ideasHasta: formulario.get("ideasHasta") ?? "",
-      votacionDesde: formulario.get("votacionDesde") ?? "",
-      votacionHasta: formulario.get("votacionHasta") ?? "",
-      presupuestoTotal: formulario.get("presupuestoTotal") ?? "",
-    });
-  } catch {
-    return { ok: false, error: "Revisá las fechas (formato AAAA-MM-DD) y el presupuesto." };
+  const leido = esquemaEdicion.safeParse({
+    id: formulario.get("id"),
+    ideasDesde: formulario.get("ideasDesde") ?? "",
+    ideasHasta: formulario.get("ideasHasta") ?? "",
+    votacionDesde: formulario.get("votacionDesde") ?? "",
+    votacionHasta: formulario.get("votacionHasta") ?? "",
+    presupuestoTotal: formulario.get("presupuestoTotal") ?? "",
+  });
+  if (!leido.success) {
+    // El monto tiene su propio mensaje: con el tope a la vista se ve enseguida
+    // si sobro un cero.
+    const presupuestoMal = leido.error.issues.some((p) => p.path[0] === "presupuestoTotal");
+    return {
+      ok: false,
+      error: presupuestoMal
+        ? `El presupuesto tiene que ser un monto en pesos entre ${montoEnPesos(0)} y ${montoEnPesos(MAXIMO_PRESUPUESTO)}.`
+        : "Revisá las fechas: cada una tiene que ser un día que exista, en formato AAAA-MM-DD.",
+    };
   }
+  const datos = leido.data;
 
   // Las fechas en formato ISO se comparan como texto sin ambiguedad.
   if (datos.ideasDesde && datos.ideasHasta && datos.ideasDesde > datos.ideasHasta) {
@@ -1400,20 +1466,28 @@ export async function guardarEdicion(
     return { ok: true, mensaje: "No hubo cambios para guardar." };
   }
 
-  await db.transaction(async (tx) => {
-    await tx.update(ediciones).set(valores).where(eq(ediciones.id, datos.id));
-    await tx.insert(bitacoraSistema).values(
-      filaSistema({
-        sesion,
-        accion: "edicion_editada",
-        entidad: "edicion",
-        entidadId: datos.id,
-        etiqueta: `Edición ${edicion.anio}`,
-        antes,
-        despues,
-      }),
-    );
-  });
+  // Atrapado como en crearEdicion y activarEdicion: un error de la base que
+  // sale de la accion lo agarra admin/error.tsx, que reemplaza la pantalla y
+  // se lleva lo que la persona habia escrito.
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(ediciones).set(valores).where(eq(ediciones.id, datos.id));
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "edicion_editada",
+          entidad: "edicion",
+          entidadId: datos.id,
+          etiqueta: `Edición ${edicion.anio}`,
+          antes,
+          despues,
+        }),
+      );
+    });
+  } catch (causa) {
+    console.error("[admin] guardarEdicion fallo", causa);
+    return { ok: false, error: "No se pudieron guardar las fechas y el presupuesto." };
+  }
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -1507,8 +1581,8 @@ const esquemaHito = z.object({
   orden: z.coerce.number().int().min(0).max(999),
   titulo: z.string().trim().min(3).max(200),
   detalle: z.string().trim().max(2000).optional(),
-  desde: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
-  hasta: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")]),
+  desde: fechaOVacio,
+  hasta: fechaOVacio,
   etapa: z.union([z.enum(ETAPAS), z.literal("")]),
 });
 
@@ -1565,52 +1639,83 @@ export async function guardarHito(
 
   if (typeof datos.id === "number") {
     const hitoId = datos.id;
-    const [anterior] = await db
-      .select({
-        titulo: hitos.titulo,
-        orden: hitos.orden,
-        detalle: hitos.detalle,
-        desde: hitos.desde,
-        hasta: hitos.hasta,
-        etapa: hitos.etapa,
-      })
-      .from(hitos)
-      .where(eq(hitos.id, hitoId))
-      .limit(1);
-    if (!anterior) return { ok: false, error: "El hito no existe." };
+    try {
+      // El ANTES se lee adentro de la transaccion y con FOR UPDATE, como en
+      // contenido/escritura.ts: asi es el que habia al escribir y no el de un
+      // momento antes, si otra persona guardo el mismo hito en el medio.
+      const resultado = await db.transaction(async (tx) => {
+        const [anterior] = await tx
+          .select({
+            edicionId: hitos.edicionId,
+            titulo: hitos.titulo,
+            orden: hitos.orden,
+            detalle: hitos.detalle,
+            desde: hitos.desde,
+            hasta: hitos.hasta,
+            etapa: hitos.etapa,
+          })
+          .from(hitos)
+          .where(eq(hitos.id, hitoId))
+          .limit(1)
+          .for("update");
+        if (!anterior) return "no_existe" as const;
+        // Mover un hito a otra edicion no es una operacion del panel: el
+        // formulario siempre manda la edicion propia del hito (es un hidden).
+        // Si llega otra, el pedido esta armado a mano, y aceptarlo dejaba en la
+        // bitacora un cambio de edicion que ni el antes ni el despues mencionan.
+        if (anterior.edicionId !== datos.edicionId) return "otra_edicion" as const;
 
-    const antes = resumenHito(anterior);
-    if (antes === despues) return { ok: true, mensaje: "No hubo cambios para guardar." };
+        const antes = resumenHito(anterior);
+        if (antes === despues) return "sin_cambios" as const;
 
-    await db.transaction(async (tx) => {
-      await tx.update(hitos).set(valores).where(eq(hitos.id, hitoId));
-      await tx.insert(bitacoraSistema).values(
-        filaSistema({
-          sesion,
-          accion: "hito_guardado",
-          entidad: "hito",
-          entidadId: hitoId,
-          etiqueta,
-          antes,
-          despues,
-        }),
-      );
-    });
+        // valores.edicionId ya se comprobo igual a la del hito: no lo muda.
+        await tx.update(hitos).set(valores).where(eq(hitos.id, hitoId));
+        await tx.insert(bitacoraSistema).values(
+          filaSistema({
+            sesion,
+            accion: "hito_guardado",
+            entidad: "hito",
+            entidadId: hitoId,
+            etiqueta,
+            antes,
+            despues,
+          }),
+        );
+        return "guardado" as const;
+      });
+      if (resultado === "no_existe") return { ok: false, error: "El hito no existe." };
+      if (resultado === "otra_edicion") {
+        return { ok: false, error: "El hito pertenece a otra edición." };
+      }
+      if (resultado === "sin_cambios") {
+        return { ok: true, mensaje: "No hubo cambios para guardar." };
+      }
+    } catch (causa) {
+      // Mismo motivo que en guardarEdicion: sin esto, admin/error.tsx se lleva
+      // la pantalla y lo escrito.
+      console.error("[admin] guardarHito fallo", causa);
+      return { ok: false, error: "No se pudo guardar el hito." };
+    }
   } else {
-    await db.transaction(async (tx) => {
-      const [creado] = await tx.insert(hitos).values(valores).returning({ id: hitos.id });
-      await tx.insert(bitacoraSistema).values(
-        filaSistema({
-          sesion,
-          accion: "hito_guardado",
-          entidad: "hito",
-          entidadId: creado.id,
-          etiqueta,
-          // No hay ANTES: el hito no existia.
-          despues,
-        }),
-      );
-    });
+    try {
+      await db.transaction(async (tx) => {
+        const [creado] = await tx.insert(hitos).values(valores).returning({ id: hitos.id });
+        await tx.insert(bitacoraSistema).values(
+          filaSistema({
+            sesion,
+            accion: "hito_guardado",
+            entidad: "hito",
+            entidadId: creado.id,
+            etiqueta,
+            // No hay ANTES: el hito no existia.
+            despues,
+          }),
+        );
+      });
+    } catch (causa) {
+      console.error("[admin] guardarHito fallo", causa);
+      return { ok: false, error: "No se pudo guardar el hito." };
+    }
   }
 
   revalidatePath("/", "layout");

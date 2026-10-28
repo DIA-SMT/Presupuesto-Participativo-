@@ -5,12 +5,12 @@
  * cambia el estado de la idea ni escribe la devolucion que lee el vecino.
  */
 import "./cargar-env";
-import postgres from "postgres";
+import { abrirPostgres } from "./conexion-directa";
 
 async function main() {
-  const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
+  const pool = abrirPostgres();
 
-  const informes = await sql`
+  const { rows: informes } = await pool.query(`
     SELECT i.idea_id,
            left(d.titulo, 34)        AS idea,
            d.estado                  AS estado_de_la_idea,
@@ -23,26 +23,26 @@ async function main() {
       FROM informes_impacto i
       JOIN ideas d ON d.id = i.idea_id
      ORDER BY i.created_at DESC
-  `;
+  `);
   if (!informes.length) {
     console.log("todavía no se generó ningún informe.");
-    await sql.end();
+    await pool.end();
     return;
   }
   console.log("Informes generados:");
   console.table(informes);
 
-  const rastro = await sql`
+  const { rows: rastro } = await pool.query(`
     SELECT idea_id, admin_nombre, left(nota, 52) AS nota, created_at
       FROM revisiones
      WHERE accion = 'informe'
      ORDER BY created_at DESC
      LIMIT 5
-  `;
+  `);
   console.log("\nRastro en el historial de la idea:");
   console.table(rastro);
 
-  await sql.end();
+  await pool.end();
 }
 
 main().catch((e) => {

@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DURACION_ESTADO,
   ingresoHabilitado,
   mismoEstado,
   nuevoEstado,
@@ -71,6 +72,22 @@ test("el estado solo coincide consigo mismo", () => {
   assert.equal(mismoEstado(null, null), false);
   assert.equal(mismoEstado("", ""), false);
   assert.equal(mismoEstado(estado, estado.slice(0, -1)), false);
+});
+
+test("el estado dura lo que tarda sacar la cuenta de CIDITUC en el camino", () => {
+  // Con 600 s, quien creaba su cuenta en el Derivador volvia con un token
+  // valido y las cookies de estado y destino ya vencidas: error=estado.
+  assert.ok(DURACION_ESTADO >= 30 * 60, `DURACION_ESTADO = ${DURACION_ESTADO}`);
+});
+
+test("un state con caracteres no ASCII del mismo largo no pasa y no tira", () => {
+  // Mismo largo en caracteres que la cookie pero no en bytes: antes llegaba a
+  // timingSafeEqual con buffers distintos y el callback respondia 500.
+  const estado = nuevoEstado();
+  assert.equal(mismoEstado(estado, "é" + estado.slice(1)), false);
+  // %FF suelto en la URL: URLSearchParams lo decodifica como U+FFFD (3 bytes).
+  assert.equal(mismoEstado(estado, "�" + estado.slice(1)), false);
+  assert.equal(mismoEstado("é" + estado.slice(1), estado), false);
 });
 
 test("el boton esta apagado salvo que se lo encienda explicitamente", () => {

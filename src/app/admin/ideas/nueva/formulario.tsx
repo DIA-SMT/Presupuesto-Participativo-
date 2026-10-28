@@ -19,7 +19,7 @@
  * para imprimir y darle al vecino.
  */
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import DocumentoIdea from "@/components/DocumentoIdea";
 import Mapa from "@/components/Mapa";
 import { cargarIdea } from "../acciones";
@@ -308,9 +308,26 @@ export default function FormularioCarga({
   const bloqueado = pendiente || ubicando || faltantes.length > 0;
   const categoriaElegida = categorias.find((categoria) => categoria.slug === contenido.categoria);
 
+  /*
+   * Controlar los campos no alcanza para el <select> de categoria: React no le
+   * marca la opcion por defecto, y el reset que sigue a cada envio de un
+   * <form action> lo dejaba en la primera categoria mientras la pantalla
+   * seguia creyendo que era la elegida. Ante un rechazo del servidor, el
+   * reintento sin tocar nada cargaba la idea con otra categoria. Con
+   * preventDefault React no resetea nada (como en equipo/panel.tsx); la
+   * action queda puesta para que, antes de que cargue React, no se mande solo
+   * por GET.
+   */
+  function enviar(evento: React.SubmitEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => accion(datos));
+  }
+
   return (
     <form
       action={accion}
+      onSubmit={enviar}
       className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] xl:items-start"
     >
       <div className="space-y-8">

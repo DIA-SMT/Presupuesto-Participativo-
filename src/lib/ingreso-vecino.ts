@@ -10,8 +10,10 @@
  *
  * Es una LISTA BLANCA de destinos y no una URL de vuelta: con una URL libre en
  * el querystring, un link armado por otro podia mandar a la persona, recien
- * autenticada, a cualquier lado. Lo que no esta en la lista vuelve a votar,
- * que es como funcionaba el ingreso antes de que existiera el destino.
+ * autenticada, a cualquier lado. En /ingresar lo que no esta en la lista es
+ * votar, que es como funcionaba el ingreso antes de que existiera el destino.
+ * En la salida y en la vuelta de CIDITUC, en cambio, lo que no viene sale de la
+ * etapa (ver `destinoDelIngreso`).
  *
  * Sin dependencias de Node: lo usan rutas, paginas y pruebas.
  */
@@ -22,6 +24,38 @@ export type DestinoIngreso = "votar" | "ideas";
 /** El destino pedido, validado. Cualquier otro valor es "votar". */
 export function destinoDeIngreso(valor: string | null | undefined): DestinoIngreso {
   return valor === "ideas" ? "ideas" : "votar";
+}
+
+/** Si el valor es uno de los destinos de la lista, tal cual. */
+export function esDestinoDeIngreso(valor: string | null | undefined): valor is DestinoIngreso {
+  return valor === "ideas" || valor === "votar";
+}
+
+/**
+ * El destino de un ingreso que puede llegar sin destino: el pedido, si es uno
+ * de la lista; si no, el de la etapa.
+ *
+ * Lo usan la salida a CIDITUC (sin `?para`) y la vuelta (sin la cookie). La
+ * cookie falta mas de lo que parece: vence (dura una hora, ver
+ * `DURACION_ESTADO`; con los 10 minutos de antes la perdia quien creaba su
+ * cuenta de CIDITUC en el camino), y quien abrio el sitio desde el navegador
+ * de WhatsApp o Instagram vuelve en otro navegador. Con "votar" fijo, en la
+ * etapa de ideas esa persona terminaba en la puerta de votar, cerrada y sin
+ * boton, leyendo "entra de nuevo desde el boton". Las dos ventanas no se
+ * superponen, asi que la etapa alcanza para saber a que venia: en la de ideas
+ * solo se entra a presentar una idea, y en cualquier otra a votar.
+ */
+export function destinoDelIngreso(
+  pedido: string | null | undefined,
+  etapa: Etapa | null | undefined,
+): DestinoIngreso {
+  if (esDestinoDeIngreso(pedido)) return pedido;
+  return etapa === "ideas" ? "ideas" : "votar";
+}
+
+/** La otra puerta: la de ideas para quien llego a la de votar, y al reves. */
+export function otroDestino(destino: DestinoIngreso): DestinoIngreso {
+  return destino === "votar" ? "ideas" : "votar";
 }
 
 /** La pantalla a la que se vuelve cuando el ingreso sale bien. */

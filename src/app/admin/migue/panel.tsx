@@ -394,9 +394,15 @@ export function TarjetaConsulta({
         </p>
       </div>
 
+      {/* Tres casos con `ok` en false, y solo uno es un error que vio la
+          persona: antes los tres decian "Se cortó por un error del sitio",
+          tambien la consulta que la persona abandono y la que se contesto
+          entera (ver CONSULTA_CANCELADA en src/db/queries.ts). */}
       <p className="mt-2 flex flex-wrap items-center gap-2">
         <Chip>{ETIQUETA_TEMA[fila.tema] ?? fila.tema}</Chip>
-        {fila.resuelta ? (
+        {fila.cancelada ? (
+          <Chip>La persona se fue antes de la respuesta</Chip>
+        ) : fila.resuelta ? (
           <Chip color={COLOR_RESUELTA_TEXTO}>
             <span aria-hidden="true">✓</span> Se pudo contestar
           </Chip>
@@ -405,8 +411,13 @@ export function TarjetaConsulta({
             <span aria-hidden="true">▲</span> Sin resolver
           </Chip>
         )}
-        {!fila.ok && (
-          <Chip color="var(--color-estado-nofactible)">Se cortó por un error del sitio</Chip>
+        {fila.fallaConRespuesta ? (
+          <Chip>Hubo una falla interna, pero la persona recibió respuesta</Chip>
+        ) : (
+          !fila.ok &&
+          !fila.cancelada && (
+            <Chip color="var(--color-estado-nofactible)">Se cortó por un error del sitio</Chip>
+          )
         )}
       </p>
 
@@ -430,7 +441,9 @@ export function TarjetaConsulta({
         </div>
       ) : (
         <p className="mt-3 text-sm italic" style={{ color: "var(--texto-suave)" }}>
-          No quedó registrada ninguna respuesta: la consulta se cortó antes.
+          {fila.cancelada
+            ? "No quedó registrada ninguna respuesta: la persona se fue antes de que empezara."
+            : "No quedó registrada ninguna respuesta: la consulta se cortó antes."}
         </p>
       )}
     </article>
@@ -564,10 +577,18 @@ function Numeros({ resumen, dias }: { resumen: ResumenChat; dias: number }) {
       <h2 id="titulo-numeros" className="text-xl font-bold">
         Los números de los últimos {formatearNumero(dias)} días
       </h2>
+      {/* Decia que una pregunta que se iba del programa contaba como sin
+          resolver, y el clasificador no hace eso: Migue la rechaza en una frase
+          ("solo puedo ayudarte con el Presupuesto Participativo"), que no admite
+          que falte un dato, y `consultaResuelta` (src/lib/chat-temas.ts) la da
+          por resuelta. Esta bien que sea asi: no es contenido que le falte al
+          sitio y no tiene lugar en la lista de trabajo. */}
       <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--texto-suave)" }}>
         El contexto de lo de arriba. Una consulta cuenta como resuelta cuando Migue pudo contestarla
-        con datos del sitio; cuenta como sin resolver cuando el dato no estaba cargado o cuando la
-        pregunta se fue del programa.
+        con datos del sitio, y como sin resolver cuando el dato no estaba cargado. Los pedidos que no
+        son del programa (traducir un texto, una tarea, una opinión política) Migue los rechaza en una
+        frase y cuentan como resueltos: no son algo que le falte al sitio, así que no van a la lista
+        de trabajo.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -610,11 +631,19 @@ function Numeros({ resumen, dias }: { resumen: ResumenChat; dias: number }) {
             resumen.msPromedio === null ? "—" : `${formatearNumero(resumen.msPromedio)} ms`
           }
           detalle={
-            resumen.conError === 0
+            (resumen.conError === 0
               ? "Promedio. Ninguna consulta se cortó por un error."
               : `Promedio. ${formatearNumero(resumen.conError)} ${
                   resumen.conError === 1 ? "consulta se cortó" : "consultas se cortaron"
-                } por un error.`
+                } por un error.`) +
+            // Las que fallaron por dentro y se contestaron igual no son un
+            // corte, pero el equipo las tiene que ver: suelen ser algo que
+            // arreglar del lado del sitio.
+            (resumen.conFallaInterna === 0
+              ? ""
+              : ` ${formatearNumero(resumen.conFallaInterna)} ${
+                  resumen.conFallaInterna === 1 ? "tuvo" : "tuvieron"
+                } una falla interna, pero la persona recibió respuesta.`)
           }
           color={resumen.conError > 0 ? COLOR_SIN_RESOLVER_TEXTO : undefined}
         />
@@ -630,6 +659,11 @@ function Numeros({ resumen, dias }: { resumen: ResumenChat; dias: number }) {
         panel, que se registran en la misma tabla. Y cuenta solo las que quedaron clasificadas: las
         anteriores a que existiera la clasificación no tienen tema ni resolución guardados, así que
         no se muestran en lugar de contarse como “Otros”. No se pueden reclasificar sin inventar.
+        Tampoco cuenta las consultas que la persona abandonó antes de la respuesta (cerró la
+        pestaña o recargó): no se sabe si el sitio las podía contestar
+        {resumen.canceladas > 0
+          ? `, y fueron ${formatearNumero(resumen.canceladas)} en esta ventana. Aparecen en las últimas consultas.`
+          : "."}
       </p>
     </section>
   );
@@ -1179,7 +1213,7 @@ function Ultimas({ filas, limite }: { filas: FilaConsultaChat[]; limite: number 
         <ol className="mt-3 space-y-3">
           {filas.map((fila) => (
             <li key={fila.id}>
-              <TarjetaConsulta fila={fila} destacada={!fila.resuelta} />
+              <TarjetaConsulta fila={fila} destacada={!fila.resuelta && !fila.cancelada} />
             </li>
           ))}
         </ol>

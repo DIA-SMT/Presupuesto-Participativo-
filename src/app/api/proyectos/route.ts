@@ -39,10 +39,27 @@ const COLUMNAS = [
   "url",
 ] as const;
 
+/**
+ * Excel y LibreOffice evaluan como formula una celda que empieza con `=`, `+`,
+ * `-` o `@` (o con un tab o un CR delante), AUNQUE vaya entre comillas. El
+ * titulo y el barrio son texto libre del vecino: un barrio
+ * `=HYPERLINK("https://...","Ver ficha oficial")` publicado por descuido se
+ * vuelve un enlace a otro sitio dentro de un archivo del municipio, y un titulo
+ * legitimo como "- Arreglo de veredas" sale como #¿NOMBRE?. El apostrofo
+ * delante hace que la planilla lo tome como texto (lo que recomienda OWASP para
+ * CSV); quien lo lea con un programa ve ese `'` de mas en esas pocas celdas.
+ *
+ * Solo a los strings: lat, lon y presupuesto llegan como numeros, pueden ser
+ * negativos y tienen que seguir siendo numericos. El JSON no pasa por aca.
+ */
+const EMPIEZA_COMO_FORMULA = /^[=+\-@\t\r]/;
+
 function celda(valor: unknown): string {
   if (valor === null || valor === undefined) return "";
-  const texto = String(valor);
-  return /[",\n]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+  const texto =
+    typeof valor === "string" && EMPIEZA_COMO_FORMULA.test(valor) ? `'${valor}` : String(valor);
+  // El CR tambien parte la fila en las planillas que lo toman como fin de linea.
+  return /[",\r\n]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
 }
 
 export async function GET(request: Request) {

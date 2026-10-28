@@ -12,14 +12,16 @@
  * punto del mapa salen del navegador.
  *
  * Las reglas (votacion abierta, todavia no voto) las decide declararDistrito,
- * dentro de su transaccion. La sesion lleva el distrito, asi que se reemite con
- * el nuevo: es lo que le abre la boleta.
+ * dentro de su transaccion. La sesion lleva el distrito y se reemite con el
+ * nuevo, pero la boleta ya no sale de ahi: /votar y /api/votos leen el del
+ * padron (getDistritoEnPadron), porque la cookie solo se reemite en ESTE
+ * navegador y en otro dispositivo seguia diciendo el anterior.
  */
 import { z } from "zod";
 import { declararDistrito, type ResultadoDeclaracion } from "@/lib/empadronamiento";
 import { exigirMismoOrigen } from "@/lib/origen";
-import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
-import { crearSesionVotante, getSesionVotante } from "@/lib/sesion";
+import { consumirDelVecino } from "@/lib/rate-limit";
+import { cerrarSesionVotante, crearSesionVotante, getSesionVotante } from "@/lib/sesion";
 
 export const runtime = "nodejs";
 
@@ -41,7 +43,17 @@ export async function POST(request: Request) {
   const rechazo = exigirMismoOrigen(request);
   if (rechazo) return rechazo;
 
-  const limite = await consumir(`distrito:${hashearIp(ipDe(request))}`, 30, 3600);
+  // Casi toda persona que entra con CIDITUC declara su distrito una vez antes
+  // de votar: con un tope de 30 por hora por IP, en un punto de votacion con un
+  // solo Wi-Fi la persona 31 de la hora no podia votar. El tope es de la
+  // persona si tiene sesion (la cookie, sin base); sin sesion, por IP y en un
+  // contador aparte (ver consumirDelVecino). Diez por persona sobran para
+  // corregir una eleccion equivocada.
+  const sesion = await getSesionVotante();
+  const limite = await consumirDelVecino("distrito", sesion?.votanteId, request, {
+    conSesion: { maximo: 10, ventanaSegundos: 3600 },
+    sinSesion: { maximo: 30, ventanaSegundos: 3600 },
+  });
   if (!limite.permitido) {
     return Response.json(
       { error: "Demasiados intentos. Probá de nuevo en un rato." },
@@ -49,7 +61,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const sesion = await getSesionVotante();
   if (!sesion) {
     return Response.json(
       { error: "Tu sesión se cerró o venció. Ingresá de nuevo para votar." },
@@ -69,6 +80,11 @@ export async function POST(request: Request) {
 
   const resultado = await declararDistrito(sesion.votanteId, datos.distrito);
   if (!resultado.ok) {
+    // La fila del padron de la sesion ya no existe (la borro una limpieza de
+    // pruebas). El token sigue firmado y sin vencer: sin cerrarlo, /votar
+    // seguia viendo una sesion y /ingresar mandaba de vuelta a /votar, sin
+    // llegar nunca al boton de CIDITUC que pide el mensaje ("Ingresá de nuevo").
+    if (resultado.motivo === "sin-votante") await cerrarSesionVotante();
     return Response.json({ error: resultado.mensaje }, { status: ESTADO[resultado.motivo] });
   }
 

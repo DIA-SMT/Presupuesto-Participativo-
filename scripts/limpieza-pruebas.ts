@@ -10,7 +10,12 @@
  * - Votantes del login de prueba: proveedor "dev" o sin verificar. Nunca son
  *   personas verificadas por CIDITUC. Los de CIDITUC (la gente del equipo que
  *   probo el ingreso real) solo entran con `incluirCidituc`, porque son
- *   personas reales y su fila es la unica prueba de su empadronamiento.
+ *   personas reales y su fila es la unica prueba de su empadronamiento. Y aun
+ *   asi, solo los creados hasta la fecha de corte, que con el flag pasa a ser
+ *   obligatoria: desde la apertura todo vecino que presenta una idea entra por
+ *   CIDITUC, y sin el corte el flag se llevaba el padron entero, con sus votos
+ *   y el vinculo de cada idea con quien la presento (`ideas.votante_id` queda
+ *   en NULL). Lo de despues del corte es de vecinos, tambien en el padron.
  * - Ideas CREADAS EN ESTE SITIO hasta la fecha de corte: las que no tienen
  *   rastro de migracion. OJO: no alcanza con el canal. Las 100 ideas 2025 se
  *   migraron con su canal real (89 "asamblea", 10 "municipio", 1 "migracion"),
@@ -35,6 +40,7 @@ type Consultar = <T extends Record<string, unknown>>(consulta: ReturnType<typeof
 export type OpcionesLimpieza = {
   /** AAAA-MM-DD, inclusive. Sin fecha, ideas, chat e informes no se borran. */
   hasta: string | null;
+  /** Suma los de CIDITUC creados hasta `hasta`. Sin fecha, `armarPlan` se niega. */
   incluirCidituc: boolean;
 };
 
@@ -82,23 +88,44 @@ function finDelDia(fecha: string): string {
   return `${fecha}T23:59:59.999-03:00`;
 }
 
-/** Lee que se borraria. No escribe nada. */
+/**
+ * Lee que se borraria. No escribe nada.
+ *
+ * Las fechas que se muestran van en hora de Tucuman, igual que el corte. Un
+ * `to_char` pelado usa la zona de la sesion, que en Supabase y en PGlite es
+ * UTC: una idea de prueba del 14 a las 22:30 entraba en "hasta el 14" pero se
+ * listaba como "15 01:30", y quien miraba la lista antes de un borrado que no
+ * se deshace creia que se llevaba ideas del dia de apertura (o elegia mal el
+ * corte).
+ */
 export async function armarPlan(consultar: Consultar, opciones: OpcionesLimpieza): Promise<PlanLimpieza> {
+  // Los de CIDITUC llevan el mismo corte que las ideas. Sin fecha no hay
+  // "antes de la apertura", y se corta aca y no solo en la consola: lo que
+  // sale de este plan es lo que `aplicarPlan` borra, y la consola lo vuelve a
+  // armar despues de la espera del candado.
+  if (opciones.incluirCidituc && !opciones.hasta) {
+    throw new Error(
+      "incluirCidituc necesita fecha de corte: sin ella entraria todo el padron de CIDITUC, vecinos incluidos.",
+    );
+  }
+  const corteCidituc = opciones.incluirCidituc && opciones.hasta ? finDelDia(opciones.hasta) : null;
   const votantes = await consultar<VotantePrueba>(sql`
     SELECT v.id, v.proveedor, v.verificado, v.distrito_id AS distrito,
-           to_char(v.created_at, 'YYYY-MM-DD HH24:MI') AS creado,
+           to_char(v.created_at AT TIME ZONE 'America/Argentina/Tucuman', 'YYYY-MM-DD HH24:MI') AS creado,
            (SELECT count(*) FROM votos o WHERE o.votante_id = v.id)::int AS votos
       FROM votantes v
      WHERE v.proveedor = 'dev'
         OR NOT v.verificado
-        OR (${opciones.incluirCidituc} AND v.proveedor = 'cidituc')
+        OR (${corteCidituc !== null} AND v.proveedor = 'cidituc'
+            AND v.created_at <= ${corteCidituc}::timestamptz)
      ORDER BY v.id
   `);
 
   const ideas = opciones.hasta
     ? await consultar<IdeaPrueba>(sql`
         SELECT i.id, e.anio, i.numero, left(i.titulo, 60) AS titulo, i.canal, i.estado,
-               i.publicada, to_char(i.created_at, 'YYYY-MM-DD HH24:MI') AS creada, i.votos
+               i.publicada, to_char(i.created_at AT TIME ZONE 'America/Argentina/Tucuman', 'YYYY-MM-DD HH24:MI') AS creada,
+               i.votos
           FROM ideas i
           JOIN ediciones e ON e.id = i.edicion_id
          WHERE i.titulo_original IS NULL

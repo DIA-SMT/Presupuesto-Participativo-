@@ -280,6 +280,14 @@ export default function Mapa({
 
     const alClic = (evento: maplibregl.MapLayerMouseEvent) => {
       if (modo === "seleccionar") return;
+      // Los marcadores HTML (puntos y etiquetas) viven dentro del contenedor del
+      // lienzo, y MapLibre convierte cualquier clic ahi en un 'click' del mapa:
+      // tocar un punto tambien caia sobre su poligono y se iba al distrito antes
+      // de que se pudiera usar el "Ver el proyecto" del popup. No se corta la
+      // propagacion en el punto porque el Marker abre su popup justamente con
+      // ese 'click' del mapa; se descarta aca, mirando de donde vino.
+      const objetivo = evento.originalEvent.target;
+      if (objetivo instanceof Element && objetivo.closest(".maplibregl-marker")) return;
       const numero = evento.features?.[0]?.properties?.numero;
       if (numero) window.location.href = conEdicion(`/distritos/${numero}`, edicionEnEnlaces);
     };

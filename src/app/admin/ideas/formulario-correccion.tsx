@@ -22,7 +22,7 @@
  * formulario de la misma ficha que guarda (la evaluacion) le borraria a la
  * persona lo que estaba corrigiendo.
  */
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import type { CandidataIntegracion, IdeaAdmin } from "@/db/queries";
 import { puedeCambiarDeDistrito, puedeCambiarIdea, type Etapa } from "@/lib/etapas";
 import { corregirIdea } from "./acciones";
@@ -240,8 +240,24 @@ function FormularioCorreccion({
     porDistrito.set(grupo, [...(porDistrito.get(grupo) ?? []), candidata]);
   }
 
+  /*
+   * Un <form action> se resetea solo al terminar cada envio, y los <select>
+   * controlados no sobreviven al reset (React no les marca la opcion por
+   * defecto). Si la correccion fallaba ("Probá de nuevo"), el formulario
+   * quedaba abierto mostrando la primera categoria y "No está integrada", y
+   * el reintento sin tocar nada mandaba eso: cambiaba la categoria y borraba
+   * la integracion. Con preventDefault React no resetea nada; la action queda
+   * puesta para que, antes de que cargue React, no se mande solo por GET. El
+   * mismo arreglo que equipo/panel.tsx.
+   */
+  function enviar(evento: React.SubmitEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => accion(datos));
+  }
+
   return (
-    <form action={accion} className="grid gap-3">
+    <form action={accion} onSubmit={enviar} className="grid gap-3">
       <input type="hidden" name="id" value={ficha.id} />
       <input type="hidden" name="lat" value={punto ? String(punto.lat) : ""} />
       <input type="hidden" name="lon" value={punto ? String(punto.lon) : ""} />

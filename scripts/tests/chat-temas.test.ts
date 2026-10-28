@@ -8,6 +8,8 @@
  * proposito, para fijar que la comparacion es sobre el texto normalizado.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 import {
   claveDePregunta,
@@ -159,6 +161,21 @@ test("preguntas como las escribe un vecino caen donde tienen que caer", () => {
   assert.equal(temaDeConsulta("se hizo algo en el playon de mi zona?", ["ubicar_barrio"]), "distrito");
 });
 
+test("el saludo con 'dia' no manda la consulta a cronograma", () => {
+  // "Buen día" trae la palabra "dia", marcador de cronograma: se saca antes.
+  assert.equal(
+    temaDeConsulta("Buen día, ¿cuántas ideas se presentaron?", ["estadisticas"]),
+    "proyectos",
+  );
+  assert.equal(
+    temaDeConsulta("Buenos días, ¿qué proyectos hay en Villa Urquiza?", ["buscador-local"]),
+    "proyectos",
+  );
+  assert.equal(temaDeConsulta("buenas tardes, como me empadrono"), "votar");
+  // Sin saludo, la palabra sigue contando.
+  assert.equal(temaDeConsulta("buen dia, que dia cierra la carga?"), "cronograma");
+});
+
 // ---------------------------------------------------------------------------
 // Resuelta o no
 // ---------------------------------------------------------------------------
@@ -193,6 +210,61 @@ test("una respuesta que admite que no encontro nada no cuenta como resuelta", ()
       herramientas: ["buscador-local"],
       respuesta: "Encontré 3 ideas de la categoría Espacios verdes:",
     }),
+    true,
+  );
+});
+
+/**
+ * Las frases que el prompt le PIDE a Migue para decir que algo falta. Cada una
+ * se busca literal en el archivo que la pide (si alguien cambia la instruccion,
+ * esta prueba falla y obliga a revisar FRASES_SIN_DATO) y despues se arma una
+ * respuesta que la usa tal cual, como la escribiria el modelo.
+ */
+const FRASES_DEL_PROMPT: { archivo: string; frase: string; respuesta: string }[] = [
+  {
+    archivo: "src/app/api/chat/route.ts",
+    frase: "el sitio no lo tiene publicado",
+    respuesta: "Ese dato el sitio no lo tiene publicado. Podés escribirle al programa.",
+  },
+  {
+    archivo: "src/lib/chat-contexto.ts",
+    frase: "el reglamento oficial todavía no se publicó y que el sitio no la tiene definida",
+    respuesta: "El reglamento oficial todavía no se publicó, así que esa regla no está definida.",
+  },
+  {
+    archivo: "src/lib/chat-contexto.ts",
+    frase: "el reglamento oficial todavía no se publicó y que el sitio no la tiene definida",
+    respuesta: "Por ahora el sitio no la tiene definida: el reglamento sale más adelante.",
+  },
+  {
+    archivo: "src/lib/chat-contexto.ts",
+    frase: "no hay ninguna anunciada en el sitio",
+    respuesta: "Por ahora no hay ninguna anunciada en el sitio. Fijate en /novedades.",
+  },
+  {
+    archivo: "src/lib/chat-sin-ia.ts",
+    frase: "No hay datos de una edición ${anioPedido} en el sitio.",
+    respuesta: "No hay datos de una edición 2019 en el sitio. Hay datos de las ediciones 2025 y 2026.",
+  },
+];
+
+test("las frases que el prompt pide para un dato que falta dejan la consulta sin resolver", () => {
+  const raiz = resolve(__dirname, "..", "..");
+  for (const { archivo, frase, respuesta } of FRASES_DEL_PROMPT) {
+    const fuente = readFileSync(resolve(raiz, archivo), "utf8");
+    assert.ok(fuente.includes(frase), `${archivo} ya no pide "${frase}": revisar FRASES_SIN_DATO`);
+    // Sin herramientas (respuesta armada con el contexto fijo) y con el buscador.
+    assert.equal(consultaResuelta({ respuesta }), false, respuesta);
+    assert.equal(consultaResuelta({ herramientas: ["buscador-local"], respuesta }), false, respuesta);
+  }
+  // Variantes con las que el modelo parafrasea la instruccion.
+  assert.equal(
+    consultaResuelta({ respuesta: "El sitio todavía no tiene publicadas las fechas de la votación." }),
+    false,
+  );
+  // Y una respuesta que si contesta sigue resuelta.
+  assert.equal(
+    consultaResuelta({ respuesta: "La votación es del 1 al 15 de noviembre. Se vota con CIDITUC." }),
     true,
   );
 });
@@ -361,4 +433,20 @@ test("una salvedad al pie no hunde una respuesta que si contesto", () => {
     }),
     false,
   );
+});
+
+test("un pedido fuera del programa, rechazado por la regla de alcance, cuenta como resuelto", () => {
+  // Es lo que dice la seccion "Los numeros" del panel de Migue
+  // (src/app/admin/migue/panel.tsx). Antes decia lo contrario: el rechazo no
+  // admite que falte un dato, y no es contenido que le falte al sitio.
+  for (const respuesta of [
+    "Solo puedo ayudarte con el Presupuesto Participativo.",
+    "Solo puedo informarte sobre el programa.",
+  ]) {
+    assert.equal(
+      clasificarConsulta({ pregunta: "traducime este texto al inglés", respuesta }).resuelta,
+      true,
+      respuesta,
+    );
+  }
 });

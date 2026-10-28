@@ -210,6 +210,25 @@ test("estadisticas de una edicion que no voto traen los ganadores de la anterior
   assert.ok(referencias.some((r) => r.url === "/transparencia?edicion=2025"));
 });
 
+test("en la etapa de ideas el chat cuenta publicadas, no 'presentadas'", async () => {
+  // La 2026 tiene tres ideas y una sin publicar (la del distrito 2, en
+  // moderacion): el numero publico es 2. Llamarlo "presentadas" era decir que
+  // al distrito 2 no llego ninguna, como pasaba en la portada y en /distritos/N.
+  const totales = await herramienta("estadisticas", {});
+  assert.equal(totales.datos.ideas_publicadas, 2);
+  assert.equal(totales.datos.ideas_presentadas, undefined);
+  const distrito2 = await herramienta("resumen_distrito", { numero: 2 });
+  assert.equal(distrito2.datos.ideas_publicadas, 0);
+  assert.equal(distrito2.datos.ideas_presentadas, undefined);
+
+  const sinIATotales = await sinIA.responderSinIA("¿Cuántas ideas se presentaron?", vigente);
+  assert.match(sinIATotales.texto, /2 ideas publicadas/);
+  assert.doesNotMatch(sinIATotales.texto, /presentada/);
+  const sinIADistrito = await sinIA.responderSinIA("distrito 2", vigente);
+  assert.match(sinIADistrito.texto, /0 ideas publicadas/);
+  assert.doesNotMatch(sinIADistrito.texto, /presentada/);
+});
+
 test("el prompt dice como pedir otra edicion, y antes de votar no cuenta distritos 'sin ganador'", async () => {
   // Se captura el pedido al proveedor, que se reemplaza en fetch como en
   // chat-respaldo.test.ts: ninguna prueba sale a la red.
@@ -248,6 +267,9 @@ test("el prompt dice como pedir otra edicion, y antes de votar no cuenta distrit
   }
 
   assert.match(sistema, /Edición vigente: 2026/);
+  // Lo mismo que la portada: el numero es de publicadas, no de presentadas.
+  assert.match(sistema, /Ideas publicadas: 2 /);
+  assert.doesNotMatch(sistema, /Ideas presentadas:/);
   assert.match(sistema, /pasales `edicion` con el año/);
   assert.match(sistema, /\/archivo/);
   // Con la 2026 en ideas, los 20 distritos "sin ganador" no son un resultado.
@@ -257,6 +279,15 @@ test("el prompt dice como pedir otra edicion, y antes de votar no cuenta distrit
 // ---------------------------------------------------------------------------
 // El buscador sin IA
 // ---------------------------------------------------------------------------
+
+/**
+ * Si al texto le queda un asterisco fuera de las negritas. El widget (enLinea,
+ * src/components/Chat.tsx) entiende `**negrita**` y enlaces, nada mas: la
+ * *italica* del buscador le llegaba al vecino con los asteriscos a la vista.
+ */
+function asteriscosSueltos(texto: string) {
+  return texto.replace(/\*\*[^*\n]+\*\*/g, "").includes("*");
+}
 
 test("sin IA: 'ganadores' con la 2026 recien abierta ofrece los de 2025", async () => {
   const { texto, referencias } = await sinIA.responderSinIA("¿Quiénes ganaron?", vigente);
@@ -296,6 +327,8 @@ test("sin IA: las sugerencias del widget siguen contestando lo suyo con dos edic
 
   const totales = await sinIA.responderSinIA("¿Cuántas ideas se presentaron?", vigente);
   assert.match(totales.texto, /\*\*Edición 2026\*\*/);
+  assert.match(totales.texto, /preguntá por «ganadores 2025»/);
+  assert.ok(!asteriscosSueltos(totales.texto), totales.texto);
   assert.doesNotMatch(totales.texto, /Sin proyecto ganador/, "antes de votar no es un resultado");
   assert.ok(totales.referencias.some((r) => r.url === "/transparencia?edicion=2025"));
 
@@ -309,4 +342,82 @@ test("sin IA: el distrito antes de votar no dice 'sin ganador' y nombra el de 20
   const { texto } = await sinIA.responderSinIA("distrito 1", vigente);
   assert.match(texto, /Todavía no hay ganador/);
   assert.match(texto, /En la edición 2025 ganó \*\*Plaza del barrio\*\*/);
+});
+
+test("sin IA: lo que se encuentra en otra edicion cuenta como consulta resuelta", async () => {
+  // La respuesta abria con "En la edición 2026 no encontré nada con eso." y el
+  // clasificador del panel, que con el buscador decide por la primera oracion,
+  // la mandaba a "Lo que Migue no pudo contestar" con las ideas a la vista. Se
+  // clasifica con las mismas senales con que la registra src/app/api/chat/route.ts.
+  const { clasificarConsulta } = await import("../../src/lib/chat-temas");
+  const pregunta = "fuente de agua para el comedor comunitario";
+  const resuelta = (texto: string) =>
+    clasificarConsulta({ pregunta, respuesta: texto, herramientas: ["buscador-local"] }).resuelta;
+
+  // Sin nada en ninguna edicion, sigue sin resolver.
+  const nada = await sinIA.responderSinIA(pregunta, vigente);
+  assert.match(nada.texto, /No encontré nada/);
+  assert.equal(resuelta(nada.texto), false);
+  // La respuesta de respaldo mas frecuente: las consultas de ejemplo, sin
+  // asteriscos a la vista.
+  assert.match(nada.texto, /«distrito 7»/);
+  assert.ok(!asteriscosSueltos(nada.texto), nada.texto);
+
+  const fijarSolucion = (solucion: string | null) =>
+    base.db
+      .update(base.schema.ideas)
+      .set({ solucion })
+      .where(
+        base.sql`${base.schema.ideas.slug} = 'club-villa-urquiza' AND ${base.schema.ideas.edicionId} = ${id2025}`,
+      );
+  await fijarSolucion("Una fuente de agua para el comedor comunitario del club.");
+  try {
+    const { texto, referencias } = await sinIA.responderSinIA(pregunta, vigente);
+    assert.match(texto, /Club de Villa Urquiza/);
+    assert.match(texto, /^Resultados de la edición 2025/, "dice de entrada de que edicion son");
+    assert.match(texto, /en la 2026 todavía no hay ideas publicadas que coincidan/);
+    assert.deepEqual(
+      referencias.map((r) => r.url),
+      ["/proyectos/club-villa-urquiza?edicion=2025"],
+    );
+    assert.equal(resuelta(texto), true, "trajo datos, aunque de otra edicion");
+  } finally {
+    await fijarSolucion(null);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Votos: los de la edicion y los de los ganadores
+// ---------------------------------------------------------------------------
+
+test("estadisticas separa los votos de la edicion de los de los ganadores", async () => {
+  // `votos` era solo la suma de los ganadores y la portada y Migue lo daban
+  // como el total. Una idea que no gano tambien tiene votos, y una sin
+  // publicar no cuenta en ningun numero publico.
+  const { sql } = base;
+  const fijarVotos = (slug: string, votos: number) =>
+    base.consultar(sql`
+      UPDATE ideas SET votos = ${votos} WHERE edicion_id = ${id2025} AND slug = ${slug}
+    `);
+  await fijarVotos("club-villa-urquiza", 15);
+  await fijarVotos("sin-publicar-2025", 1000);
+  try {
+    const edicion2025 = await consultas.getEdicionParaVer(2025);
+    assert.ok(edicion2025);
+    const stats = await consultas.getEstadisticas(edicion2025);
+    assert.equal(stats.votosGanadores, 300 + 120);
+    assert.equal(stats.votosTotales, 300 + 120 + 15);
+
+    const terminada = await herramienta("estadisticas", { edicion: 2025 });
+    assert.equal(terminada.datos.votos_totales, 435);
+    assert.equal(terminada.datos.votos_de_los_ganadores, 420);
+
+    // La 2026 todavia no voto: no hay total que dar, ni un cero que lo parezca.
+    const abierta = await herramienta("estadisticas", {});
+    assert.equal(typeof abierta.datos.votos_totales, "string");
+    assert.equal(abierta.datos.votos_de_los_ganadores, undefined);
+  } finally {
+    await fijarVotos("club-villa-urquiza", 0);
+    await fijarVotos("sin-publicar-2025", 0);
+  }
 });

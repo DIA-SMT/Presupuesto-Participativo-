@@ -77,7 +77,7 @@ npm run dev                    # http://localhost:3000
 | `CIDITUC_APP` | Clave con la que la app está registrada en el Derivador (por defecto `presupuesto-participativo`) |
 | `CIDITUC_INGRESO_HABILITADO` | `true` enciende el botón de ingreso. Se enciende **después** de que el Derivador despliegue la entrada de esta app |
 | `CIDITUC_CA_PEM` | Cadena de Sectigo (intermedio + raíz) para hablar con `estadisticas.smt.gob.ar:5000`. Ver más abajo |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario del backoffice que el seed crea en tu PGlite. En producción las cuentas se crean con `npm run crear-admin` |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Usuario del backoffice que el seed crea en tu PGlite. En producción las cuentas se crean con `npm run crear-admin`, que no las lee: genera siempre una provisoria que se cambia en el primer ingreso |
 | `SITE_URL` | URL pública del sitio en producción |
 | `MODO_PRUEBA_IDEAS` | `1` abre el alta de ideas fuera de etapa para cualquiera. Solo para demostraciones locales: **nunca en producción** |
 
@@ -213,7 +213,7 @@ lo queda, el script no lo recibe y lo rechaza (avisando por qué).
 | Qué se hace en producción | Cómo |
 |---|---|
 | Aplicar las migraciones nuevas | `npm run db:migrate -- --produccion` (ver [Cambios de esquema](#cambios-de-esquema-siempre-por-migraciones)) |
-| Dar de alta una cuenta del panel | Desde `/admin/equipo` (solo admin). La primera cuenta, o si nadie puede entrar: `npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" admin --produccion` |
+| Dar de alta una cuenta del panel | Desde `/admin/equipo` (solo admin). La primera cuenta, o si nadie puede entrar: `npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" admin --produccion`, que imprime una contraseña provisoria que se cambia en el primer ingreso |
 | Purgar los contactos de una edición cerrada | `npm run purgar-contactos` (solo muestra) y después `npm run purgar-contactos -- --confirmar --produccion` |
 | Cambiar la etapa del proceso | Desde `/admin/ediciones`. `scripts/cambiar-etapa.ts` es para pruebas locales (también deja rastro en la bitácora) |
 | Sacar una idea cargada en una demostración | Descartarla desde su ficha del panel: queda despublicada, fuera de toda cuenta y con motivo. Para borrarla del todo, `npx tsx scripts/ver-ideas-web.ts --borrar <número>` (muestra cuál) y después con `--confirmar --produccion` |
@@ -224,13 +224,30 @@ niega siempre ante una base remota, sin flag que lo habilite. `seed` con
 `--produccion` solo corre si la base está **vacía** (sin ninguna edición):
 existe para la primera carga de un proyecto nuevo, nunca para "poner al día" la
 base que está en uso. Esa primera carga, con la URL del proyecto nuevo en la
-terminal y `ADMIN_EMAIL` / `ADMIN_PASSWORD` para la primera cuenta, es
-`npm run db:migrate -- --produccion`, `npm run etl` y
-`npm run seed -- --produccion`.
+terminal, es `npm run db:migrate -- --produccion`, `npm run etl`,
+`npm run seed -- --produccion` y, para la primera cuenta del panel,
+`npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" admin --produccion`.
+Contra una base remota el seed no crea cuentas aunque estén `ADMIN_EMAIL` /
+`ADMIN_PASSWORD`: esa contraseña es la de desarrollo de `.env.local`.
 
 Si el pooler en modo transacción (puerto `6543`) rechaza el DDL de una
 migración, se migra por el Session pooler (puerto `5432`) — `db:migrate` lo
 sugiere en el mensaje de error. La aplicación sigue usando el `6543`.
+
+**drizzle-kit es para la base local.** `drizzle.config.ts` tiene su propio
+candado: los comandos que abren la base (`npm run db:studio`, y a mano
+`migrate` o `pull`) no se conectan a una base remota salvo que se lo pida
+en la terminal para esa corrida, con `DRIZZLE_KIT_PRODUCCION=1` (escrita en
+`.env.local` no cuenta). Studio entra con el usuario de la URL, que en Supabase
+es el dueño de las tablas y no pasa por RLS: cada celda que se edita se escribe
+en el acto. `push` contra una base remota no corre nunca. `db:generate` no abre
+la base y anda siempre. Cuando se habilita, la conexión va con el mismo TLS que
+la aplicación (`DATABASE_CA_PEM`).
+
+Los scripts de diagnóstico que leen la base por su cuenta (`scripts/ver-*.ts`,
+`probar-db.ts`) y `aplicar-geografia.ts` se conectan con
+`scripts/conexion-directa.ts`: node-postgres con ese mismo TLS, y solo con una
+`DATABASE_URL` de Postgres.
 
 ### Ingreso con CIDITUC
 
@@ -414,9 +431,10 @@ campo `notasMigracion` de cada idea, visible en la ficha pública):
 | `npm run setup` | Solo desarrollo: comprueba que la base sea local y corre `db:migrate` + `etl` + `seed` |
 | `npm run db:generate` | Genera la migración SQL a partir de `src/db/schema.ts` |
 | `npm run db:migrate` | Aplica las migraciones pendientes de `drizzle/` |
+| `npm run db:studio` | Drizzle Studio sobre la base local. Contra una base remota no abre (ver [Tocar producción desde la terminal](#tocar-producción-desde-la-terminal)) |
 | `npm run etl` | Regenera el dataset limpio y el reporte de limpieza (no toca la base) |
 | `npm run seed` | Carga la edición 2025 en la base de desarrollo. Pisa contenido: no es para producción |
-| `npm run crear-admin` | Crea o actualiza **una** cuenta del panel, con fila en la bitácora del equipo. Es para la primera cuenta y para emergencias: el alta normal es desde `/admin/equipo`. Restablecer desde acá cierra las sesiones abiertas de la cuenta |
+| `npm run crear-admin` | Crea o actualiza **una** cuenta del panel, con una fila en la bitácora del equipo por cada cosa que cambia (alta, reactivación, cambio de rol, restablecimiento). Es para la primera cuenta y para emergencias: el alta normal es desde `/admin/equipo`. La contraseña es siempre una provisoria al azar que se cambia en el primer ingreso, y restablecer desde acá cierra las sesiones abiertas de la cuenta |
 | `npm run purgar-contactos` | Borra el contacto de los autores de las ediciones cerradas; sin `--confirmar` solo muestra |
 | `npx tsx scripts/limpiar-pruebas.ts` | Antes del lanzamiento: votantes del login de prueba, ideas de las demos con sus votos, y el registro del chat y de los informes de cuando se probaba. Con `--hasta AAAA-MM-DD` (el día anterior a la apertura) muestra qué borraría; con `--confirmar`, lo borra. Los votantes verificados por CIDITUC solo con `--incluir-cidituc` |
 | `npx tsx scripts/escenario.ts <etapa>` | Solo base local: pone una 2026 de ejemplo en `ideas`, `evaluacion`, `votacion`, `seguimiento` o `cerrada`, para ver el sitio en cada etapa. `2025` vuelve a como lo deja el seed |
@@ -449,7 +467,8 @@ No usar `drizzle-kit push` (por eso no hay script para eso): `push` empuja el
 esquema sin dejar registro, y la base de producción lleva la cuenta de qué
 migraciones tiene aplicadas en `drizzle.__drizzle_migrations`. Un `push` por
 fuera desincroniza ese registro y la próxima migración de otra persona falla o,
-peor, pisa un cambio. Regla corta: si tocaste `schema.ts`, tu PR incluye un
+peor, pisa un cambio. Contra una base remota, `drizzle.config.ts` directamente
+no lo deja correr. Regla corta: si tocaste `schema.ts`, tu PR incluye un
 archivo nuevo en `drizzle/`.
 
 ## Pendientes conocidos

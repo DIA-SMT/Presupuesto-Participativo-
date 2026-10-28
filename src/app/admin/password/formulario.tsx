@@ -6,7 +6,9 @@
  * Con una contrasena provisoria (`provisoria`) no se pide la actual: la eligio
  * otra persona, asi que exigirla no protegeria nada. Igual quien decide es el
  * servidor, que relee `debe_cambiar_password` de la base: si la pantalla
- * estuviera vieja, la accion pide la actual y lo dice.
+ * estuviera vieja (la provisoria ya se cambio en otra pestaña), la accion pide
+ * la actual y revalida el panel, asi la pagina se vuelve a dibujar con
+ * `provisoria` en false y este campo aparece para escribirla.
  */
 import Link from "next/link";
 import { useActionState } from "react";

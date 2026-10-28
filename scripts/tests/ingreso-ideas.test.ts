@@ -4,7 +4,8 @@
  *
  * Lo que se fija:
  *  - el destino del ingreso es una lista blanca: lo que no es "ideas" vuelve a
- *    votar, nunca a una URL que traiga el pedido;
+ *    votar, nunca a una URL que traiga el pedido; y la salida y la vuelta de
+ *    CIDITUC, cuando llegan sin destino, toman el de la etapa;
  *  - la etapa decide si hay ingreso: votar solo en la votacion, ideas solo en
  *    la etapa de ideas (o en modo prueba);
  *  - la idea guarda `votante_id`, el panel lo ve como "verificado con
@@ -26,7 +27,10 @@ import {
 import {
   PANTALLA_DEL_DESTINO,
   destinoDeIngreso,
+  destinoDelIngreso,
+  esDestinoDeIngreso,
   etapaDejaIngresar,
+  otroDestino,
   puertaDeIngreso,
 } from "../../src/lib/ingreso-vecino";
 
@@ -52,6 +56,50 @@ test("la etapa decide si hay ingreso, para cada destino", () => {
   }
   assert.equal(etapaDejaIngresar("ideas", null), false, "sin edicion activa no se entra");
   assert.equal(etapaDejaIngresar("votar", undefined), false);
+});
+
+test("un ingreso sin destino (cookie vencida, enlace pelado) toma el de la etapa", () => {
+  const etapas = ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const;
+  for (const etapa of etapas) {
+    // Lo pedido manda, aunque la etapa diga otra cosa: la puerta cerrada lo
+    // explica con su propio cartel.
+    assert.equal(destinoDelIngreso("ideas", etapa), "ideas");
+    assert.equal(destinoDelIngreso("votar", etapa), "votar");
+
+    // Sin pedido, o con uno que no esta en la lista, la etapa. Nunca la URL.
+    for (const sinDestino of [null, undefined, "", "IDEAS", "/admin", "https://otro.sitio"]) {
+      assert.equal(
+        destinoDelIngreso(sinDestino, etapa),
+        etapa === "ideas" ? "ideas" : "votar",
+        `"${sinDestino}" en ${etapa}`,
+      );
+    }
+
+    // Es el caso del hallazgo: en la etapa de ideas, la vuelta sin cookie caia
+    // en la puerta de votar, cerrada. Ahora, si alguna puerta esta abierta, es
+    // la deducida; las dos ventanas no se superponen.
+    const deducido = destinoDelIngreso(null, etapa);
+    const algunaAbierta = etapaDejaIngresar("ideas", etapa) || etapaDejaIngresar("votar", etapa);
+    assert.equal(etapaDejaIngresar(deducido, etapa), algunaAbierta, `deducido en ${etapa}`);
+  }
+  assert.equal(destinoDelIngreso(null, null), "votar", "sin edicion activa, la puerta de siempre");
+  assert.equal(puertaDeIngreso(destinoDelIngreso(undefined, "ideas")), "/ingresar?para=ideas");
+
+  assert.equal(esDestinoDeIngreso("ideas"), true);
+  assert.equal(esDestinoDeIngreso("votar"), true);
+  assert.equal(esDestinoDeIngreso("Votar"), false);
+  assert.equal(esDestinoDeIngreso(undefined), false);
+});
+
+test("la otra puerta es la del otro destino, y esta abierta cuando la pedida no", () => {
+  assert.equal(otroDestino("votar"), "ideas");
+  assert.equal(otroDestino("ideas"), "votar");
+  // En la etapa de ideas, quien llega a /ingresar pelado ve la puerta de
+  // votar cerrada y el enlace a la de ideas, abierta.
+  assert.equal(etapaDejaIngresar("votar", "ideas"), false);
+  assert.equal(etapaDejaIngresar(otroDestino("votar"), "ideas"), true);
+  assert.equal(etapaDejaIngresar("ideas", "votacion"), false);
+  assert.equal(etapaDejaIngresar(otroDestino("ideas"), "votacion"), true);
 });
 
 let base: BaseDePrueba;

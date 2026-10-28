@@ -24,7 +24,9 @@
  * decisiones sobre pedazos sueltos sin ver nunca el conjunto.
  *
  * Ahora hay uno, "Mejorar con IA", y vive en el panel del documento, no al lado
- * de un campo: ahi se ve el resultado. Una sola llamada a
+ * de un campo: ahi se ve el resultado. En el telefono ese panel no se dibuja, y
+ * el mismo boton aparece en el ultimo paso, junto a "Enviar mi idea" (nunca los
+ * dos a la vez). Una sola llamada a
  * /api/ideas/asistente devuelve todo junto —el texto ordenado de cada campo que
  * tenga contenido, un titulo sugerido, que le sigue faltando, si ya hay una
  * propuesta parecida en el distrito y los aspectos de obra para tildar— y la
@@ -116,6 +118,40 @@ const PASOS: ReadonlyArray<{ corto: string; titulo: string; opcional?: boolean }
 const ULTIMO = PASOS.length;
 
 /**
+ * Cuando /api/distrito no contesto. Lo dicen el recuadro del paso 1 y su
+ * validacion, con el mismo texto.
+ */
+const SIN_RESPUESTA_DEL_DISTRITO =
+  "No pudimos consultar el distrito de ese punto. Revisá tu conexión y tocá el mapa de nuevo.";
+
+/**
+ * Un error cuyo texto se le puede mostrar a la persona tal cual: lo escribimos
+ * nosotros o lo mando el servidor, en castellano.
+ *
+ * Existe por lo que NO es. Cuando `fetch` no llega al servidor (se corto la
+ * señal, el celular se quedo sin datos) rechaza con un TypeError del navegador,
+ * que tambien es un Error, con el texto "Failed to fetch", "Load failed" o
+ * "NetworkError when attempting to fetch resource." segun el navegador. Los
+ * catch mostraban el `message` de cualquier Error, y ese ingles le llegaba a la
+ * persona justo al mandar su propuesta. Ahora se muestra solo el de estos; para
+ * lo demas, un texto propio (ver `textoParaMostrar`).
+ */
+class ErrorParaMostrar extends Error {}
+
+const SIN_CONEXION = "No pudimos conectarnos. Revisá tu conexión y probá de nuevo.";
+
+/** El texto de un error si es nuestro; si no, `siNoEsNuestro`. */
+function textoParaMostrar(causa: unknown, siNoEsNuestro: string): string {
+  return causa instanceof ErrorParaMostrar ? causa.message : siNoEsNuestro;
+}
+
+/**
+ * Los campos de una linea del ultimo paso, que son los unicos desde donde un
+ * Enter envia la idea (ver `cortarEnterQueEnvia`).
+ */
+const CAMPOS_QUE_ENVIAN_CON_ENTER = new Set(["titulo", "autorNombre", "autorEmail"]);
+
+/**
  * Como se llama cada campo EN PANTALLA.
  *
  * El asistente devuelve la clave de la columna (`problema`, `solucion`) y aca se
@@ -168,6 +204,20 @@ export default function FormularioIdea({
   const [punto, setPunto] = useState<{ lat: number; lon: number } | null>(null);
   const [distrito, setDistrito] = useState<number | null>(null);
   const [ubicando, setUbicando] = useState(false);
+  /**
+   * La consulta del distrito del ultimo punto fallo (la red, un 500). Es aparte
+   * de "fuera del ejido" porque se arregla distinto: un punto fuera de los 20
+   * distritos se corrige marcando otro, y esto, tocando de nuevo. Antes las dos
+   * cosas eran `distrito` null y la pantalla decia que un punto valido quedaba
+   * fuera de la ciudad.
+   */
+  const [sinRespuestaDelDistrito, setSinRespuestaDelDistrito] = useState(false);
+  /**
+   * Cuantos puntos se eligieron. Cada `elegirPunto` toma el suyo y, despues de
+   * cada espera, sigue solo si nadie eligio otro mientras tanto. Ver
+   * `elegirPunto` y `usarMiUbicacion`.
+   */
+  const pedidoUbicacion = useRef(0);
   const [estado, setEstado] = useState<Estado>({ tipo: "editando" });
   /** Consentimiento para guardar el correo. Arranca en false, siempre. */
   const [casillaAvisos, setCasillaAvisos] = useState(false);
@@ -249,6 +299,10 @@ export default function FormularioIdea({
   function faltaEnElPaso(n: number): string | null {
     if (n === 1) {
       if (!punto) return "Marcá en el mapa dónde sería la obra.";
+      // Mientras se consulta, `distrito` es null: sin esto, quien apretaba
+      // "Siguiente" en ese momento leia que su punto quedaba fuera de la ciudad.
+      if (ubicando) return "Esperá un momento: estamos ubicando el punto en el mapa.";
+      if (sinRespuestaDelDistrito) return SIN_RESPUESTA_DEL_DISTRITO;
       if (!distrito) return "Ese punto queda fuera de los 20 distritos. Marcá más cerca.";
       return null;
     }
@@ -326,19 +380,34 @@ export default function FormularioIdea({
    * esta vacio o si lo habia puesto un clic anterior. Si la persona lo escribio
    * a mano, gana ella: conoce su barrio mejor que una capa de 2022, y contra las
    * ideas ya cargadas la capa acierta en 23 de 34 casos, no en todos.
+   *
+   * Solo vale la respuesta del ULTIMO punto. Quien toca A y enseguida B puede
+   * recibir la de A despues de la de B, y antes esa respuesta vieja pisaba el
+   * distrito y el barrio: el marcador quedaba en B con el distrito y el barrio
+   * de A, y el servidor guardaba el distrito de B (lo deriva del punto) con el
+   * barrio de A. Tambien el `finally` de A apagaba el "Buscando el distrito…"
+   * con la consulta de B todavia en curso. Ahora cada llamada toma un numero
+   * de `pedidoUbicacion` y, si al volver ya hay otro, no toca nada.
    */
   async function elegirPunto(nuevo: { lat: number; lon: number }) {
+    const mio = ++pedidoUbicacion.current;
+    const sigueSiendoElUltimo = () => mio === pedidoUbicacion.current;
     setPunto(nuevo);
     setDistrito(null);
+    setSinRespuestaDelDistrito(false);
     setUbicando(true);
     try {
       const respuesta = await fetch(
         `/api/distrito?lat=${nuevo.lat.toFixed(6)}&lon=${nuevo.lon.toFixed(6)}`,
       );
+      // Un 500 no dice nada del punto: es "no pudimos consultar", no "fuera
+      // de la ciudad". Solo un 200 trae un distrito (o su ausencia) que creer.
+      if (!respuesta.ok) throw new Error(`/api/distrito respondio ${respuesta.status}`);
       const cuerpo = (await respuesta.json()) as {
         distrito: number | null;
         barrio: string | null;
       };
+      if (!sigueSiendoElUltimo()) return;
       setDistrito(cuerpo.distrito);
 
       const campo = refBarrio.current;
@@ -348,12 +417,24 @@ export default function FormularioIdea({
         barrioPuesto.current = cuerpo.barrio;
         setBarrioAutomatico(true);
         anotarValor("barrio", cuerpo.barrio);
+      } else if (campo && !cuerpo.barrio && !escritoAMano && campo.value) {
+        // El punto nuevo no cae en ningun barrio de la capa (una plaza, una
+        // avenida) o queda fuera del ejido: el barrio que habia puesto el punto
+        // anterior ya no es de este, y quedaba al lado del distrito nuevo con la
+        // ayuda diciendo que salio del mapa. Se vacia, como si nunca se hubiera
+        // completado; lo escrito a mano no se toca.
+        campo.value = "";
+        barrioPuesto.current = null;
+        setBarrioAutomatico(false);
+        anotarValor("barrio", "");
       }
-      if (cuerpo.distrito) void cargarPoligono(cuerpo.distrito);
+      if (cuerpo.distrito) void cargarPoligono(cuerpo.distrito, sigueSiendoElUltimo);
     } catch {
+      if (!sigueSiendoElUltimo()) return;
       setDistrito(null);
+      setSinRespuestaDelDistrito(true);
     } finally {
-      setUbicando(false);
+      if (sigueSiendoElUltimo()) setUbicando(false);
     }
   }
 
@@ -364,8 +445,12 @@ export default function FormularioIdea({
    * en la practica lo sirve el cache. Si falla no se avisa nada: el documento
    * dibuja solo el punto y las coordenadas van en texto igual, asi que no se
    * pierde informacion.
+   *
+   * `vigente` es la misma guarda de `elegirPunto`: si mientras bajaba el
+   * archivo se eligio otro punto, este contorno ya no es el del distrito que
+   * se muestra.
    */
-  async function cargarPoligono(numero: number) {
+  async function cargarPoligono(numero: number, vigente: () => boolean) {
     try {
       const geo = (await (await fetch("/geo/distritos.geojson")).json()) as {
         features: Array<{
@@ -373,11 +458,12 @@ export default function FormularioIdea({
           geometry: { coordinates: number[][][][] };
         }>;
       };
+      if (!vigente()) return;
       const f = geo.features.find((x) => x.properties.numero === numero);
       // El anillo exterior del primer poligono alcanza para dibujar el contorno.
       setPoligono(f?.geometry.coordinates?.[0]?.[0] ?? null);
     } catch {
-      setPoligono(null);
+      if (vigente()) setPoligono(null);
     }
   }
 
@@ -388,6 +474,13 @@ export default function FormularioIdea({
    * ubicacion en ningun lado: lo unico que se guarda es el punto de la
    * propuesta, que ya se guardaba y que ademas es publico porque se dibuja en el
    * mapa del sitio.
+   *
+   * El GPS de alta precision puede tardar hasta 10 segundos, y el mapa sigue
+   * aceptando toques mientras tanto. Si la persona marca un punto a mano en ese
+   * rato, ese punto gana: la posicion que llega despues se descarta. Antes la
+   * reemplazaba sin aviso, y la idea podia terminar guardada en la casa de quien
+   * la presentaba en lugar de en la plaza que habia marcado. Se sabe por
+   * `pedidoUbicacion`: si cambio desde que se apreto el boton, hubo un toque.
    */
   function usarMiUbicacion() {
     if (!navigator.geolocation) {
@@ -397,15 +490,20 @@ export default function FormularioIdea({
       });
       return;
     }
+    const alApretar = pedidoUbicacion.current;
+    const huboUnToque = () => pedidoUbicacion.current !== alApretar;
     setBuscandoGps(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setBuscandoGps(false);
+        if (huboUnToque()) return;
         setPuntoPorGps(true);
         void elegirPunto({ lat: pos.coords.latitude, lon: pos.coords.longitude });
       },
       () => {
         setBuscandoGps(false);
+        // Si ya marco el lugar a mano, que el GPS haya fallado no le importa.
+        if (huboUnToque()) return;
         setEstado({
           tipo: "error",
           mensaje:
@@ -430,9 +528,17 @@ export default function FormularioIdea({
    * Antes de enviar recorre los pasos y, si a alguno le falta algo, lleva a la
    * persona A ESE paso con el motivo. Es lo que reemplaza a los `required` del
    * HTML, que con los pasos ocultos abortaban el envio en silencio.
+   *
+   * Fuera del ultimo paso no envia nada. El boton de enviar sigue en el DOM con
+   * display:none, y el navegador lo usa igual para el envio implicito de un
+   * Enter (no mira si se dibuja): sin este corte, un Enter en el barrio desde
+   * el paso 1 mandaba la idea sin pasar por "Revisá y enviá". El que frena el
+   * Enter es `cortarEnterQueEnvia`; esto queda para lo que se le escape, como
+   * un teclado de celular que no avise la tecla.
    */
   async function alEnviarFormulario(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
+    if (paso !== ULTIMO) return;
     const datos = new FormData(evento.currentTarget);
 
     for (let n = 1; n <= ULTIMO; n += 1) {
@@ -445,6 +551,31 @@ export default function FormularioIdea({
     }
 
     await enviar(datos);
+  }
+
+  /**
+   * Corta el Enter que enviaria la idea sin que nadie apretara "Enviar mi idea".
+   *
+   * En un campo de una linea, Enter hace el envio implicito del formulario, y
+   * el navegador aprieta el boton de enviar aunque este oculto. Dos casos lo
+   * hacian dañino: el barrio del paso 1, que se corrige y se cierra con "Ir" en
+   * el teclado del celular, y el titulo que propone la IA en modo edicion, que
+   * se confirma con Enter como cualquier edicion en linea y mandaba la idea con
+   * el titulo VIEJO, porque la propuesta todavia no estaba aplicada.
+   *
+   * Enter solo envia desde los campos propios del ultimo paso, que es donde se
+   * ve el boton y donde enviar es lo que se espera. El campo de la propuesta
+   * no tiene `name` (no viaja en el envio), asi que queda afuera aunque el
+   * panel se dibuje en el ultimo paso.
+   */
+  function cortarEnterQueEnvia(evento: React.KeyboardEvent<HTMLFormElement>) {
+    // El Enter que cierra una composicion (teclados con IME) no envia nada y
+    // cortarlo podria trabar la composicion.
+    if (evento.key !== "Enter" || evento.nativeEvent.isComposing) return;
+    const campo = evento.target;
+    if (!(campo instanceof HTMLInputElement)) return;
+    if (paso === ULTIMO && CAMPOS_QUE_ENVIAN_CON_ENTER.has(campo.name)) return;
+    evento.preventDefault();
   }
 
   /**
@@ -483,10 +614,14 @@ export default function FormularioIdea({
         const cuerpo = (await respuesta.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(cuerpo?.error ?? "No se pudo generar la ayuda.");
+        throw new ErrorParaMostrar(cuerpo?.error ?? "No se pudo generar la ayuda.");
       }
 
-      const datos = (await respuesta.json()) as RespuestaAsistente;
+      // Un 200 que no es JSON (una pagina de error de un proxy, por ejemplo)
+      // tiraba un SyntaxError con su texto en ingles.
+      const datos = (await respuesta.json().catch(() => {
+        throw new ErrorParaMostrar("No se pudo generar la ayuda. Podés enviar tu idea igual.");
+      })) as RespuestaAsistente;
 
       /*
        * Los detalles elegidos entran DERECHO al texto, sin una segunda
@@ -505,17 +640,52 @@ export default function FormularioIdea({
        * Lo aplicado no queda invisible: `setAplicados` deja el resumen de que
        * campos se tocaron, y el texto se sigue pudiendo editar en el formulario
        * o en el documento mismo.
+       *
+       * Lo que entra derecho es SOLO la solucion, que es donde van los
+       * aspectos. Antes se escribian los cuatro campos de la respuesta: el
+       * problema reformulado, los beneficios redactados aunque estuvieran
+       * vacios y un titulo nuevo, sin que la persona los viera, y aunque
+       * acabara de rechazarlos con "Dejar el mio". La ruta ya no los pide en
+       * este caso. Si quedaba una propuesta de la vuelta anterior sin decidir,
+       * sigue ahi para revisarla campo por campo, menos la solucion, que se
+       * acaba de reescribir.
        */
-      if (agregar?.length && datos.propuesta) {
-        escribirPropuesta(datos.propuesta);
-        setRevision({ ...datos, propuesta: null });
+      if (agregar?.length) {
+        const solucion = datos.propuesta?.solucion ?? null;
+        const anterior = revision?.propuesta ?? null;
+        if (solucion) {
+          escribirPropuesta({ titulo: null, solucion, problema: null, beneficios: null });
+          setRevision({ ...datos, propuesta: anterior && { ...anterior, solucion: null } });
+          setElegidos([]);
+        } else {
+          // La solucion no volvio: los aspectos no se sumaron. La lista y lo
+          // tildado se quedan, para poder probar de nuevo con un clic.
+          setRevision({
+            ...datos,
+            propuesta: anterior,
+            detalles: revision?.detalles ?? [],
+            aviso:
+              datos.aviso ??
+              "No pudimos sumar los aspectos que elegiste. Probá de nuevo en un rato.",
+          });
+        }
       } else {
         setRevision(datos);
+        setElegidos([]);
       }
 
-      setElegidos([]);
       setEstado({ tipo: "editando" });
     } catch (causa) {
+      // Lo que no es nuestro es que `fetch` no llego: el texto lo dice en
+      // castellano y recuerda que la ayuda no es necesaria para enviar.
+      const aviso = textoParaMostrar(causa, `${SIN_CONEXION} Podés enviar tu idea igual.`);
+      // Si se estaban agregando aspectos, la revision que habia se conserva:
+      // reemplazarla por el aviso solo borraba la lista que la persona tildo.
+      if (agregar?.length && revision) {
+        setRevision({ ...revision, aviso });
+        setEstado({ tipo: "editando" });
+        return;
+      }
       setRevision({
         modo: "basico",
         faltantes: [],
@@ -523,10 +693,7 @@ export default function FormularioIdea({
         senalamientos: [],
         propuesta: null,
         detalles: [],
-        aviso:
-          causa instanceof Error
-            ? causa.message
-            : "No se pudo generar la ayuda. Podés enviar tu idea igual.",
+        aviso,
       });
       setEstado({ tipo: "editando" });
     }
@@ -594,7 +761,16 @@ export default function FormularioIdea({
     // escribe, pero no a una asignacion por codigo, y el servidor rechazaria un
     // texto largo sin que nadie haya visto un aviso.
     const tope = campo === "barrio" ? LARGO_BARRIO : LARGOS[campo];
-    const texto = valor.slice(0, tope);
+    // El titulo y el barrio son de un renglon, pero en el documento se escriben
+    // en un textarea: un texto pegado de dos renglones trae saltos. Al copiarlo
+    // al <input> de la izquierda (el que viaja en el envio) el navegador borra
+    // el salto SIN dejar un espacio, y se guardaria "Plaza delbarrio Oeste"
+    // mientras el documento y el PDF muestran dos renglones. Se cambia por un
+    // espacio aca, antes de anotar, para que lo que se ve sea lo que se envia.
+    // Es la unica transformacion permitida en este camino (ver `anotarValor`):
+    // solo pasa cuando hay un salto, que es justo cuando no se lo puede dejar.
+    const limpio = campo === "titulo" || campo === "barrio" ? valor.replace(/[\r\n]+/g, " ") : valor;
+    const texto = limpio.slice(0, tope);
 
     const ref = REF_DEL_CAMPO[campo].current;
     // Escribirle `.value` a un campo enfocado le manda el cursor al final. En la
@@ -644,7 +820,7 @@ export default function FormularioIdea({
       };
 
       if (!respuesta.ok || !cuerpo.numero || !cuerpo.codigo) {
-        throw new Error(cuerpo.error ?? "No se pudo enviar la idea.");
+        throw new ErrorParaMostrar(cuerpo.error ?? "No se pudo enviar la idea.");
       }
       setEstado({
         tipo: "listo",
@@ -654,10 +830,13 @@ export default function FormularioIdea({
       });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (causa) {
-      setEstado({
-        tipo: "error",
-        mensaje: causa instanceof Error ? causa.message : "No se pudo enviar la idea.",
-      });
+      // Lo que no es nuestro es el `fetch` que no llego (ver ErrorParaMostrar).
+      // Queda un caso que el texto no resuelve: si la conexion se corto DESPUES
+      // de que el servidor guardo la idea, la persona no ve el numero ni el
+      // codigo y al reintentar la carga dos veces. Evitarlo de verdad pide una
+      // clave de idempotencia en el alta, que es un cambio de esquema; mientras
+      // tanto, la duplicada se descarta desde la bandeja.
+      setEstado({ tipo: "error", mensaje: textoParaMostrar(causa, SIN_CONEXION) });
     }
   }
 
@@ -738,6 +917,14 @@ export default function FormularioIdea({
   const enviando = estado.tipo === "enviando";
   const revisando = estado.tipo === "revisando";
   const ocupado = enviando || revisando;
+  /**
+   * El "Mejorar con IA" (hay dos, uno por pantalla). Pide texto para trabajar.
+   * Sin punto marcado se puede apretar igual y el asistente lo dice como algo
+   * que falta; mientras se ubica un punto no, porque el distrito todavia es
+   * null y le diria que marque un lugar que ya marco.
+   */
+  const iaDeshabilitada =
+    !abierta || ocupado || ubicando || (!largos.solucion && !largos.problema);
 
   /**
    * Todo lo que el documento necesita para dejarse escribir encima. Es el MISMO
@@ -762,6 +949,7 @@ export default function FormularioIdea({
   return (
     <form
       onSubmit={alEnviarFormulario}
+      onKeyDown={cortarEnterQueEnvia}
       className="mt-8 grid gap-8 lg:grid-cols-[1fr_1fr] lg:items-start"
     >
       {/*
@@ -872,7 +1060,10 @@ export default function FormularioIdea({
               )}
             </>
           )}
-          {punto && !ubicando && !distrito && (
+          {punto && !ubicando && !distrito && sinRespuestaDelDistrito && (
+            <>{SIN_RESPUESTA_DEL_DISTRITO}</>
+          )}
+          {punto && !ubicando && !distrito && !sinRespuestaDelDistrito && (
             <>Ese punto queda fuera de los 20 distritos de la ciudad. Probá marcar más cerca.</>
           )}
         </div>
@@ -898,7 +1089,9 @@ export default function FormularioIdea({
                 ordena el texto.
               </>
             ) : (
-              <>Después revisamos qué le falta y vos decidís qué corregir.</>
+              // Sin IA no hay revision que pedir: lo unico que se revisa son
+              // los minimos de cada paso, al avanzar y al enviar.
+              <>Si le falta algo, te avisamos antes de enviar.</>
             )}
           </p>
 
@@ -1244,12 +1437,39 @@ export default function FormularioIdea({
           >
             {enviando ? "Enviando…" : "Enviar mi idea"}
           </button>
+          {/*
+            El mismo "Mejorar con IA" del panel del documento, para abajo de lg.
+            Ese panel no se dibuja en el telefono, y cuando se sacaron los
+            botones de cada campo el pedido quedo solo ahi: desde el celular,
+            que es por donde entra el vecino, no habia forma de pedir la ayuda
+            que el texto de abajo promete. Sigue siendo uno solo en pantalla:
+            este se esconde justo donde aparece el otro.
+          */}
+          {conIA && (
+            <button
+              type="button"
+              onClick={() => void pedirAyuda()}
+              disabled={iaDeshabilitada}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-5 py-3.5 text-sm font-semibold transition disabled:opacity-50 sm:w-auto lg:hidden"
+              style={{
+                background: "var(--fondo-tarjeta)",
+                border: "1px solid var(--borde-control)",
+                color: "var(--marca-texto)",
+              }}
+            >
+              <IconoChispa />
+              {revisando ? "Trabajando…" : revision ? "Volver a pedir" : "Mejorar con IA"}
+            </button>
+          )}
         </div>
 
-        {paso === ULTIMO && !revision && !revisando && (
+        {/* Solo con IA: sin clave (o con el gasto del dia pasado) no hay boton
+            en ninguna pantalla, y el texto prometia una revision que no existia. */}
+        {conIA && paso === ULTIMO && !revision && !revisando && (
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-            Antes de enviar podés pedirnos una revisión: te decimos qué le falta para que se
-            entienda mejor y si ya hay una propuesta parecida en tu distrito. No es obligatorio.
+            Antes de enviar podés pedirnos una revisión con «Mejorar con IA»: te decimos qué le
+            falta para que se entienda mejor y si ya hay una propuesta parecida en tu distrito. No
+            es obligatorio.
           </p>
         )}
       </div>
@@ -1288,7 +1508,7 @@ export default function FormularioIdea({
               <button
                 type="button"
                 onClick={() => void pedirAyuda()}
-                disabled={!abierta || ocupado || (!largos.solucion && !largos.problema)}
+                disabled={iaDeshabilitada}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition disabled:opacity-50"
                 style={{ background: "var(--color-marca-700)" }}
               >
@@ -2171,6 +2391,11 @@ function CampoPropuesto({
               type="text"
               value={texto}
               onChange={(e) => onEscribir(e.target.value)}
+              // Enter confirma la edicion, como el "Listo". El formulario ya le
+              // corta el envio (ver cortarEnterQueEnvia).
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) setEditando(false);
+              }}
               maxLength={maximo}
               disabled={ocupado}
               className="mt-2 w-full rounded-lg px-3 py-2 text-sm"

@@ -23,7 +23,14 @@
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { Chip, ChipEstado } from "@/components/ui";
 import type {
   AccionRevision,
@@ -41,6 +48,7 @@ import type {
 } from "@/db/queries";
 import { puedeCambiarIdea, puedeProclamar, type Etapa, type Veredicto } from "@/lib/etapas";
 import {
+  diasDeCalendarioEnTucuman,
   ETIQUETA_ESTADO,
   formatearFechaCorta,
   formatearNumero,
@@ -169,10 +177,11 @@ const fechaHora = new Intl.DateTimeFormat("es-AR", {
 /**
  * Antiguedad en palabras. El "ahora" lo fija el server component y viaja por
  * props: si cada lado usara su propio reloj, el HTML del servidor y el del
- * cliente podrian no coincidir.
+ * cliente podrian no coincidir. Se cuenta por dia de calendario de Tucuman y no
+ * en bloques de 24 h: "hoy" tiene que coincidir con la fecha del title.
  */
 function antiguedad(desde: Date, ahora: number): string {
-  const dias = Math.floor((ahora - desde.getTime()) / 86_400_000);
+  const dias = diasDeCalendarioEnTucuman(desde, new Date(ahora));
   if (dias <= 0) return "hoy";
   if (dias === 1) return "hace 1 día";
   if (dias < 60) return `hace ${dias} días`;
@@ -1170,6 +1179,20 @@ function FormularioEvaluacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa
   const [estado, setEstado] = useState<EstadoIdea>(inicial);
   const [devolucion, setDevolucion] = useState(ficha.motivoEstado ?? "");
 
+  // El estado elegido se toma de la ficha al montar, y el formulario no se
+  // vuelve a montar cuando otra accion de la misma ficha cambia el estado
+  // guardado (Ficha lleva key por id): despues de reabrir la revision el chip
+  // decia "En evaluación" pero el select seguia en "No factible", y "Guardar"
+  // volvia a aplicar ese "no" sin que nadie lo eligiera. Se sincroniza con el
+  // valor previo (como resultadoVisto en novedades.tsx) y no con una key, que
+  // borraria el "Evaluación guardada." de useActionState. La devolucion no se
+  // toca: reabrir no la cambia, y asi no se pierde lo que se estaba escribiendo.
+  const [estadoVisto, setEstadoVisto] = useState(ficha.estado);
+  if (ficha.estado !== estadoVisto) {
+    setEstadoVisto(ficha.estado);
+    setEstado(inicial);
+  }
+
   const exige = estado === "no_factible" || estado === "integrado";
   const escritos = devolucion.trim().length;
   const falta = exige && escritos < MINIMO_DEVOLUCION;
@@ -1185,8 +1208,24 @@ function FormularioEvaluacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa
   );
   const motivoBloqueo = primerMotivo([...permitidos.values()]);
 
+  /*
+   * Un <form action> se resetea solo al terminar cada envio, y un <select>
+   * controlado no sobrevive al reset (React no le marca la opcion por
+   * defecto): despues de "Evaluación guardada." el chip decia "Factible" y el
+   * select mostraba "En evaluación", y un segundo "Guardar" mandaba eso y
+   * devolvia la idea a evaluacion sin que nadie lo eligiera. Con
+   * preventDefault React no resetea nada; la action queda puesta para que,
+   * antes de que cargue React, el formulario no se mande solo por GET. El
+   * mismo arreglo que equipo/panel.tsx.
+   */
+  function enviar(evento: React.SubmitEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => accion(datos));
+  }
+
   return (
-    <form action={accion} className="grid gap-3">
+    <form action={accion} onSubmit={enviar} className="grid gap-3">
       <input type="hidden" name="id" value={ficha.id} />
       <h3 className="text-sm font-bold">Evaluar la idea</h3>
 
@@ -1256,9 +1295,20 @@ function FormularioPublicacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etap
     ficha.publicada ? despublicarIdea : publicarIdea,
     null,
   );
-  const veredicto = puedeCambiarIdea(etapa, ficha, {
+  const porEtapa = puedeCambiarIdea(etapa, ficha, {
     accion: ficha.publicada ? "despublicar" : "publicar",
   });
+  // La misma regla que reglaParaPublicar (admin/comun.ts, que no se importa
+  // aca porque abre la base): un ganador no se despublica sin reabrir antes su
+  // revision. La accion la vuelve a aplicar sobre la fila bloqueada.
+  const veredicto: Veredicto =
+    ficha.publicada && ficha.ganador
+      ? {
+          permitido: false,
+          motivo:
+            "Esta idea está proclamada como ganadora. Reabrí la revisión antes de sacarla del sitio.",
+        }
+      : porEtapa;
   const bloqueado = !veredicto.permitido;
 
   return (

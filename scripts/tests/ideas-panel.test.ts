@@ -891,8 +891,15 @@ test("una descartada no cuenta en ningun numero del panel ni aparece en la bande
   const serie = await consultas.getSerieIdeas(edicion.id);
   assert.deepEqual(serie, [{ dia: "2030-03-01", cantidad: 1 }]);
 
+  // El contador de votos de las ideas (donde estan los de una edicion migrada)
+  // tambien deja afuera a la descartada: la lista de ediciones lo suma.
+  await base.db.update(base.schema.ideas).set({ votos: 7 }).where(eq(base.schema.ideas.id, valida));
+  await base.db.update(base.schema.ideas).set({ votos: 50 }).where(eq(base.schema.ideas.id, spam));
   const ediciones = await consultas.getEdiciones();
-  assert.equal(ediciones.find((e) => e.id === edicion.id)?.ideas, 1);
+  const listada = ediciones.find((e) => e.id === edicion.id);
+  assert.equal(listada?.ideas, 1);
+  assert.equal(listada?.votos, 0, "sin filas en votos");
+  assert.equal(listada?.votosEnIdeas, 7, "el contador no suma la descartada");
 
   const parecidas = await consultas.getIdeasParaComparar(edicion.id, 1);
   assert.deepEqual(parecidas.map((p) => p.id), [valida], "el asistente no compara contra un spam");

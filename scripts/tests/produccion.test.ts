@@ -12,9 +12,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   destinoDeLaBase,
+  evaluarDrizzleKit,
   evaluarEscritura,
   FLAG_PRODUCCION,
   sinFlagProduccion,
+  VARIABLE_DRIZZLE_KIT,
 } from "../produccion";
 
 const SUPABASE =
@@ -184,4 +186,102 @@ test("sinFlagProduccion saca el flag sin mover los demas argumentos", () => {
     ["correo@smt.gob.ar", "Nombre Apellido", "admin"],
   );
   assert.deepEqual(sinFlagProduccion([]), []);
+});
+
+// --- drizzle-kit (drizzle.config.ts) -------------------------------------------
+
+test("drizzle-kit: generate y los otros que no abren la base corren con cualquier URL", () => {
+  for (const comando of ["generate", "check", "up", "drop", "export"]) {
+    const veredicto = evaluarDrizzleKit({ url: SUPABASE, argumentos: [comando], permiso: undefined });
+    assert.equal(veredicto.permitido, true, comando);
+    if (veredicto.permitido) assert.equal(veredicto.abreLaBase, false, comando);
+  }
+});
+
+test("drizzle-kit: contra PGlite o un Postgres local abre la base sin pedir nada", () => {
+  for (const url of [undefined, "pglite:./data/pg", "postgres://yo:clave@localhost:5432/pp"]) {
+    const veredicto = evaluarDrizzleKit({ url, argumentos: ["studio"], permiso: undefined });
+    assert.equal(veredicto.permitido, true, String(url));
+  }
+});
+
+test("drizzle-kit: studio, migrate y pull no abren una base remota sin el permiso", () => {
+  for (const comando of ["studio", "migrate", "pull", "introspect"]) {
+    const veredicto = evaluarDrizzleKit({
+      url: SUPABASE,
+      argumentos: [comando, "--verbose"],
+      permiso: undefined,
+    });
+    assert.equal(veredicto.permitido, false, comando);
+    if (veredicto.permitido) continue;
+    assert.match(veredicto.motivo, new RegExp(`${VARIABLE_DRIZZLE_KIT}=1 npx drizzle-kit ${comando}`));
+    assert.ok(!veredicto.motivo.includes("Clave-Secreta-123"), comando);
+  }
+});
+
+test("drizzle-kit: un comando que no se reconoce se trata como uno que abre la base", () => {
+  for (const argumentos of [[], ["--config", "drizzle.config.ts"], ["comando-nuevo"]]) {
+    const veredicto = evaluarDrizzleKit({ url: SUPABASE, argumentos, permiso: undefined });
+    assert.equal(veredicto.permitido, false, argumentos.join(" "));
+  }
+});
+
+test("drizzle-kit: con el permiso de la terminal abre la base remota", () => {
+  const veredicto = evaluarDrizzleKit({ url: SUPABASE, argumentos: ["studio"], permiso: "1" });
+  assert.equal(veredicto.permitido, true);
+  if (veredicto.permitido) {
+    assert.equal(veredicto.abreLaBase, true);
+    assert.equal(veredicto.destino.tipo, "remota");
+  }
+  // Solo "1": un "true" o un "0" a medio borrar no habilitan nada.
+  for (const permiso of ["0", "true", ""]) {
+    assert.equal(
+      evaluarDrizzleKit({ url: SUPABASE, argumentos: ["studio"], permiso }).permitido,
+      false,
+      permiso,
+    );
+  }
+});
+
+test("drizzle-kit: el permiso escrito en un .env no cuenta, y el rechazo dice por que", () => {
+  // dotenv deja el valor del archivo en process.env, y drizzle.config.ts lo
+  // pasa tal cual: escrito ahi quedaria habilitado para siempre. Tampoco cuenta
+  // si la terminal trae la misma variable, porque el archivo la seguiria dando
+  // en la corrida siguiente.
+  const veredicto = evaluarDrizzleKit({
+    url: SUPABASE,
+    argumentos: ["studio"],
+    permiso: "1",
+    permisoEnArchivo: true,
+  });
+  assert.equal(veredicto.permitido, false);
+  if (veredicto.permitido) return;
+  assert.match(veredicto.motivo, /desde ahi no cuenta/);
+  // Los comandos que no abren la base siguen andando con la variable en el archivo.
+  assert.equal(
+    evaluarDrizzleKit({ url: SUPABASE, argumentos: ["generate"], permiso: "1", permisoEnArchivo: true })
+      .permitido,
+    true,
+  );
+});
+
+test("drizzle-kit: push no corre contra una base remota, ni con el permiso", () => {
+  const veredicto = evaluarDrizzleKit({ url: SUPABASE, argumentos: ["push"], permiso: "1" });
+  assert.equal(veredicto.permitido, false);
+  if (veredicto.permitido) return;
+  assert.match(veredicto.motivo, /npm run db:migrate -- --produccion/);
+  assert.doesNotMatch(veredicto.motivo, new RegExp(VARIABLE_DRIZZLE_KIT));
+  // Contra la base local, push sigue andando.
+  assert.equal(evaluarDrizzleKit({ url: undefined, argumentos: ["push"], permiso: undefined }).permitido, true);
+});
+
+test("drizzle-kit: con una URL que no se entiende no se abre nada, ni con el permiso", () => {
+  const veredicto = evaluarDrizzleKit({
+    url: "postgresql://postgres:cla#ve@@:::/postgres",
+    argumentos: ["studio"],
+    permiso: "1",
+  });
+  assert.equal(veredicto.permitido, false);
+  if (veredicto.permitido) return;
+  assert.ok(!veredicto.motivo.includes("cla#ve"), veredicto.motivo);
 });

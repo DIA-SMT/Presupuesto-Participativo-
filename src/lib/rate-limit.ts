@@ -6,6 +6,7 @@ import { createHash, createHmac } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { consultar } from "@/db";
 import { esEntornoProductivo, pimientaDniSiHay } from "@/lib/empadronamiento";
+import { secretoDeSesionValido } from "@/lib/secreto-sesion";
 
 export type Resultado = {
   permitido: boolean;
@@ -49,12 +50,65 @@ export async function consumir(
   };
 }
 
+export type Tope = { maximo: number; ventanaSegundos: number };
+
+/**
+ * El tope de una accion del vecino (presentar una idea, declarar el distrito,
+ * votar): por persona si tiene sesion de CIDITUC, por IP si no la tiene.
+ *
+ * Antes era solo por IP, y la IP la comparten una asamblea con su Wi-Fi, un
+ * CIC, una oficina municipal o el CGNAT de una operadora: la sexta idea de la
+ * hora, o la declaracion de distrito numero 31, rebotaban para alguien que no
+ * habia hecho nada. El panel ya habia chocado con lo mismo y paso a un tope por
+ * cuenta (ver src/app/admin/ideas/acciones.ts).
+ *
+ * Los dos contadores estan separados a proposito: quien manda pedidos SIN
+ * sesion (un `curl` con el Origin puesto a mano pasa `exigirMismoOrigen`) solo
+ * gasta el de su IP, que es el de los pedidos anonimos, y no le corta la accion
+ * a nadie que entro con su cuenta desde la misma red. Con sesion, el tope de
+ * la persona es lo que frena una carga automatizada: cada sesion es una cuenta
+ * de CIDITUC verificada.
+ *
+ * La sesion se lee de la cookie firmada, sin consultar la base: se puede mirar
+ * antes del tope sin abrirle a nadie una consulta gratis.
+ */
+export async function consumirDelVecino(
+  prefijo: string,
+  votanteId: number | null | undefined,
+  request: Request,
+  topes: { conSesion: Tope; sinSesion: Tope },
+): Promise<Resultado> {
+  if (votanteId != null) {
+    return consumir(
+      `${prefijo}:v:${votanteId}`,
+      topes.conSesion.maximo,
+      topes.conSesion.ventanaSegundos,
+    );
+  }
+  return consumir(
+    `${prefijo}:${hashearIp(ipDe(request))}`,
+    topes.sinSesion.maximo,
+    topes.sinSesion.ventanaSegundos,
+  );
+}
+
 /**
  * Hash de la IP. Se guarda hasheada y no en claro: alcanza para limitar abuso
  * y para detectar votos repetidos, sin conservar un dato personal identificable.
  */
 export function hashearIp(ip: string): string {
   return createHash("sha256").update(`${ip}:${pimientaIp()}`).digest("hex");
+}
+
+/**
+ * Hash de otro identificador que haga de clave de un tope, como el correo del
+ * login del panel (ver src/lib/tope-ingreso-admin.ts). La misma pimienta que la
+ * IP y por lo mismo: en `rate_limit` no queda ningun dato en claro, y sin la
+ * pimienta no se puede recorrer una lista de correos para ver cuales estan.
+ * Lleva su propio prefijo para que nunca coincida con el hash de una IP.
+ */
+export function hashearParaLimite(valor: string): string {
+  return createHash("sha256").update(`clave:${valor}:${pimientaIp()}`).digest("hex");
 }
 
 /** Etiqueta de la derivacion: cambiarla cambia todos los hashes de IP. */
@@ -101,8 +155,11 @@ function pimientaIp(): string {
   const delDni = pimientaDniSiHay();
   if (delDni) return derivar(delDni);
 
+  // El mismo control que las sesiones (src/lib/secreto-sesion.ts): ademas del
+  // largo rechaza el relleno de la plantilla, que es publico y dejaria la IP
+  // hasheada con una pimienta conocida.
   const sesion = process.env.SESSION_SECRET;
-  if (sesion && sesion.length >= 32) {
+  if (secretoDeSesionValido(sesion)) {
     avisarUnaVez(
       "[rate-limit] Falta DNI_PEPPER (y no hay IP_PEPPER): la IP se hashea con " +
         "una derivada de SESSION_SECRET. Configurar DNI_PEPPER; al hacerlo, los " +

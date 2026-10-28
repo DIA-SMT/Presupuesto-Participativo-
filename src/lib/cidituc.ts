@@ -70,9 +70,10 @@ export const RUTA_INGRESO = "/auth/cidituc/ingresar";
  * fabricado por otro no puede traer el numero que esta en LA cookie de la
  * victima. Es lo mismo que ya hace UrbanIA.
  *
- * Dura 10 minutos y es de un solo uso. Efecto conocido y aceptado: si alguien
- * abre el ingreso en dos pestañas, la segunda pisa la cookie de la primera y la
- * vuelta de la primera falla con "estado"; el mensaje le dice que entre de nuevo.
+ * Dura una hora (ver `DURACION_ESTADO`) y es de un solo uso. Efecto conocido y
+ * aceptado: si alguien abre el ingreso en dos pestañas, la segunda pisa la
+ * cookie de la primera y la vuelta de la primera falla con "estado"; el mensaje
+ * le dice que entre de nuevo.
  *
  * En produccion el nombre lleva el prefijo __Host- (src/lib/cookies.ts). Aca
  * importa mas que en ningun lado: si otro sistema de *.smt.gob.ar pudiera
@@ -81,7 +82,18 @@ export const RUTA_INGRESO = "/auth/cidituc/ingresar";
  * callback, siempre con este nombre y con `atributosCookie()`.
  */
 export const COOKIE_ESTADO = nombreCookie("pp_cidituc_estado");
-export const DURACION_ESTADO = 600;
+/**
+ * Una hora, en segundos. Es el maxAge de las dos cookies, la del estado y la
+ * del destino, y tiene que cubrir TODO lo que la persona hace en el Derivador
+ * antes de volver. Eran 10 minutos, y quien saca su cuenta de CIDITUC en el
+ * camino (datos, validacion, contraseña) tarda mas: volvia con un token valido,
+ * la cookie ya vencida, y terminaba en error=estado, que es justo el publico
+ * nuevo de la etapa de ideas. Alargarlo no debilita lo de arriba: el numero
+ * sigue siendo al azar, de un solo uso (el callback lo borra pase lo que pase)
+ * y atado a la cookie __Host- de ESTE navegador, que un link fabricado por otro
+ * no trae aunque dure un dia. Lo fija scripts/tests/cidituc.test.ts.
+ */
+export const DURACION_ESTADO = 60 * 60;
 
 /**
  * Para que entro la persona (votar o presentar una idea, ver
@@ -97,10 +109,21 @@ export function nuevoEstado(): string {
   return randomBytes(16).toString("hex");
 }
 
-/** Comparacion en tiempo constante: es una credencial, aunque sea de un rato. */
+/**
+ * Comparacion en tiempo constante: es una credencial, aunque sea de un rato.
+ *
+ * El largo se compara en BYTES, no en caracteres: el `state` de la vuelta lo
+ * escribe cualquiera en la URL, y un "é" mide 1 caracter pero 2 bytes en UTF-8.
+ * Con el largo del string, un state de 32 caracteres con un tilde pasaba el
+ * corte y timingSafeEqual tiraba por buffers de distinto largo: el callback
+ * respondia 500 en vez de volver con error=estado.
+ */
 export function mismoEstado(uno: string | null | undefined, otro: string | null | undefined): boolean {
-  if (!uno || !otro || uno.length !== otro.length) return false;
-  return timingSafeEqual(Buffer.from(uno), Buffer.from(otro));
+  if (!uno || !otro) return false;
+  const a = Buffer.from(uno, "utf8");
+  const b = Buffer.from(otro, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 /**

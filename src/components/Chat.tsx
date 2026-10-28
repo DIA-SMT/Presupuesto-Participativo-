@@ -23,6 +23,8 @@
 import Image from "next/image";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import migueBurbuja from "../../public/images/presupuesto-participativo/migue-burbuja.webp";
+import { anuncioDeRespuesta } from "@/lib/chat-anuncio";
+import { cerrarCortada } from "@/lib/chat-cortada";
 import { rutaInterna } from "@/lib/chat-enlaces";
 import { historialParaEnviar } from "@/lib/chat-historial";
 import { usarArrastre } from "./usar-arrastre";
@@ -89,6 +91,12 @@ export default function Chat({
   const [borrador, setBorrador] = useState("");
   const [cargando, setCargando] = useState(false);
   const [herramienta, setHerramienta] = useState<string | null>(null);
+  /**
+   * Si la ultima respuesta se pidio en esta pagina. La region que lee el lector
+   * de pantalla (ver `anuncio`) anuncia solo esas: la conversacion recuperada de
+   * sessionStorage al cargar no se lee de nuevo en cada pagina que se abre.
+   */
+  const [anunciar, setAnunciar] = useState(false);
 
   const fin = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
@@ -113,8 +121,12 @@ export default function Chat({
   useEffect(() => {
     try {
       // El globo vacio de una respuesta en curso no se guarda: si la pestaña se
-      // cierra antes de que llegue, quedaria vacio para siempre.
-      const guardables = mensajes.filter((m) => m.texto.trim());
+      // cierra antes de que llegue, quedaria vacio para siempre. La que ya trae
+      // texto se guarda en cada trozo, pero cerrada como cortada
+      // (src/lib/chat-cortada.ts): si la pagina se recarga a mitad (un enlace
+      // de la misma respuesta es un `<a href>` comun), al volver no aparece
+      // como si estuviera completa. Cuando llega `fin`, la entera la reemplaza.
+      const guardables = mensajes.filter((m) => m.texto.trim()).map(cerrarCortada);
       if (guardables.length) {
         sessionStorage.setItem(CLAVE_SESION, JSON.stringify(guardables.slice(-12)));
       }
@@ -149,6 +161,7 @@ export default function Chat({
     setBorrador("");
     setCargando(true);
     setHerramienta(null);
+    setAnunciar(true);
 
     abortar.current?.abort();
     const controlador = new AbortController();
@@ -216,10 +229,15 @@ export default function Chat({
               })),
             );
           } else if (evento.tipo === "error") {
+            // El servidor puede fallar despues de mandar parte del texto: lo que
+            // llego se conserva y se le suma el aviso, para que el borde rojo no
+            // quede sobre media respuesta sin explicacion.
             setMensajes((previos) =>
               reemplazarUltimo(previos, (m) => ({
                 ...m,
-                texto: m.texto || evento.mensaje,
+                texto: m.texto.trim()
+                  ? `${m.texto.trimEnd()}\n\n${evento.mensaje}`
+                  : evento.mensaje,
                 error: true,
               })),
             );
@@ -229,9 +247,11 @@ export default function Chat({
 
       // Un stream que termina sin texto ni error dejaba el globo vacio. Ahora
       // dice que no llego nada, y como aviso de error no viaja como contexto.
+      // Uno que termina con texto pero sin `fin` tambien se corto: el servidor
+      // cierra toda respuesta con `fin` o `error`.
       setMensajes((previos) =>
         reemplazarUltimo(previos, (m) =>
-          m.texto.trim() ? m : { ...m, texto: SIN_RESPUESTA, error: true },
+          m.texto.trim() ? cerrarCortada(m) : { ...m, texto: SIN_RESPUESTA, error: true },
         ),
       );
     } catch (causa) {
@@ -247,20 +267,38 @@ export default function Chat({
         });
         return;
       }
+      // Con texto en el globo, la red se corto a mitad de la lectura (un
+      // TypeError de `lector.read()`). Antes quedaba lo que habia llegado con el
+      // borde rojo y sin explicacion; ahora lleva el aviso de que se corto. Una
+      // respuesta que ya habia cerrado con `fin` queda como esta.
       setMensajes((previos) =>
-        reemplazarUltimo(previos, (m) => ({
-          ...m,
-          texto:
-            m.texto ||
-            (causa instanceof Error ? causa.message : "No se pudo consultar en este momento."),
-          error: true,
-        })),
+        reemplazarUltimo(previos, (m) =>
+          m.texto.trim()
+            ? cerrarCortada(m)
+            : {
+                ...m,
+                texto:
+                  causa instanceof Error ? causa.message : "No se pudo consultar en este momento.",
+                error: true,
+              },
+        ),
       );
     } finally {
       setCargando(false);
       setHerramienta(null);
     }
   }
+
+  // Lo que dice la region viva de abajo: la espera mientras llega la respuesta
+  // y, al terminar, la respuesta entera o el aviso de error (ver
+  // src/lib/chat-anuncio.ts). Sale del estado y no se guarda aparte: el globo y
+  // el anuncio no pueden decir cosas distintas.
+  const ultimo = mensajes.at(-1);
+  const anuncio = cargando
+    ? "Migue está respondiendo…"
+    : anunciar && ultimo?.rol === "asistente"
+      ? anuncioDeRespuesta(ultimo)
+      : "";
 
   return (
     <>
@@ -270,6 +308,16 @@ export default function Chat({
         Podés mover el chat de consultas: arrastralo desde acá, o con este control enfocado usá las
         flechas del teclado (con Shift, pasos más grandes) y la tecla Inicio para devolverlo a su
         lugar.
+      </p>
+
+      {/* La region viva del chat. Esta SIEMPRE en el DOM, afuera del panel, por
+          lo mismo que la de AvisoUrgente: tiene que existir antes de que le
+          llegue el texto para que el lector lo anuncie. Al enviar, el foco se
+          queda en el campo y la conversacion no es una region viva (anunciar
+          cada trozo del streaming seria ruido), asi que sin esta no se oia ni
+          la espera, ni la respuesta, ni el aviso del tope por hora. */}
+      <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {anuncio}
       </p>
 
       <button
@@ -362,6 +410,16 @@ export default function Chat({
               <button
                 type="button"
                 onClick={() => {
+                  // Con una respuesta en camino, Limpiar la corta. Antes solo
+                  // vaciaba la lista: el pedido seguia, `cargando` quedaba en
+                  // true hasta que terminara una respuesta que ya no tenia globo
+                  // donde mostrarse, y mientras tanto las sugerencias, Enter y
+                  // Enviar no hacian nada, sin ningun indicador de por que. El
+                  // corte lo levanta el catch de AbortError de `enviar`, y llega
+                  // hasta el proveedor (`transmitir`, src/app/api/chat/route.ts):
+                  // el modelo deja de generar una respuesta que nadie va a leer.
+                  abortar.current?.abort();
+                  setAnunciar(false);
                   setMensajes([]);
                   try {
                     sessionStorage.removeItem(CLAVE_SESION);
@@ -388,7 +446,10 @@ export default function Chat({
             </button>
           </header>
 
-          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
+          <div
+            aria-busy={cargando}
+            className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm"
+          >
             {mensajes.length === 0 && (
               <>
                 <Burbuja rol="asistente">{renderizar(bienvenida)}</Burbuja>
@@ -411,32 +472,44 @@ export default function Chat({
               </>
             )}
 
-            {mensajes.map((mensaje, indice) => (
-              <Burbuja key={indice} rol={mensaje.rol} error={mensaje.error}>
-                {mensaje.texto ? (
-                  renderizar(mensaje.texto)
-                ) : cargando && indice === mensajes.length - 1 ? (
-                  <Escribiendo herramienta={herramienta} />
-                ) : null}
-                {referenciasInternas(mensaje.referencias).length ? (
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {referenciasInternas(mensaje.referencias).map((referencia) => (
-                      <a
-                        key={referencia.url}
-                        href={referencia.url}
-                        className="rounded-lg px-2.5 py-1 text-xs font-medium underline decoration-dotted"
-                        style={{
-                          background: "var(--fondo-suave)",
-                          border: "1px solid var(--borde)",
-                        }}
-                      >
-                        {referencia.titulo}
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
-              </Burbuja>
-            ))}
+            {mensajes.map((mensaje, indice) => {
+              const enCurso = cargando && indice === mensajes.length - 1;
+              return (
+                <Burbuja key={indice} rol={mensaje.rol} error={mensaje.error}>
+                  {mensaje.texto ? (
+                    renderizar(mensaje.texto)
+                  ) : enCurso ? (
+                    <Escribiendo herramienta={herramienta} />
+                  ) : null}
+                  {/* El modelo a veces escribe algo antes de pedir una herramienta
+                      ("Voy a ubicar el barrio."). Con ese texto en el globo, el
+                      indicador de arriba no se dibujaba, y mientras corria la
+                      herramienta la respuesta parecia congelada: va debajo. */}
+                  {mensaje.texto && enCurso && herramienta ? (
+                    <div className="mt-2">
+                      <Escribiendo herramienta={herramienta} />
+                    </div>
+                  ) : null}
+                  {referenciasInternas(mensaje.referencias).length ? (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {referenciasInternas(mensaje.referencias).map((referencia) => (
+                        <a
+                          key={referencia.url}
+                          href={referencia.url}
+                          className="rounded-lg px-2.5 py-1 text-xs font-medium underline decoration-dotted"
+                          style={{
+                            background: "var(--fondo-suave)",
+                            border: "1px solid var(--borde)",
+                          }}
+                        >
+                          {referencia.titulo}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </Burbuja>
+              );
+            })}
             <div ref={fin} />
           </div>
 
@@ -528,6 +601,9 @@ function reemplazarUltimo(
  * Lo que se recupera de sessionStorage, validado mensaje por mensaje. Es texto
  * que cualquier script de la pagina o una version vieja del widget pudo
  * escribir: lo que no tiene la forma esperada, o no tiene texto, no entra.
+ *
+ * Una respuesta sin `modo` ni `error` vuelve cerrada como cortada: la version
+ * anterior del widget guardaba los trozos de una respuesta en curso tal cual.
  */
 function leerGuardados(crudo: unknown): Mensaje[] {
   if (!Array.isArray(crudo)) return [];
@@ -537,21 +613,23 @@ function leerGuardados(crudo: unknown): Mensaje[] {
     const m = item as Record<string, unknown>;
     if ((m.rol !== "usuario" && m.rol !== "asistente") || typeof m.texto !== "string") continue;
     if (!m.texto.trim()) continue;
-    mensajes.push({
-      rol: m.rol,
-      texto: m.texto,
-      error: m.error === true || undefined,
-      modo: m.modo === "ia" || m.modo === "buscador" ? m.modo : undefined,
-      firma: typeof m.firma === "string" ? m.firma : undefined,
-      referencias: Array.isArray(m.referencias)
-        ? (m.referencias as unknown[]).filter(
-            (r): r is Referencia =>
-              Boolean(r) &&
-              typeof (r as Referencia).titulo === "string" &&
-              typeof (r as Referencia).url === "string",
-          )
-        : undefined,
-    });
+    mensajes.push(
+      cerrarCortada<Mensaje>({
+        rol: m.rol,
+        texto: m.texto,
+        error: m.error === true || undefined,
+        modo: m.modo === "ia" || m.modo === "buscador" ? m.modo : undefined,
+        firma: typeof m.firma === "string" ? m.firma : undefined,
+        referencias: Array.isArray(m.referencias)
+          ? (m.referencias as unknown[]).filter(
+              (r): r is Referencia =>
+                Boolean(r) &&
+                typeof (r as Referencia).titulo === "string" &&
+                typeof (r as Referencia).url === "string",
+            )
+          : undefined,
+      }),
+    );
   }
   return mensajes;
 }

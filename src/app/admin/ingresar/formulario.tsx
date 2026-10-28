@@ -7,7 +7,7 @@
  * entre correo inexistente y contrasena equivocada, y eso es a proposito. No
  * agregarle detalle ni "ayudas" que dejen enumerar cuentas.
  */
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { ingresarAdmin } from "../acciones";
 
 /** Borde de un campo: es un control, va con --borde-control (WCAG 1.4.11). */
@@ -20,13 +20,27 @@ const ESTILO_CAMPO = {
 export default function FormularioIngreso() {
   const [estado, accion, pendiente] = useActionState(ingresarAdmin, null);
 
+  // El correo del ultimo envio. Un <form action> se resetea solo al terminar
+  // cada envio, tambien con "Correo o contraseña incorrectos.", y el correo se
+  // borraba junto con la contrasena. Puesto como valor por defecto, el reset lo
+  // deja; la contrasena si se vacia, y esta bien. No es un campo controlado a
+  // proposito: el gestor de contrasenas lo puede completar antes de que cargue
+  // React, sin que React se entere, y un campo controlado lo vaciaria en el
+  // primer render (el de "Ingresando…").
+  const [correo, setCorreo] = useState("");
+
   return (
-    <form action={accion} className="mt-6 grid gap-4">
+    <form
+      action={accion}
+      onSubmit={(evento) => setCorreo(String(new FormData(evento.currentTarget).get("email") ?? ""))}
+      className="mt-6 grid gap-4"
+    >
       <label className="grid gap-1.5 text-sm">
         <span className="font-medium">Correo</span>
         <input
           name="email"
           type="email"
+          defaultValue={correo}
           required
           autoComplete="username"
           autoCapitalize="none"

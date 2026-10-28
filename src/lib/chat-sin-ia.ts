@@ -29,7 +29,7 @@ import {
 import { ideasDelBarrio, ubicarBarriosEnFrase, type BarrioUbicado } from "./barrios";
 import { contextoDelSitio } from "./chat-contexto";
 import { responderSobreElSitio } from "./chat-sin-ia-sitio";
-import { conEdicion, votacionTerminada } from "./ediciones";
+import { conEdicion, ganadorPorProclamar, votacionTerminada } from "./ediciones";
 import {
   ETIQUETA_ESTADO,
   ETIQUETA_ETAPA,
@@ -159,17 +159,20 @@ export async function responderSinIA(
       ...(yaVoto
         ? [
             `- Proyectos ganadores: **${stats.ganadores}**`,
-            `- Votos registrados en los ganadores: **${formatearNumero(stats.votos)}**`,
+            `- Votos registrados en los ganadores: **${formatearNumero(stats.votosGanadores)}**`,
           ]
         : []),
       ...Object.entries(stats.porEstado).map(
         ([estado, total]) => `- ${ETIQUETA_ESTADO[estado] ?? estado}: ${total}`,
       ),
     ];
+    // "Publicadas", como la portada y /distritos/N: las del formulario entran
+    // sin publicar hasta que el equipo las revisa, y en plena etapa de ideas
+    // "todavia no hay ideas presentadas" con ideas recibidas era falso.
     const lineas = [
       stats.ideas
-        ? `**Edición ${stats.anio}** — ${cantidad(stats.ideas, "idea presentada", "ideas presentadas")} en los 20 distritos.`
-        : `**Edición ${stats.anio}** — todavía no hay ideas presentadas.`,
+        ? `**Edición ${stats.anio}** — ${cantidad(stats.ideas, "idea publicada", "ideas publicadas")} en los 20 distritos.`
+        : `**Edición ${stats.anio}** — todavía no hay ideas publicadas.`,
       ...(items.length ? ["", ...items] : []),
     ];
     const referencias = [
@@ -182,6 +185,14 @@ export async function responderSinIA(
         `Sin proyecto ganador: distrito ${stats.distritosSinGanador.join(", ")}.`,
       );
     }
+    // Votaron, pero el ganador se proclama de a un distrito: hasta entonces
+    // iban en la linea de arriba, como si se hubieran quedado sin proyecto.
+    if (yaVoto && stats.distritosPorProclamar.length) {
+      lineas.push(
+        "",
+        `Ganador todavía sin proclamar (se publica cuando se proclame): distrito ${stats.distritosPorProclamar.join(", ")}.`,
+      );
+    }
     if (!yaVoto) {
       // Antes de votar, "0 ganadores" y "sin ganador: distritos 1 a 20" se
       // leian como un resultado.
@@ -192,7 +203,7 @@ export async function responderSinIA(
       const anterior = await getUltimaEdicionTerminadaConGanadores();
       if (anterior && anterior.id !== edicion.id) {
         lineas.push(
-          `Los últimos ganadores son los de la edición ${anterior.anio}: preguntá por *ganadores ${anterior.anio}*.`,
+          `Los últimos ganadores son los de la edición ${anterior.anio}: preguntá por «ganadores ${anterior.anio}».`,
         );
         referencias.unshift({
           titulo: `Ganadores de la edición ${anterior.anio}`,
@@ -208,7 +219,7 @@ export async function responderSinIA(
     const distrito = await getDistrito(numero, edicion.id);
     if (distrito) {
       const lineas = [
-        `**Distrito ${numero}** — ${cantidad(distrito.ideas.length, "idea presentada", "ideas presentadas")} en la edición ${edicion.anio}.`,
+        `**Distrito ${numero}** — ${cantidad(distrito.ideas.length, "idea publicada", "ideas publicadas")} en la edición ${edicion.anio}.`,
       ];
       const referencias = [{ titulo: `Distrito ${numero}`, url: enlace(`/distritos/${numero}`) }];
       if (distrito.referencia) {
@@ -227,6 +238,12 @@ export async function responderSinIA(
           titulo: distrito.ganador.titulo,
           url: enlace(`/proyectos/${distrito.ganador.slug}`),
         });
+      } else if (ganadorPorProclamar(edicion.etapa, distrito.conFactibles)) {
+        // Voto, pero el ganador se proclama de a un distrito desde el panel.
+        lineas.push(
+          "",
+          "La votación terminó y el ganador de este distrito todavía no se proclamó: se publica cuando se proclame.",
+        );
       } else if (votacionTerminada(edicion.etapa)) {
         lineas.push("", "Este distrito no tiene proyecto ganador en esta edición.");
       } else {
@@ -287,8 +304,13 @@ export async function responderSinIA(
       };
     }
     if (votacionTerminada(edicion.etapa)) {
+      // Entre el pase a seguimiento y la primera proclamacion no hay ganadores
+      // con la votacion hecha: no es que no los tenga, es que faltan proclamar.
+      const { distritosPorProclamar } = await getEstadisticas(edicion);
       return {
-        texto: `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`,
+        texto: distritosPorProclamar.length
+          ? `La votación de la edición ${edicion.anio} terminó. Los proyectos ganadores se publican a medida que se proclamen.`
+          : `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`,
         referencias: [{ titulo: "Transparencia", url: enlace("/transparencia") }],
       };
     }
@@ -391,8 +413,17 @@ export async function responderSinIA(
     const anioLista = deOtra ? (deOtra.activa ? null : deOtra.anio) : anioEnEnlaces;
     return {
       texto: [
+        // Abre con los resultados y no con lo que falta. Empezaba "En la edición
+        // 2026 no encontré nada con eso.", y el panel decide si el buscador
+        // resolvio la consulta por la primera oracion (`consultaResuelta`, en
+        // src/lib/chat-temas.ts): con ocho ideas en la respuesta, la consulta
+        // iba a "Lo que Migue no pudo contestar". Traer lo de otra edicion no es
+        // quedarse sin datos, igual que en las herramientas del modelo.
         ...(deOtra
-          ? [`En la edición ${edicion.anio} no encontré nada con eso. En la edición ${deOtra.anio}:`, ""]
+          ? [
+              `Resultados de la edición ${deOtra.anio} (en la ${edicion.anio} todavía no hay ideas publicadas que coincidan):`,
+              "",
+            ]
           : []),
         categoria
           ? `Ideas de la categoría **${lista[0].categoriaNombre}** (${lista.length} de las que encontré):`
@@ -414,15 +445,18 @@ export async function responderSinIA(
   }
 
   return {
+    // Las consultas de ejemplo van entre comillas y no en *italica*: el widget
+    // (enLinea, src/components/Chat.tsx) entiende negritas y enlaces, nada
+    // mas, y el asterisco simple le llegaba tal cual al vecino.
     texto: [
       "No encontré nada con esa consulta. Probá con:",
       "",
-      "- un número de distrito: *distrito 7*",
-      "- el nombre de tu barrio: *Villa Urquiza*",
-      "- *proyectos ganadores*",
-      "- *cuántas ideas se presentaron*",
-      "- *cómo voto*",
-      "- *cómo presento una idea*",
+      "- un número de distrito: «distrito 7»",
+      "- el nombre de tu barrio: «Villa Urquiza»",
+      "- «proyectos ganadores»",
+      "- «cuántas ideas se presentaron»",
+      "- «cómo voto»",
+      "- «cómo presento una idea»",
     ].join("\n"),
     // Con un año en la pregunta, las vistas de esa edicion.
     referencias: [

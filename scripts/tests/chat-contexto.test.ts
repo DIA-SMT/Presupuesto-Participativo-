@@ -62,6 +62,20 @@ test("el contexto dice el momento y las fechas de la edicion, como la portada", 
   assert.equal(ctx.aviso, null);
 });
 
+test("el modelo sabe que dia es hoy, para no dar por vigente una fecha que ya paso", async () => {
+  const { formatearFecha, hoyEnTucuman } = await import("../../src/lib/formato");
+  const ctx = await contexto.contextoDelSitio(await vigente());
+  assert.equal(ctx.hoy, hoyEnTucuman(), "el mismo dia con el que decide la portada");
+
+  const instrucciones = contexto.contextoParaElModelo(ctx);
+  assert.ok(instrucciones.includes(`Hoy es ${formatearFecha(ctx.hoy)}`), instrucciones.slice(0, 300));
+  assert.match(instrucciones, /ya pasó, decilo en pasado/);
+
+  // La fecha va en la linea, no la del momento en que se escribio la prueba.
+  const otroDia = contexto.contextoParaElModelo({ ...ctx, hoy: "2031-01-15" });
+  assert.match(otroDia, /Hoy es 15 de enero de 2031/);
+});
+
 test("el aviso urgente llega al chat, y un aviso vacio es no tener aviso", async () => {
   await guardarTexto("aviso-urgente", "La votación se extiende hasta el viernes.");
   let ctx = await contexto.contextoDelSitio(await vigente());

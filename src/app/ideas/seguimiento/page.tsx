@@ -70,6 +70,7 @@ async function consultarSeguimiento(
       ok: true,
       idea: {
         anio: edicion.anio,
+        etapa: edicion.etapa,
         numero: idea.numero ?? numero,
         titulo: idea.titulo,
         estado: idea.estado,

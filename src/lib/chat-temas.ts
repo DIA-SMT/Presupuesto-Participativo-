@@ -215,9 +215,16 @@ const PATRONES: Array<{ tema: TemaConsulta; patron: RegExp }> = MARCADORES.map(
  * pregunta que lo nombre caeria en el tema de la plata. Se saca antes de buscar
  * marcadores: "que es el presupuesto participativo" no es una pregunta de
  * montos.
+ *
+ * Lo mismo pasa con el saludo: "buen dia" / "buenos dias" es como arranca casi
+ * cualquier pregunta aca y trae la palabra "dia", que es marcador de
+ * cronograma. Se saca el saludo entero (y no la palabra "dia", que sigue
+ * contando en "q dia cierra todo esto").
  */
 function textoDeBusqueda(pregunta: string): string {
-  return normalizar(pregunta).replace(/presupuesto participativo/g, " ");
+  return normalizar(pregunta)
+    .replace(/presupuesto participativo/g, " ")
+    .replace(/\b(buen|buenos) dias?\b|\bbuenas (tardes|noches)\b/g, " ");
 }
 
 /**
@@ -306,10 +313,27 @@ export function temaDeConsulta(
 // ---------------------------------------------------------------------------
 
 /**
- * Frases con las que una respuesta admite que el dato no esta. Son las mismas
- * que el prompt de sistema le pide usar cuando falta informacion y las que
- * escribe el buscador deterministico ("No encontre nada con esa consulta").
- * Se comparan sobre la respuesta normalizada.
+ * Frases con las que una respuesta admite que el dato no esta. Se comparan
+ * sobre la respuesta normalizada (minusculas, sin tildes).
+ *
+ * Tienen que cubrir TODAS las formas que el prompt le pide a Migue para decir
+ * que algo falta, y las que escribe el buscador deterministico. Si una
+ * instruccion del prompt pide una frase que no esta aca, esas respuestas se
+ * registran como resueltas y nunca llegan a "Lo que Migue no pudo contestar",
+ * que es justo donde el equipo ve que le falta contenido al sitio. Las de hoy:
+ *
+ *  - route.ts: "no está cargado", "no publicado todavía", "no encontraste",
+ *    y para lo que no figura en las secciones fijas, "el sitio no lo tiene
+ *    publicado".
+ *  - chat-contexto.ts: "el reglamento oficial todavía no se publicó y el sitio
+ *    no la tiene definida" (reglas fuera de la lista confirmada) y "no hay
+ *    ninguna anunciada" (asambleas sin novedades).
+ *  - chat-sin-ia.ts: "No encontré nada con esa consulta" y "No hay datos de una
+ *    edición X en el sitio".
+ *
+ * scripts/tests/chat-temas.test.ts lee esas instrucciones de los archivos y
+ * falla si una deja de estar o si deja de detectarse: al cambiar el texto de
+ * una, hay que sumar la frase nueva aca.
  */
 const FRASES_SIN_DATO = [
   "no encontre",
@@ -329,6 +353,19 @@ const FRASES_SIN_DATO = [
   "no esta publicado",
   "no esta publicada",
   "no publicado todavia",
+  // "el sitio no lo tiene publicado" y sus variantes ("todavia no tiene
+  // publicadas las fechas").
+  "no lo tiene publicad",
+  "no la tiene publicad",
+  "no tiene publicad",
+  "no se publico",
+  "no la tiene definida",
+  "no lo tiene definido",
+  "no tiene definid",
+  "no hay ninguna anunciada",
+  "no hay ninguno anunciado",
+  "no hay datos",
+  "sin fechas cargadas",
   "no puedo responder",
   "no lo tengo",
   "no lo se",

@@ -27,6 +27,7 @@ import { consultar, db } from "./index";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import { hashearDni } from "@/lib/empadronamiento";
 import { normalizar } from "@/lib/texto";
+import { ganadorPorProclamar } from "@/lib/ediciones";
 import type { TemaConsulta } from "@/lib/chat-temas";
 import {
   admins,
@@ -216,6 +217,12 @@ export type EdicionListada = {
   ideas: number;
   /** Votos emitidos por este sitio (filas de la tabla `votos`). */
   votos: number;
+  /**
+   * Suma del contador `ideas.votos`, sin descartadas. En una edicion migrada
+   * (la 2025) es el unico lugar donde estan sus votos: no tiene filas en
+   * `votos`. Se combina con `votos` mediante `votosDeLaEdicion`.
+   */
+  votosEnIdeas: number;
 };
 
 export async function getEdiciones(): Promise<EdicionListada[]> {
@@ -231,6 +238,7 @@ export async function getEdiciones(): Promise<EdicionListada[]> {
     votacion_hasta: string | null;
     ideas: number;
     votos: number;
+    votos_en_ideas: number;
   }>(sql`
     SELECT e.id,
            e.anio,
@@ -243,7 +251,9 @@ export async function getEdiciones(): Promise<EdicionListada[]> {
            e.votacion_hasta::text  AS votacion_hasta,
            (SELECT count(*) FROM ideas i
              WHERE i.edicion_id = e.id AND i.estado <> 'descartado')::int AS ideas,
-           (SELECT count(*) FROM votos v WHERE v.edicion_id = e.id)::int AS votos
+           (SELECT count(*) FROM votos v WHERE v.edicion_id = e.id)::int AS votos,
+           (SELECT coalesce(sum(i.votos), 0) FROM ideas i
+             WHERE i.edicion_id = e.id AND i.estado <> 'descartado')::int AS votos_en_ideas
       FROM ediciones e
      ORDER BY e.anio DESC
   `);
@@ -260,6 +270,7 @@ export async function getEdiciones(): Promise<EdicionListada[]> {
     votacionHasta: f.votacion_hasta,
     ideas: Number(f.ideas),
     votos: Number(f.votos),
+    votosEnIdeas: Number(f.votos_en_ideas),
   }));
 }
 
@@ -309,6 +320,12 @@ export type DistritoVista = {
   referencia: string | null;
   centroide: { lat: number; lon: number };
   ideas: number;
+  /**
+   * Si tiene ideas factibles y publicadas, las que entran en el conteo. Sin
+   * ganador y con la votacion terminada, separa al distrito que espera su
+   * proclamacion del que quedo sin proyecto (ver `ganadorPorProclamar`).
+   */
+  conFactibles: boolean;
   ganador: {
     slug: string;
     titulo: string;
@@ -327,6 +344,7 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
     centroide_lat: string;
     centroide_lon: string;
     ideas: number;
+    factibles: number;
     g_slug: string | null;
     g_titulo: string | null;
     g_votos: number | null;
@@ -340,6 +358,7 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
            d.centroide_lat,
            d.centroide_lon,
            count(i.id) FILTER (WHERE i.publicada AND i.estado <> 'descartado')::int AS ideas,
+           count(i.id) FILTER (WHERE i.publicada AND i.estado = 'factible')::int AS factibles,
            g.slug        AS g_slug,
            g.titulo      AS g_titulo,
            g.votos       AS g_votos,
@@ -364,6 +383,7 @@ export async function getDistritos(edicionId: number): Promise<DistritoVista[]> 
     referencia: f.referencia,
     centroide: { lat: Number(f.centroide_lat), lon: Number(f.centroide_lon) },
     ideas: Number(f.ideas),
+    conFactibles: Number(f.factibles) > 0,
     ganador: f.g_slug
       ? {
           slug: f.g_slug,
@@ -410,6 +430,9 @@ export async function getDistrito(
     },
     ideas: lista,
     ganador: lista.find((i) => i.ganador) ?? null,
+    // `lista` ya viene publicada y sin descartadas: una factible de ahi es una
+    // del conteo (ver `DistritoVista.conFactibles`).
+    conFactibles: lista.some((i) => i.estado === "factible"),
   };
 }
 
@@ -515,12 +538,23 @@ export async function listarIdeas(filtro: FiltroIdeas): Promise<IdeaVista[]> {
     condiciones.push(inArray(ideas.estado, estados));
   }
   if (filtro.texto?.trim()) {
-    const patron = `%${filtro.texto.trim()}%`;
+    // Es la busqueda de los vecinos (/proyectos?q=) y la del chat, y se escribe
+    // sin tildes desde el celular: con un ILIKE pelado, "iluminacion" no
+    // encontraba "Iluminación" ni "guemes" a "Güemes". Mismo arreglo que la
+    // bandeja (ver `condicionesBandeja`), sin extensiones: lo buscado sin tildes
+    // contra los textos con las tildes sacadas por `translate`, y el barrio
+    // contra `barrio_normalizado`. Las mayusculas acentuadas van en el
+    // `translate` porque `lower()` no las baja con cualquier collation. Y `%` y
+    // `_` de lo que se escribio son letras: sin escaparlos, buscar "_" traia
+    // la edicion entera.
+    const patron = `%${escaparComodines(normalizar(filtro.texto))}%`;
+    const sinTildes = (columna: SQLWrapper) =>
+      sql`translate(${columna}, 'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun') ILIKE ${patron}`;
     const busqueda = or(
-      ilike(ideas.titulo, patron),
-      ilike(ideas.barrio, patron),
-      ilike(ideas.problema, patron),
-      ilike(ideas.solucion, patron),
+      sinTildes(ideas.titulo),
+      like(ideas.barrioNormalizado, patron),
+      sinTildes(ideas.problema),
+      sinTildes(ideas.solucion),
     );
     if (busqueda) condiciones.push(busqueda);
   }
@@ -639,9 +673,36 @@ export type Estadisticas = {
   anio: number;
   ideas: number;
   ganadores: number;
-  votos: number;
+  /**
+   * Todos los votos de la edicion: la suma de `votos` de las ideas publicadas
+   * y no descartadas, ganen o no. Es lo que se puede llamar "votos
+   * registrados".
+   */
+  votosTotales: number;
+  /**
+   * Solo los de los proyectos ganadores: el total de la columna de la tabla de
+   * /transparencia. Antes era el unico numero de votos y se llamaba `votos`, y
+   * asi la portada y el chat lo presentaban como el total de la edicion: en la
+   * 2025 decian 2.069 votos cuando las ideas suman 2.151, y entre el pase a
+   * seguimiento y la primera proclamacion la portada decia "0 votos
+   * registrados" con la votacion ya hecha.
+   */
+  votosGanadores: number;
   distritos: number;
+  /**
+   * Los que quedaron sin proyecto ganador. Solo tiene sentido con la votacion
+   * terminada (`votacionTerminada`), y aun asi no entra un distrito que espera
+   * su proclamacion: ese va en `distritosPorProclamar`.
+   */
   distritosSinGanador: number[];
+  /**
+   * Sin ganador TODAVIA: la edicion esta en seguimiento y el distrito tiene
+   * ideas factibles publicadas, pero no se proclamo (ver `ganadorPorProclamar`
+   * en src/lib/ediciones.ts). Antes iban con los de arriba, y entre el pase a
+   * seguimiento y la proclamacion el sitio decia que los 20 "no eligieron
+   * proyecto".
+   */
+  distritosPorProclamar: number[];
   porEstado: Record<string, number>;
   porCategoria: Array<{
     slug: string;
@@ -664,12 +725,14 @@ export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
   const [totales] = await consultar<{
     ideas: number;
     ganadores: number;
-    votos: number;
+    votos_totales: number;
+    votos_ganadores: number;
     presupuesto: string | null;
   }>(sql`
     SELECT count(*)::int AS ideas,
            count(*) FILTER (WHERE ganador)::int AS ganadores,
-           coalesce(sum(votos) FILTER (WHERE ganador), 0)::int AS votos,
+           coalesce(sum(votos), 0)::int AS votos_totales,
+           coalesce(sum(votos) FILTER (WHERE ganador), 0)::int AS votos_ganadores,
            sum(presupuesto_total) FILTER (WHERE ganador) AS presupuesto
       FROM ideas
      WHERE edicion_id = ${edicion.id} AND publicada AND estado <> 'descartado'
@@ -701,8 +764,15 @@ export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
      GROUP BY estado_presupuesto
   `);
 
-  const sinGanador = await consultar<{ numero: number }>(sql`
-    SELECT d.numero
+  // Los distritos sin ganador, y si tienen algo que proclamar: ideas factibles
+  // y publicadas, el mismo universo que `getVotosPorIdea`.
+  const sinGanador = await consultar<{ numero: number; con_factibles: boolean }>(sql`
+    SELECT d.numero,
+           EXISTS (
+             SELECT 1 FROM ideas f
+              WHERE f.distrito_id = d.id AND f.edicion_id = ${edicion.id}
+                AND f.estado = 'factible' AND f.publicada
+           ) AS con_factibles
       FROM distritos d
      WHERE NOT EXISTS (
        SELECT 1 FROM ideas i
@@ -711,14 +781,18 @@ export async function getEstadisticas(edicion: Edicion): Promise<Estadisticas> {
      )
      ORDER BY d.numero
   `);
+  const porProclamar = (fila: { con_factibles: boolean }) =>
+    ganadorPorProclamar(edicion.etapa, Boolean(fila.con_factibles));
 
   return {
     anio: edicion.anio,
     ideas: Number(totales.ideas),
     ganadores: Number(totales.ganadores),
-    votos: Number(totales.votos),
+    votosTotales: Number(totales.votos_totales),
+    votosGanadores: Number(totales.votos_ganadores),
     distritos: 20,
-    distritosSinGanador: sinGanador.map((f) => Number(f.numero)),
+    distritosSinGanador: sinGanador.filter((f) => !porProclamar(f)).map((f) => Number(f.numero)),
+    distritosPorProclamar: sinGanador.filter(porProclamar).map((f) => Number(f.numero)),
     porEstado: Object.fromEntries(estados.map((e) => [e.estado, Number(e.cantidad)])),
     porCategoria: cats.map((c) => ({ ...c, ideas: Number(c.ideas), ganadores: Number(c.ganadores) })),
     porEtapaPresupuesto: Object.fromEntries(etapas.map((e) => [e.etapa, Number(e.cantidad)])),
@@ -1780,10 +1854,16 @@ export async function getMatrizDistritoCategoria(
 
 export type PuntoSerie = { dia: string; cantidad: number };
 
-/** Votos por dia. El dia se resuelve en la zona horaria de la sesion de la base. */
+/**
+ * Votos por dia. El dia se corta en la zona de TUCUMAN, no en la de la sesion
+ * de la base, que en Supabase es UTC (ver getUsoChatPorDia): con
+ * `created_at::date` un voto de las 22:30 caia en la barra del dia siguiente, y
+ * los de la ultima noche de votacion en una barra posterior al cierre.
+ */
 export async function getSerieVotos(edicionId: number): Promise<PuntoSerie[]> {
   const filas = await consultar<{ dia: string; cantidad: number }>(sql`
-    SELECT (created_at::date)::text AS dia, count(*)::int AS cantidad
+    SELECT ((created_at AT TIME ZONE 'America/Argentina/Tucuman')::date)::text AS dia,
+           count(*)::int AS cantidad
       FROM votos
      WHERE edicion_id = ${edicionId}
      GROUP BY 1
@@ -1797,11 +1877,13 @@ export async function getSerieVotos(edicionId: number): Promise<PuntoSerie[]> {
  * solo se cae en `created_at` si falta: en las ediciones migradas `created_at`
  * es el dia en que corrio el seed, no el dia en que el vecino presento la idea.
  * Lo mismo con las que carga el equipo: `fecha` es el dia que dice el papel o
- * la asamblea, no el dia en que se tipeo. Sin las descartadas.
+ * la asamblea, no el dia en que se tipeo. Sin las descartadas. El respaldo en
+ * `created_at` corta el dia en hora de Tucuman, como getSerieVotos.
  */
 export async function getSerieIdeas(edicionId: number): Promise<PuntoSerie[]> {
   const filas = await consultar<{ dia: string; cantidad: number }>(sql`
-    SELECT (coalesce(fecha, created_at::date))::text AS dia, count(*)::int AS cantidad
+    SELECT (coalesce(fecha, (created_at AT TIME ZONE 'America/Argentina/Tucuman')::date))::text AS dia,
+           count(*)::int AS cantidad
       FROM ideas
      WHERE edicion_id = ${edicionId} AND estado <> 'descartado'
      GROUP BY 1
@@ -2069,6 +2151,32 @@ export async function buscarVotantePorDni(dni: string): Promise<VotanteMesaAyuda
     proveedor: fila.proveedor,
     alta: fila.alta,
   };
+}
+
+/**
+ * El distrito que dice HOY el padron para la persona de una sesion: su numero,
+ * o null si todavia no lo declaro. Devuelve null entero si la fila ya no
+ * existe (la borro una limpieza de pruebas): para quien llama, es una sesion
+ * que no sirve.
+ *
+ * /votar arma la boleta con esto y POST /api/votos controla con esto, no con el
+ * distrito de la cookie. La cookie solo se reemite en el navegador donde se
+ * declaro el distrito: en OTRO dispositivo seguia diciendo el anterior, la
+ * boleta era la del distrito viejo, cada voto rebotaba en registrarVoto (que
+ * relee el padron) y recargar mostraba la misma boleta, porque salia de la
+ * misma cookie.
+ */
+export async function getDistritoEnPadron(
+  votanteId: number,
+): Promise<{ distrito: number | null } | null> {
+  const [fila] = await db
+    .select({ distrito: distritos.numero })
+    .from(votantes)
+    .leftJoin(distritos, eq(distritos.id, votantes.distritoId))
+    .where(eq(votantes.id, votanteId))
+    .limit(1);
+  if (!fila) return null;
+  return { distrito: fila.distrito === null ? null : Number(fila.distrito) };
 }
 
 // ---------------------------------------------------------------------------
@@ -2360,18 +2468,41 @@ function soloDelChat() {
   );
 }
 
+/**
+ * Dos casos de `ok = false` que NO son "se corto por un error del sitio". Salen
+ * de las marcas que deja src/app/api/chat/route.ts en `herramientas` (ver MARCA
+ * ahi: si cambia el texto de una marca, cambia aca). Al panel llegan como
+ * booleanos, no como nombres de marcas: ver la regla 2 de arriba.
+ *
+ * - CONSULTA_CANCELADA: la persona se fue (cerro la pestana, recargo, toco un
+ *   enlace) antes de que terminara la respuesta. No se sabe si el sitio la
+ *   podia contestar, asi que no es "sin resolver" ni un error: queda afuera de
+ *   los numeros y de la lista de trabajo, y se cuenta aparte. Antes encabezaba
+ *   "Lo que Migue no pudo contestar" con el cartel de error del sitio.
+ * - FALLA_CON_RESPUESTA: fallo algo por dentro, pero la persona recibio una
+ *   respuesta entera igual (la caida al buscador). Se cuenta aparte del error,
+ *   porque el equipo la tiene que ver, pero la persona no vio un corte.
+ */
+const CONSULTA_CANCELADA = sql`coalesce(${chatConsultas.herramientas} @> '["cancelada"]'::jsonb, false)`;
+const FALLA_CON_RESPUESTA = sql`(NOT ${chatConsultas.ok} AND coalesce(${chatConsultas.herramientas} @> '["buscador-local"]'::jsonb, false))`;
+
 /** Ventana por defecto del panel. Un mes es lo que dura una etapa corta. */
 export const DIAS_PANEL_CHAT = 30;
 
 export type ResumenChat = {
   dias: number;
+  /** Sin las canceladas, como todos los numeros de abajo (ver CONSULTA_CANCELADA). */
   total: number;
   resueltas: number;
   sinResolver: number;
   /** Entero de 0 a 100. 0 cuando no hubo consultas. */
   porcentajeResueltas: number;
-  /** Cuantas cortaron por un error. */
+  /** Cuantas cortaron por un error: la persona vio el aviso de falla. */
   conError: number;
+  /** Cuantas tuvieron una falla interna pero se contestaron igual. */
+  conFallaInterna: number;
+  /** Las que la persona abandono antes de la respuesta. No entran en `total`. */
+  canceladas: number;
   msPromedio: number | null;
   /** El tema mas preguntado de la ventana. `null` si no hubo consultas. */
   temaMasDemandado: { tema: TemaConsulta; consultas: number } | null;
@@ -2381,16 +2512,22 @@ export type ResumenChat = {
 export async function getResumenChat(
   dias = DIAS_PANEL_CHAT,
 ): Promise<ResumenChat> {
+  // La demora tampoco promedia las canceladas: su `ms` es cuanto espero la
+  // persona antes de irse, no cuanto tardo la respuesta.
   const [fila] = await consultar<{
     total: number;
     resueltas: number;
     con_error: number;
+    con_falla_interna: number;
+    canceladas: number;
     ms_promedio: number | null;
   }>(sql`
-    SELECT count(*)::int AS total,
-           count(*) FILTER (WHERE resuelta)::int AS resueltas,
-           count(*) FILTER (WHERE NOT ok)::int AS con_error,
-           avg(ms)::int AS ms_promedio
+    SELECT count(*) FILTER (WHERE NOT ${CONSULTA_CANCELADA})::int AS total,
+           count(*) FILTER (WHERE resuelta AND NOT ${CONSULTA_CANCELADA})::int AS resueltas,
+           count(*) FILTER (WHERE NOT ok AND NOT ${CONSULTA_CANCELADA} AND NOT ${FALLA_CON_RESPUESTA})::int AS con_error,
+           count(*) FILTER (WHERE ${FALLA_CON_RESPUESTA})::int AS con_falla_interna,
+           count(*) FILTER (WHERE ${CONSULTA_CANCELADA})::int AS canceladas,
+           (avg(ms) FILTER (WHERE NOT ${CONSULTA_CANCELADA}))::int AS ms_promedio
       FROM chat_consultas
      WHERE created_at > now() - make_interval(days => ${dias})
        AND origen = 'chat'
@@ -2403,6 +2540,7 @@ export async function getResumenChat(
      WHERE created_at > now() - make_interval(days => ${dias})
        AND origen = 'chat'
        AND pregunta_normalizada IS NOT NULL
+       AND NOT ${CONSULTA_CANCELADA}
      GROUP BY tema
      ORDER BY consultas DESC, tema ASC
      LIMIT 1
@@ -2417,6 +2555,8 @@ export async function getResumenChat(
     sinResolver: total - resueltas,
     porcentajeResueltas: total ? Math.round((resueltas * 100) / total) : 0,
     conError: Number(fila?.con_error ?? 0),
+    conFallaInterna: Number(fila?.con_falla_interna ?? 0),
+    canceladas: Number(fila?.canceladas ?? 0),
     msPromedio: fila?.ms_promedio === null || fila?.ms_promedio === undefined
       ? null
       : Number(fila.ms_promedio),
@@ -2455,6 +2595,7 @@ export async function getConsultasPorTema(
      WHERE created_at > now() - make_interval(days => ${dias})
        AND origen = 'chat'
        AND pregunta_normalizada IS NOT NULL
+       AND NOT ${CONSULTA_CANCELADA}
      GROUP BY tema
      ORDER BY consultas DESC, tema ASC
   `);
@@ -2506,6 +2647,7 @@ export async function getUsoChatPorDia(
      WHERE created_at > now() - make_interval(days => ${dias})
        AND origen = 'chat'
        AND pregunta_normalizada IS NOT NULL
+       AND NOT ${CONSULTA_CANCELADA}
      GROUP BY 1
      ORDER BY 1
   `);
@@ -2525,6 +2667,10 @@ export type FilaConsultaChat = {
   /** Cuanto tardo en responder. Es latencia del sitio, no configuracion. */
   ms: number | null;
   ok: boolean;
+  /** La persona se fue antes de la respuesta (ver CONSULTA_CANCELADA). */
+  cancelada: boolean;
+  /** Fallo algo por dentro y la persona igual recibio respuesta (FALLA_CON_RESPUESTA). */
+  fallaConRespuesta: boolean;
   createdAt: Date;
 };
 
@@ -2536,6 +2682,8 @@ const camposConsultaChat = {
   resuelta: chatConsultas.resuelta,
   ms: chatConsultas.ms,
   ok: chatConsultas.ok,
+  cancelada: sql<boolean>`${CONSULTA_CANCELADA}`.mapWith(Boolean),
+  fallaConRespuesta: sql<boolean>`${FALLA_CON_RESPUESTA}`.mapWith(Boolean),
   createdAt: chatConsultas.createdAt,
 };
 
@@ -2553,7 +2701,8 @@ export async function listarConsultasChat(
 
 /**
  * Las consultas sin resolver mas recientes. Es la lista de trabajo del equipo:
- * cada fila es una pregunta que el sitio no pudo contestar.
+ * cada fila es una pregunta que el sitio no pudo contestar. Sin las canceladas:
+ * de esas no se sabe si el sitio tenia la respuesta.
  */
 export async function getConsultasSinResolver(
   limite = 25,
@@ -2561,7 +2710,7 @@ export async function getConsultasSinResolver(
   return db
     .select(camposConsultaChat)
     .from(chatConsultas)
-    .where(and(eq(chatConsultas.resuelta, false), soloDelChat()))
+    .where(and(eq(chatConsultas.resuelta, false), soloDelChat(), sql`NOT ${CONSULTA_CANCELADA}`))
     .orderBy(desc(chatConsultas.createdAt), desc(chatConsultas.id))
     .limit(limite);
 }
@@ -2602,6 +2751,7 @@ export async function getPreguntasRepetidasChat(
      WHERE created_at > now() - make_interval(days => ${dias})
        AND origen = 'chat'
        AND pregunta_normalizada IS NOT NULL
+       AND NOT ${CONSULTA_CANCELADA}
      GROUP BY coalesce(pregunta_normalizada, lower(pregunta))
      ORDER BY veces DESC, pregunta ASC
      LIMIT ${limite}
@@ -2629,7 +2779,8 @@ export async function getPreguntasRepetidasChat(
  * en la API compatible con OpenAI ya viene incluida en `tokens_entrada`. Se
  * cuenta a precio lleno, que es pasarse para el lado seguro. Tambien cuentan
  * las filas con `ok = false`: una consulta que fallo a mitad de camino gasto
- * lo que llego a gastar.
+ * lo que llego a gastar (la vuelta que se corto sin informar su consumo va
+ * estimada: ver `estimarUso` en src/lib/modelo.ts).
  *
  * El dia es el calendario de TUCUMAN, por lo mismo que `getUsoChatPorDia`: la
  * sesion de Supabase esta en UTC y un `now()::date` cortaria el dia a las 21:00
@@ -2646,6 +2797,33 @@ export async function getTokensUsadosHoy(): Promise<number> {
   `);
   // bigint llega como texto con node-postgres: se convierte aca y no en quien llama.
   return Number(fila?.tokens ?? 0);
+}
+
+/**
+ * La fila de respaldo cuando el registro completo de una consulta al modelo no
+ * se pudo guardar. Lleva solo lo que necesita `getTokensUsadosHoy`: el consumo,
+ * con un texto fijo en lugar de la pregunta y `ok = false`. Sin ella, una
+ * consulta cuyo INSERT fallaba (un texto que la base no acepta, una columna que
+ * se pasaba de largo) se cobraba en el proveedor y no contaba para el tope del
+ * dia, que es el unico freno de gasto. Si esta tambien falla, el que llama lo
+ * anota en el log: no tiene sentido otro intento contra la misma base.
+ */
+export async function registrarConsumoDeRespaldo(datos: {
+  origen: "chat" | "asistente" | "informe";
+  modelo: string | null;
+  tokensEntrada: number | null;
+  tokensSalida: number | null;
+  ipHash: string | null;
+}): Promise<void> {
+  await db.insert(chatConsultas).values({
+    origen: datos.origen,
+    pregunta: "(no se pudo registrar)",
+    modelo: datos.modelo?.slice(0, 60) ?? null,
+    tokensEntrada: datos.tokensEntrada,
+    tokensSalida: datos.tokensSalida,
+    ipHash: datos.ipHash,
+    ok: false,
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import Mapa from "@/components/Mapa";
 import { Chip, Vacio } from "@/components/ui";
 import { getDistritos, getTextos } from "@/db/queries";
 import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
-import { conEdicion, votacionTerminada } from "@/lib/ediciones";
+import { conEdicion, ganadorPorProclamar, votacionTerminada } from "@/lib/ediciones";
 import { colorCategoria, formatearNumero } from "@/lib/formato";
 
 const DESCRIPCION =
@@ -116,9 +116,15 @@ export default async function Distritos({ searchParams }: Props) {
                   </>
                 ) : (
                   <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-                    {yaVoto
-                      ? "Sin proyecto ganador en esta edición."
-                      : "El proyecto ganador se elige en la votación."}
+                    {/* Con la votacion terminada, un distrito con factibles
+                        puede estar esperando que se proclame su ganador: "sin
+                        proyecto" era falso en los 20 hasta la primera
+                        proclamacion. */}
+                    {!yaVoto
+                      ? "El proyecto ganador se elige en la votación."
+                      : ganadorPorProclamar(edicion.etapa, distrito.conFactibles)
+                        ? "El proyecto ganador se publica cuando se proclame."
+                        : "Sin proyecto ganador en esta edición."}
                   </p>
                 )}
               </div>

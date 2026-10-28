@@ -22,12 +22,12 @@
  * de las anteriores. Es la degradacion que no abre la puerta de nuevo.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-
-/** El mismo minimo que exige src/lib/sesion.ts. */
-const LARGO_MINIMO_SECRETO = 32;
+import { secretoDeSesionValido } from "@/lib/secreto-sesion";
 
 function claveDeFirma(secreto: string | undefined): Buffer | null {
-  if (!secreto || secreto.length < LARGO_MINIMO_SECRETO) return null;
+  // El mismo control que las sesiones: con el valor de relleno de .env.example
+  // (publico) tampoco se firma. Ver src/lib/secreto-sesion.ts.
+  if (!secretoDeSesionValido(secreto)) return null;
   return createHmac("sha256", secreto).update("pp-chat:firma-de-respuestas:v1").digest();
 }
 
