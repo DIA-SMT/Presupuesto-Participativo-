@@ -69,7 +69,7 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   desarrollo usa PGlite. Los scripts que escriben (`db:migrate`, `seed`,
   `crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`,
   `aplicar-geografia --aplicar`, `ver-ideas-web --borrar … --confirmar`,
-  `limpiar-pruebas --confirmar`) se
+  `limpiar-pruebas --confirmar`, `cargar-obras-2025 --confirmar`) se
   niegan a correr contra una base remota salvo con `--produccion`
   (`npm run x -- --produccion`: sin el `--` npm se queda el flag), y con el
   flag muestran el host y esperan 5 s antes de escribir. El candado es

@@ -1,15 +1,24 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import AvisoEdicion from "@/components/AvisoEdicion";
+import TarjetaObra from "@/components/TarjetaObra";
 import { Aviso, Vacio } from "@/components/ui";
 import {
   getEstadisticas,
   getUltimaEdicionTerminadaConGanadores,
   listarIdeas,
+  listarObras,
+  type ObraGanadora,
 } from "@/db/queries";
 import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
 import { conEdicion, votacionTerminada } from "@/lib/ediciones";
-import { ETIQUETA_ETAPA, distritosConVerbo, formatearNumero } from "@/lib/formato";
+import {
+  ETAPAS_PRESUPUESTO,
+  ETIQUETA_ETAPA,
+  ETIQUETA_PRESUPUESTO,
+  distritosConVerbo,
+  formatearNumero,
+} from "@/lib/formato";
 
 /**
  * Que gano en cada distrito y con cuantos votos.
@@ -34,6 +43,14 @@ import { ETIQUETA_ETAPA, distritosConVerbo, formatearNumero } from "@/lib/format
  * la estructura sigue entera en la base (`ideas.presupuesto_total`, la tabla
  * `avances`) y la ficha de cada proyecto ya sabe dibujarlos.
  *
+ * Desde octubre de 2026 los ganadores se muestran como TARJETAS DE OBRA
+ * (src/components/TarjetaObra.tsx): en que etapa esta cada uno (licitacion,
+ * adjudicada, en obra, finalizada), con la aclaracion y el link que carga el
+ * equipo en /admin/obras. La etapa sale de los avances publicados, no de la
+ * columna que lleno el ETL: sin avances, la tarjeta dice que no hay
+ * informacion. Con una edicion que todavia no voto, se muestran las obras de
+ * la ultima que si, que son las que se estan haciendo.
+ *
  * El titulo y el subtitulo estan ACA y no en la tabla `textos`. Salian de la
  * base, pero el panel no tiene pantalla que los edite: en la base quedaban
  * inmutables en la practica, y encima decian "cuánto se ejecutó de su
@@ -42,7 +59,26 @@ import { ETIQUETA_ETAPA, distritosConVerbo, formatearNumero } from "@/lib/format
 const DESCRIPCION =
   "Qué proyecto ganó en cada distrito del Presupuesto Participativo de San Miguel de Tucumán y con cuántos votos.";
 
-type Props = { searchParams: Promise<{ edicion?: string | string[] }> };
+type Props = {
+  searchParams: Promise<{ edicion?: string | string[]; obra?: string | string[] }>;
+};
+
+/** El filtro por etapa: una de las cuatro, "sin-informacion", o todas. */
+type FiltroObra = (typeof ETAPAS_PRESUPUESTO)[number] | "sin-informacion" | null;
+
+function leerFiltro(valor: string | string[] | undefined): FiltroObra {
+  const texto = Array.isArray(valor) ? valor[0] : valor;
+  if (texto === "sin-informacion") return texto;
+  return (ETAPAS_PRESUPUESTO as readonly string[]).includes(texto ?? "")
+    ? (texto as FiltroObra)
+    : null;
+}
+
+function etapaDeObra(obra: ObraGanadora): Exclude<FiltroObra, null> {
+  return (ETAPAS_PRESUPUESTO as readonly string[]).includes(obra.etapa ?? "")
+    ? (obra.etapa as Exclude<FiltroObra, null>)
+    : "sin-informacion";
+}
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const { edicion } = await searchParams;
@@ -51,7 +87,9 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 }
 
 export default async function Transparencia({ searchParams }: Props) {
-  const vista = await edicionDeLaPagina((await searchParams).edicion);
+  const parametros = await searchParams;
+  const vista = await edicionDeLaPagina(parametros.edicion);
+  const filtro = leerFiltro(parametros.obra);
   if (!vista) {
     return (
       <div className="contenedor py-20">
@@ -79,6 +117,34 @@ export default async function Transparencia({ searchParams }: Props) {
   // `ganadorPorProclamar`).
   const porProclamar = yaVoto ? stats.distritosPorProclamar : [];
 
+  // Las obras que se muestran: las de esta edicion si tiene ganadores, o las
+  // de la ultima que voto. El enlace de cada tarjeta lleva a la ficha en SU
+  // edicion: el slug se repite entre ediciones.
+  const edicionDeLasObras = ganadores.length
+    ? { id: edicion.id, anio: edicion.anio, enlaces: anioEnEnlaces, propia: true }
+    : anterior
+      ? {
+          id: anterior.id,
+          anio: anterior.anio,
+          enlaces: anterior.activa ? null : anterior.anio,
+          propia: anterior.id === edicion.id,
+        }
+      : null;
+  const obras = edicionDeLasObras ? await listarObras(edicionDeLasObras.id) : [];
+  const cuentas = new Map<string, number>();
+  for (const obra of obras) {
+    const etapa = etapaDeObra(obra);
+    cuentas.set(etapa, (cuentas.get(etapa) ?? 0) + 1);
+  }
+  const visibles = filtro ? obras.filter((obra) => etapaDeObra(obra) === filtro) : obras;
+  const votosDeLasObras = obras.reduce((suma, obra) => suma + obra.votos, 0);
+  // El filtro mantiene la edicion que se esta mirando.
+  const hrefFiltro = (valor: FiltroObra) => {
+    const base = conEdicion("/transparencia", anioEnEnlaces);
+    if (!valor) return base;
+    return `${base}${base.includes("?") ? "&" : "?"}obra=${valor}`;
+  };
+
   return (
     <div className="contenedor py-10 sm:py-14">
       <AvisoEdicion vista={vista} hrefActual="/transparencia" />
@@ -91,105 +157,86 @@ export default async function Transparencia({ searchParams }: Props) {
         </p>
       </header>
 
-      {/* --- Tabla ---------------------------------------------------------- */}
-      {!ganadores.length ? (
+      {/* --- Aviso de la edicion sin ganadores ------------------------------ */}
+      {!ganadores.length && (
         <section className="mt-10">
-          <h2 className="text-xl font-bold">Proyectos ganadores</h2>
-          <div className="mt-4">
-            <Aviso tono={yaVoto && !porProclamar.length ? "atencion" : "info"}>
-              {porProclamar.length
-                ? `La votación de la edición ${edicion.anio} terminó. Los proyectos ganadores se publican acá a medida que se proclamen.`
-                : yaVoto
-                  ? `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`
-                  : `La edición ${edicion.anio} todavía no tiene proyectos ganadores: está en la etapa “${
-                      ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa
-                    }”, y el ganador de cada distrito sale de la votación.`}
-              {anterior && anterior.id !== edicion.id && (
-                <>
-                  {" "}
-                  <Link
-                    href={conEdicion("/transparencia", anterior.activa ? null : anterior.anio)}
-                    className="font-semibold underline"
-                    style={{ color: "var(--marca-texto)" }}
-                  >
-                    Ver los ganadores de la edición {anterior.anio}
-                  </Link>
-                </>
-              )}
-            </Aviso>
-          </div>
+          <Aviso tono={yaVoto && !porProclamar.length ? "atencion" : "info"}>
+            {porProclamar.length
+              ? `La votación de la edición ${edicion.anio} terminó. Los proyectos ganadores se publican acá a medida que se proclamen.`
+              : yaVoto
+                ? `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`
+                : `La edición ${edicion.anio} todavía no tiene proyectos ganadores: está en la etapa “${
+                    ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa
+                  }”, y el ganador de cada distrito sale de la votación.`}
+            {edicionDeLasObras && !edicionDeLasObras.propia && (
+              <> Abajo, cómo van las obras de la edición {edicionDeLasObras.anio}.</>
+            )}
+          </Aviso>
         </section>
-      ) : (
-        <section className="mt-10">
-          <h2 className="text-xl font-bold">
-            {ganadores.length === 1
-              ? "El proyecto ganador"
-              : `Los ${ganadores.length} proyectos ganadores`}
+      )}
+
+      {/* --- Tarjetas de obra ----------------------------------------------- */}
+      {edicionDeLasObras && obras.length > 0 && (
+        <section className="mt-10" aria-labelledby="titulo-obras">
+          <h2 id="titulo-obras" className="text-xl font-bold">
+            {obras.length === 1
+              ? `El proyecto ganador de ${edicionDeLasObras.anio}`
+              : `Los ${obras.length} proyectos ganadores de ${edicionDeLasObras.anio}`}
           </h2>
-          <p className="mt-2 text-sm" style={{ color: "var(--texto-suave)" }}>
-            Edición {stats.anio}, ordenados por cantidad de votos.
+          <p className="mt-2 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+            En qué etapa está la obra de cada uno: se licita, se adjudica a una empresa, se construye
+            y se termina. Entre todos sumaron {formatearNumero(votosDeLasObras)} votos.
           </p>
 
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[32rem] border-collapse text-sm">
-              <caption className="sr-only">
-                Proyectos ganadores de la edición {stats.anio} con su distrito y sus votos
-              </caption>
-              <thead>
-                <tr style={{ borderBottom: "2px solid var(--borde)" }}>
-                  <th scope="col" className="px-3 py-3 text-left font-semibold">
-                    Distrito
-                  </th>
-                  <th scope="col" className="px-3 py-3 text-left font-semibold">
-                    Proyecto
-                  </th>
-                  <th scope="col" className="px-3 py-3 text-right font-semibold">
-                    Votos
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {ganadores.map((idea) => (
-                  <tr key={idea.slug} style={{ borderBottom: "1px solid var(--borde)" }}>
-                    <td className="px-3 py-3 font-medium">
-                      <Link
-                        href={conEdicion(`/distritos/${idea.distrito}`, anioEnEnlaces)}
-                        className="hover:underline"
-                      >
-                        D{idea.distrito}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3">
-                      <Link
-                        href={conEdicion(`/proyectos/${idea.slug}`, anioEnEnlaces)}
-                        className="font-medium hover:underline"
-                      >
-                        {idea.titulo}
-                      </Link>
-                      {idea.categoriaNombre && (
-                        <span className="mt-1 block text-xs" style={{ color: "var(--texto-suave)" }}>
-                          {idea.categoriaNombre}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right font-medium tabular-nums">
-                      {formatearNumero(idea.votos)}
-                    </td>
-                  </tr>
+          <nav aria-label="Filtrar por etapa de la obra" className="mt-5">
+            <ul className="flex flex-wrap gap-2">
+              <li>
+                <Link
+                  href={hrefFiltro(null)}
+                  aria-current={filtro === null ? "true" : undefined}
+                  className="filtro-obra"
+                  scroll={false}
+                >
+                  Todas <span className="cuenta">{obras.length}</span>
+                </Link>
+              </li>
+              {[...ETAPAS_PRESUPUESTO, "sin-informacion" as const]
+                .filter((valor) => cuentas.get(valor))
+                .map((valor) => (
+                  <li key={valor}>
+                    <Link
+                      href={hrefFiltro(valor)}
+                      aria-current={filtro === valor ? "true" : undefined}
+                      className="filtro-obra"
+                      scroll={false}
+                    >
+                      {valor === "sin-informacion" ? "Sin información" : ETIQUETA_PRESUPUESTO[valor]}{" "}
+                      <span className="cuenta">{cuentas.get(valor)}</span>
+                    </Link>
+                  </li>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr className="font-semibold">
-                  <td className="px-3 py-3" colSpan={2}>
-                    Total
-                  </td>
-                  <td className="px-3 py-3 text-right tabular-nums">
-                    {formatearNumero(stats.votosGanadores)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+            </ul>
+          </nav>
+
+          {visibles.length ? (
+            <ul className="grilla-propuestas mt-5">
+              {visibles.map((obra) => (
+                <li key={obra.id}>
+                  <TarjetaObra
+                    obra={obra}
+                    hrefFicha={conEdicion(`/proyectos/${obra.slug}`, edicionDeLasObras.enlaces)}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-5 text-sm" style={{ color: "var(--texto-suave)" }}>
+              Ninguna obra está en esa etapa.{" "}
+              <Link href={hrefFiltro(null)} className="font-semibold underline" scroll={false}>
+                Ver todas
+              </Link>
+            </p>
+          )}
         </section>
       )}
 

@@ -662,10 +662,125 @@ export async function getAvances(ideaId: number) {
       monto: avances.monto,
       porcentaje: avances.porcentaje,
       fotoUrl: avances.fotoUrl,
+      enlace: avances.enlace,
     })
     .from(avances)
     .where(and(eq(avances.ideaId, ideaId), eq(avances.publicado, true)))
-    .orderBy(desc(avances.fecha));
+    .orderBy(desc(avances.fecha), desc(avances.id));
+}
+
+/** Un avance de obra como lo ve el panel (/admin/obras). */
+export type AvanceDeObra = {
+  id: number;
+  fecha: string;
+  etapa: string;
+  titulo: string;
+  descripcion: string | null;
+  enlace: string | null;
+};
+
+/**
+ * La obra de un proyecto ganador: la tarjeta de /transparencia y de
+ * /admin/obras.
+ *
+ * `etapa` sale del ULTIMO avance publicado (por fecha, y entre los del mismo
+ * dia el ultimo cargado), no de `ideas.estado_presupuesto`: esa columna dice
+ * "preparacion" en los 19 ganadores migrados porque la puso el ETL, no porque
+ * alguien lo informara. Sin avances, `etapa` es null y la tarjeta dice que no
+ * hay informacion todavia.
+ */
+export type ObraGanadora = {
+  id: number;
+  slug: string;
+  titulo: string;
+  distrito: number | null;
+  barrio: string | null;
+  votos: number;
+  etapa: string | null;
+  /** Fecha (AAAA-MM-DD) del ultimo avance. */
+  fecha: string | null;
+  /** La aclaracion del ultimo avance (su descripcion). */
+  aclaracion: string | null;
+  enlace: string | null;
+  /** Todos los avances publicados, el mas nuevo primero. */
+  avances: AvanceDeObra[];
+};
+
+/**
+ * Las obras de los ganadores publicados de una edicion, por distrito. Excluye
+ * las descartadas (`NO_DESCARTADA`), como toda consulta sobre ideas.
+ */
+export async function listarObras(edicionId: number): Promise<ObraGanadora[]> {
+  const ganadores = await db
+    .select({
+      id: ideas.id,
+      slug: ideas.slug,
+      titulo: ideas.titulo,
+      distrito: distritos.numero,
+      barrio: ideas.barrio,
+      votos: ideas.votos,
+    })
+    .from(ideas)
+    .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
+    .where(
+      and(
+        eq(ideas.edicionId, edicionId),
+        eq(ideas.ganador, true),
+        eq(ideas.publicada, true),
+        NO_DESCARTADA,
+      ),
+    )
+    .orderBy(sql`${distritos.numero} NULLS LAST`, asc(ideas.id));
+  if (!ganadores.length) return [];
+
+  const filas = await db
+    .select({
+      id: avances.id,
+      ideaId: avances.ideaId,
+      fecha: avances.fecha,
+      etapa: avances.etapa,
+      titulo: avances.titulo,
+      descripcion: avances.descripcion,
+      enlace: avances.enlace,
+    })
+    .from(avances)
+    .where(
+      and(
+        inArray(
+          avances.ideaId,
+          ganadores.map((g) => g.id),
+        ),
+        eq(avances.publicado, true),
+      ),
+    )
+    .orderBy(desc(avances.fecha), desc(avances.id));
+
+  return ganadores.map((g) => {
+    const propios: AvanceDeObra[] = filas
+      .filter((f) => f.ideaId === g.id)
+      .map((f) => ({
+        id: f.id,
+        fecha: f.fecha,
+        etapa: String(f.etapa),
+        titulo: f.titulo,
+        descripcion: f.descripcion,
+        enlace: f.enlace,
+      }));
+    const [ultimo] = propios;
+    return {
+      id: g.id,
+      slug: g.slug,
+      titulo: g.titulo,
+      distrito: g.distrito === null ? null : Number(g.distrito),
+      barrio: g.barrio,
+      votos: Number(g.votos ?? 0),
+      etapa: ultimo?.etapa ?? null,
+      fecha: ultimo?.fecha ?? null,
+      aclaracion: ultimo?.descripcion ?? null,
+      enlace: ultimo?.enlace ?? null,
+      avances: propios,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

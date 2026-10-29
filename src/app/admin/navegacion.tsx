@@ -60,7 +60,8 @@ type Seccion = Enlace & { pantallas: Enlace[] };
  *
  *  - Propuestas: lo de todos los dias. Las tarjetas para evaluar y las
  *    estadisticas de la edicion (el viejo Tablero).
- *  - Proceso: lo que se toca pocas veces al año: la etapa y el cronograma.
+ *  - Proceso: la etapa y el cronograma, y el estado de las obras de los
+ *    ganadores (lo que publica Transparencia).
  *  - Equipo: las cuentas del panel.
  *
  * Las rutas NO cambiaron (/admin/tablero sigue siendo el Tablero): los enlaces
@@ -87,6 +88,8 @@ const SECCIONES: Seccion[] = [
       // consulta la etapa. La pantalla deja en solo lectura lo que cada rol no
       // puede tocar.
       { href: "/admin/ediciones", texto: "Etapa y cronograma" },
+      // Todos la ven; actualizar una obra es de moderador para arriba.
+      { href: "/admin/obras", texto: "Obras" },
     ],
   },
   { href: "/admin/equipo", texto: "Equipo", soloAdmin: true, pantallas: [] },
@@ -242,7 +245,8 @@ function iniciales(nombre: string, email: string): string {
 
 /**
  * El icono de cada pantalla del selector: una grilla de tarjetas para el
- * tablero, barras para las estadisticas, un calendario para el cronograma.
+ * tablero, barras para las estadisticas, un calendario para el cronograma y
+ * un casco para las obras.
  * Decorativo: el texto va al lado.
  */
 function IconoPantalla({ href }: { href: string }) {
@@ -267,6 +271,12 @@ function IconoPantalla({ href }: { href: string }) {
       <>
         <rect x="3" y="5" width="18" height="16" rx="2" />
         <path d="M16 3v4M8 3v4M3 11h18" />
+      </>
+    ),
+    "/admin/obras": (
+      <>
+        <path d="M4 18a8 8 0 0 1 16 0" />
+        <path d="M2 18h20M10 10V6h4v4" />
       </>
     ),
   };

@@ -75,12 +75,20 @@ export const estadoIdea = pgEnum("estado_idea", [
   "descartado",
 ]);
 
+/**
+ * La etapa de la obra de un ganador. Las que se cargan desde 2026 son
+ * licitacion, adjudicada, ejecucion ("En obra") y finalizado: las que usa el
+ * municipio (migracion 0017). preparacion y contratacion quedan en el tipo
+ * porque Postgres no saca valores de un enum; ya no se ofrecen.
+ */
 export const estadoPresupuesto = pgEnum("estado_presupuesto", [
   "sin_asignar",
   "preparacion",
   "contratacion",
   "ejecucion",
   "finalizado",
+  "licitacion",
+  "adjudicada",
 ]);
 
 export const canalCarga = pgEnum("canal_carga", [
@@ -521,6 +529,11 @@ export const avances = pgTable(
     monto: numeric("monto", { precision: 14, scale: 2 }),
     porcentaje: smallint("porcentaje"),
     fotoUrl: text("foto_url"),
+    /**
+     * Un link publico que respalda el avance: el boletin oficial, el pliego de
+     * la licitacion, una nota. Solo https (lo valida `crearAvance`).
+     */
+    enlace: text("enlace"),
     publicado: boolean("publicado").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
