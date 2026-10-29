@@ -13,13 +13,14 @@ import { cargarMinimo, crearBaseDePrueba, violacionDe, type BaseDePrueba } from 
 
 let base: BaseDePrueba;
 let empadronar: typeof import("../../src/lib/empadronamiento").empadronar;
+let CuentaYaEmpadronada: typeof import("../../src/lib/empadronamiento").CuentaYaEmpadronada;
 
 test.before(async () => {
   base = await crearBaseDePrueba("padron");
   await cargarMinimo(base, { etapa: "votacion" });
   // Import dinamico DESPUES de crear la base: src/db elige la carpeta de PGlite
   // al importarse (ver apoyo-base.ts).
-  ({ empadronar } = await import("../../src/lib/empadronamiento"));
+  ({ empadronar, CuentaYaEmpadronada } = await import("../../src/lib/empadronamiento"));
 });
 
 test.after(async () => {
@@ -189,7 +190,10 @@ test("la misma cuenta con otro documento rebota, sin datos personales en el mens
         verificado: true,
       }),
     (error: unknown) => {
-      assert.ok(error instanceof Error);
+      // Identificable: el callback de CIDITUC la muestra con su propio cartel
+      // ("cuenta-duplicada"), porque reintentar no la arregla.
+      assert.ok(error instanceof CuentaYaEmpadronada);
+      assert.equal(error.codigo, "cuenta-duplicada");
       assert.match(error.message, /votantes_proveedor_sub_idx/);
       // El callback de CIDITUC registra `message` en los logs del hosting.
       assert.doesNotMatch(error.message, /21999888|888|Nombre que no|cuenta-compartida/);
@@ -200,4 +204,62 @@ test("la misma cuenta con otro documento rebota, sin datos personales en el mens
     base.sql`SELECT count(*)::int AS n FROM votantes WHERE proveedor_sub = 'cuenta-compartida'`,
   );
   assert.equal(cuenta.n, 1, "no se abrio un segundo lugar en el padron");
+});
+
+test("la cuenta llega con un documento que ya tiene su fila con otra cuenta: tambien es identificable", async () => {
+  // El otro camino al mismo indice: el ON CONFLICT de dni_hash cae en la fila
+  // del documento nuevo y le quiere escribir una cuenta que ya ocupa otra fila.
+  // Tampoco se arregla reintentando.
+  await empadronar({
+    dni: "22000111",
+    nombre: null,
+    distrito: null,
+    proveedor: "cidituc",
+    proveedorSub: "cuenta-a",
+    verificado: true,
+  });
+  await empadronar({
+    dni: "22000222",
+    nombre: null,
+    distrito: null,
+    proveedor: "cidituc",
+    proveedorSub: "cuenta-b",
+    verificado: true,
+  });
+  await assert.rejects(
+    () =>
+      empadronar({
+        dni: "22000222",
+        nombre: null,
+        distrito: null,
+        proveedor: "cidituc",
+        proveedorSub: "cuenta-a",
+        verificado: true,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof CuentaYaEmpadronada);
+      return true;
+    },
+  );
+});
+
+test("una falla de la base que no es la cuenta repetida no se confunde con ella", async () => {
+  // El callback la muestra como "sin-padron" (probá de nuevo): no tiene que
+  // salir como cuenta repetida. Un distrito que no existe rebota por su FK.
+  await assert.rejects(
+    () =>
+      empadronar({
+        dni: "22000333",
+        nombre: null,
+        distrito: 999,
+        proveedor: "dev",
+        proveedorSub: null,
+        verificado: false,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(!(error instanceof CuentaYaEmpadronada));
+      return true;
+    },
+  );
 });

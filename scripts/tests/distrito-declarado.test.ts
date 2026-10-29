@@ -22,12 +22,14 @@ let base: BaseDePrueba;
 let edicionId: number;
 let empadronamiento: typeof import("../../src/lib/empadronamiento");
 let registrar: typeof import("../../src/app/api/votos/registrar");
+let queries: typeof import("../../src/db/queries");
 
 test.before(async () => {
   base = await crearBaseDePrueba("distrito-declarado");
   ({ edicionId } = await cargarMinimo(base, { etapa: "votacion" }));
   empadronamiento = await import("../../src/lib/empadronamiento");
   registrar = await import("../../src/app/api/votos/registrar");
+  queries = await import("../../src/db/queries");
 });
 
 test.after(async () => {
@@ -85,6 +87,15 @@ test("lo puede cambiar mientras no voto, y vale la ultima declaracion", async ()
   assert.ok(fila.declaradoEn && primera && fila.declaradoEn >= primera);
 });
 
+test("confirmar el mismo distrito que ya tenia sale bien y no cambia nada", async () => {
+  // Quien entra a "Cambialo" solo para verificar y confirma el que ya tenia.
+  // El servidor responde ok, y como el distrito no cambia la boleta no se
+  // remonta sola: ElegirDistrito vuelve a ella a mano (ver su confirmar).
+  const votanteId = await crearVotante(base, { dni: "30111888", distrito: 2 });
+  assert.deepEqual(await empadronamiento.declararDistrito(votanteId, 2), { ok: true, distrito: 2 });
+  assert.equal((await filaDe(votanteId)).distritoId, 2);
+});
+
 test("despues de votar, el distrito queda fijo", async () => {
   const votanteId = await crearVotante(base, { dni: "30111444", distrito: null });
   await empadronamiento.declararDistrito(votanteId, 1);
@@ -106,6 +117,28 @@ test("el voto relee el distrito del padron, no el que traia la cookie", async ()
 
   assert.deepEqual(await votar(votanteId, ideaId, 1), { ok: false, motivo: "distrito-distinto" });
   assert.equal(await votosDe(votanteId), 0);
+});
+
+test("la boleta y el control del voto leen el distrito del padron, no el de la cookie", async () => {
+  // El celular declaro el 1 y la PC despues el 2: la cookie del celular sigue
+  // diciendo 1. /votar y POST /api/votos usan getDistritoEnPadron, asi que en
+  // el celular la boleta pasa a ser la del 2 al recargar, en vez de quedar en
+  // la del 1 y rebotar cada voto con "distrito-distinto".
+  const votanteId = await crearVotante(base, { dni: "30112111", distrito: null });
+  assert.deepEqual(await queries.getDistritoEnPadron(votanteId), { distrito: null });
+
+  await empadronamiento.declararDistrito(votanteId, 1);
+  await empadronamiento.declararDistrito(votanteId, 2);
+  assert.deepEqual(await queries.getDistritoEnPadron(votanteId), { distrito: 2 });
+
+  // Con la boleta que arma ese distrito, el voto entra.
+  const ideaId = await crearIdea(base, { edicionId, distrito: 2, titulo: "Vereda", slug: "vereda-padron" });
+  assert.deepEqual(await votar(votanteId, ideaId, 2), { ok: true });
+});
+
+test("sin fila en el padron, la sesion no sirve", async () => {
+  // La borro una limpieza de pruebas: la ruta del voto cierra la sesion.
+  assert.equal(await queries.getDistritoEnPadron(999_998), null);
 });
 
 test("un distrito que no existe no se guarda", async () => {

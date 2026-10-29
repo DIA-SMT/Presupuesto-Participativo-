@@ -26,9 +26,10 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { distritos, ideas } from "@/db/schema";
-import { getEdicionActiva } from "@/db/queries";
+import { getDistritoEnPadron, getEdicionActiva } from "@/db/queries";
 import { cerrarSesionVotante, getSesionVotante } from "@/lib/sesion";
-import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { resumenDeError } from "@/lib/errores-base";
+import { consumirDelVecino, hashearIp, ipDe } from "@/lib/rate-limit";
 import { exigirMismoOrigen } from "@/lib/origen";
 import { registrarVoto, type MotivoRechazo, type ResultadoVoto } from "./registrar";
 
@@ -47,7 +48,7 @@ const MENSAJE_RECHAZO: Record<MotivoRechazo, string> = {
   "proyecto-no-disponible":
     "Ese proyecto salió de la boleta justo cuando enviabas tu voto, así que no se registró. Recargá la página para ver los proyectos que se pueden votar.",
   "distrito-distinto":
-    "Tu distrito cambió (quizás en otra pestaña), así que el voto no se registró. Recargá la página para ver la boleta de tu distrito.",
+    "Tu distrito cambió (quizás en otra pestaña o en otro dispositivo), así que el voto no se registró. Recargá la página para ver la boleta de tu distrito.",
 };
 
 export async function POST(request: Request) {
@@ -56,8 +57,15 @@ export async function POST(request: Request) {
   const rechazo = exigirMismoOrigen(request);
   if (rechazo) return rechazo;
 
-  const ipHash = hashearIp(ipDe(request));
-  const limite = await consumir(`votos:${ipHash}`, 20, 600);
+  // El tope es de la persona si tiene sesion (la cookie, sin base): en una
+  // asamblea con varias tablets en el mismo Wi-Fi, la IP es una sola y un tope
+  // por IP dejaba sin votar a quien llegaba despues. Sin sesion, por IP y en un
+  // contador aparte, que no le corta el voto a nadie (ver consumirDelVecino).
+  const sesion = await getSesionVotante();
+  const limite = await consumirDelVecino("votos", sesion?.votanteId, request, {
+    conSesion: { maximo: 20, ventanaSegundos: 600 },
+    sinSesion: { maximo: 20, ventanaSegundos: 600 },
+  });
   if (!limite.permitido) {
     return Response.json({ error: "Demasiados intentos." }, { status: 429 });
   }
@@ -73,7 +81,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const sesion = await getSesionVotante();
   if (!sesion) {
     // Ahora la sesion tambien se cierra al votar y con "Salir", asi que esto
     // lo ve sobre todo quien voto en otra pestaña: "empadronate" lo mandaba a
@@ -83,7 +90,26 @@ export async function POST(request: Request) {
       { status: 401 },
     );
   }
-  if (!sesion.distrito) {
+  /*
+   * El distrito con que se controla es el del padron, el mismo con que /votar
+   * arma la boleta (ver getDistritoEnPadron). Con el de la cookie, en otro
+   * dispositivo donde el distrito no se habia cambiado el control dejaba pasar
+   * un voto del distrito viejo, registrarVoto lo rebotaba y el mensaje mandaba
+   * a recargar una boleta que salia de la misma cookie vieja.
+   */
+  const enPadron = await getDistritoEnPadron(sesion.votanteId);
+  if (!enPadron) {
+    // La fila del padron ya no existe (una limpieza de pruebas): para la
+    // persona es una sesion vencida, y se cierra para que /votar la mande a
+    // ingresar de nuevo en vez de volver a mostrarle la boleta.
+    await cerrarSesionVotante();
+    return Response.json(
+      { error: "Tu sesión se cerró o venció. Ingresá de nuevo para votar." },
+      { status: 401 },
+    );
+  }
+  const distrito = enPadron.distrito;
+  if (!distrito) {
     return Response.json(
       {
         error:
@@ -123,10 +149,13 @@ export async function POST(request: Request) {
       { status: 409 },
     );
   }
-  if (idea.distritoNumero !== sesion.distrito) {
+  if (idea.distritoNumero !== distrito) {
+    // Ademas de un pedido armado a mano, lo ve quien tenia abierta la boleta
+    // de su distrito anterior (lo cambio en otra pestaña o en otro
+    // dispositivo): recargar ahora si trae la del distrito del padron.
     return Response.json(
       {
-        error: `Podés votar únicamente un proyecto de tu distrito (Distrito ${sesion.distrito}).`,
+        error: `Podés votar únicamente un proyecto de tu distrito (Distrito ${distrito}). Si lo cambiaste en otra pestaña o en otro dispositivo, recargá la página para ver su boleta.`,
       },
       { status: 403 },
     );
@@ -139,7 +168,7 @@ export async function POST(request: Request) {
       votanteId: sesion.votanteId,
       ideaId: idea.id,
       distritoId: idea.distritoId!,
-      ipHash,
+      ipHash: hashearIp(ipDe(request)),
     });
   } catch (causa) {
     // La restriccion UNIQUE (edicion, votante) dispara aca si ya voto. Drizzle
@@ -159,7 +188,7 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
-    console.error("[votos] fallo", causa);
+    console.error("[votos] fallo", resumenDeError(causa));
     return Response.json({ error: "No se pudo registrar el voto." }, { status: 500 });
   }
 

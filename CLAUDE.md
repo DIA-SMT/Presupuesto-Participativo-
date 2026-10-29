@@ -75,9 +75,13 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   flag muestran el host y esperan 5 s antes de escribir. El candado es
   `scripts/produccion.ts`: todo script nuevo que escriba en la base lo llama
   antes de la primera consulta. `setup` se niega siempre con una base remota, y
-  `seed -- --produccion` solo corre sobre una base vacía. Nunca pasar
+  `seed -- --produccion` solo corre sobre una base vacía y no crea cuentas del
+  panel (esas van siempre con `crear-admin`). Nunca pasar
   `--produccion` ni poner la URL de Supabase sin un pedido explícito del
-  usuario para esa corrida.
+  usuario para esa corrida. drizzle-kit tiene su propio candado en
+  `drizzle.config.ts` (`evaluarDrizzleKit`): `db:studio`, `migrate` y `pull` no
+  abren una base remota sin `DRIZZLE_KIT_PRODUCCION=1` en la terminal, y `push`
+  contra una remota no corre nunca; no pasar esa variable sin el mismo pedido.
 - El esquema se cambia con migraciones versionadas: se edita `src/db/schema.ts`,
   se corre `npm run db:generate` y el SQL de `drizzle/` **se lee antes de
   aplicarlo** con `npm run db:migrate`. `drizzle-kit push` ya no se usa: proponía
@@ -91,7 +95,9 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
 - Con `DATABASE_URL` de Supabase (pooler, puerto 6543) el mismo código usa
   node-postgres (`Pool` de `pg`), **no** postgres.js: sobre pgbouncer en modo
   transacción postgres.js entubaba varias consultas por conexión y el pooler
-  cruzaba los parámetros (ver el comentario de `src/db/index.ts`). No usar
+  cruzaba los parámetros (ver el comentario de `src/db/index.ts`). Un script que
+  abra su propia conexión usa `opcionesDePool` (TLS con base remota) o
+  `scripts/conexion-directa.ts`, nunca la URL cruda. No usar
   extensiones de Postgres: la
   geografía y la búsqueda sin tildes se resuelven en la aplicación
   (`src/lib/geo.ts`, columna `barrio_normalizado`).

@@ -1,11 +1,11 @@
 /** Ultimas consultas al modelo, con su origen y su costo en tokens. */
 import "./cargar-env";
-import postgres from "postgres";
+import { abrirPostgres } from "./conexion-directa";
 
 async function main() {
-  const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
+  const pool = abrirPostgres();
 
-  const ultimas = await sql`
+  const { rows: ultimas } = await pool.query(`
     SELECT origen,
            coalesce(modelo, '(sin modelo)') AS modelo,
            tokens_entrada,
@@ -16,11 +16,11 @@ async function main() {
       FROM chat_consultas
      ORDER BY created_at DESC
      LIMIT 5
-  `;
+  `);
   console.log("Últimas consultas:");
   console.table(ultimas);
 
-  const porOrigen = await sql`
+  const { rows: porOrigen } = await pool.query(`
     SELECT origen,
            count(*)::int AS consultas,
            coalesce(sum(tokens_entrada), 0)::int AS tokens_entrada,
@@ -28,7 +28,7 @@ async function main() {
       FROM chat_consultas
      GROUP BY origen
      ORDER BY 2 DESC
-  `;
+  `);
   console.log("\nPor origen:");
   console.table(porOrigen);
 
@@ -40,7 +40,7 @@ async function main() {
   // tildes y sin signos: "¿Cómo voto?" y "como voto" cuentan como una sola. Las
   // filas anteriores a la migracion 0008 la tienen en NULL y quedan fuera; el
   // conteo de abajo dice cuantas son, para que el total no parezca perdido.
-  const repetidas = await sql`
+  const { rows: repetidas } = await pool.query(`
     SELECT pregunta_normalizada AS pregunta,
            count(*)::int AS veces,
            max(created_at)::date AS ultima
@@ -50,13 +50,15 @@ async function main() {
      GROUP BY pregunta_normalizada
      ORDER BY veces DESC, ultima DESC
      LIMIT 15
-  `;
-  const [{ sin_clave: sinClave }] = await sql`
+  `);
+  const {
+    rows: [{ sin_clave: sinClave }],
+  } = await pool.query<{ sin_clave: number }>(`
     SELECT count(*)::int AS sin_clave
       FROM chat_consultas
      WHERE origen = 'chat'
        AND pregunta_normalizada IS NULL
-  `;
+  `);
   console.log("\nQué pregunta la gente (chat, agrupado sin tildes ni signos):");
   if (repetidas.length) console.table(repetidas);
   else console.log("  todavía no hay ninguna consulta con la clave cargada.");
@@ -70,7 +72,7 @@ async function main() {
     );
   }
 
-  await sql.end();
+  await pool.end();
 }
 
 main().catch((e) => {

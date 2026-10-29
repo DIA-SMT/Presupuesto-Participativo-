@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import FormularioIdea from "@/components/FormularioIdea";
 import { Aviso } from "@/components/ui";
-import { getCategorias, getEdicionActiva, getTextos, getTokensUsadosHoy } from "@/db/queries";
+import { getEdicionActiva, getTextos, getTokensUsadosHoy } from "@/db/queries";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 import { gastoDelDiaAgotado, hayClave } from "@/lib/modelo";
 import { puertaDeIngreso } from "@/lib/ingreso-vecino";
@@ -17,12 +17,13 @@ export const metadata: Metadata = {
 
 export default async function NuevaIdea() {
   const edicion = await getEdicionActiva();
-  const [textos, categorias] = await Promise.all([getTextos(), getCategorias()]);
+  const textos = await getTextos();
 
   /*
-   * La etapa manda para el vecino. El equipo (o MODO_PRUEBA_IDEAS=1) puede
-   * cargar igual para recorrer el circuito completo y mostrarlo: el por que
-   * esta en src/lib/modo-prueba.ts. Los dos casos se distinguen para poder
+   * La etapa manda para el vecino. El equipo con permiso de escritura (o
+   * MODO_PRUEBA_IDEAS=1) puede cargar igual para recorrer el circuito completo
+   * y mostrarlo; una cuenta lectora no. El por que esta en
+   * src/lib/modo-prueba.ts. Los dos casos se distinguen para poder
    * decirlo en pantalla, que es lo que evita que una demostracion se confunda
    * con una carga real.
    */
@@ -112,7 +113,6 @@ export default async function NuevaIdea() {
         mismo: el asistente contestaria "no disponible", asi que no se ofrece.
       */}
       <FormularioIdea
-        categorias={categorias}
         abierta={abierta}
         conIA={hayClave() && !(await gastoDelDiaAgotado(getTokensUsadosHoy))}
         anio={edicion?.anio ?? new Date().getFullYear()}

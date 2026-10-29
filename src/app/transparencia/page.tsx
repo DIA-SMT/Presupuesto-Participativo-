@@ -9,7 +9,7 @@ import {
 } from "@/db/queries";
 import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
 import { conEdicion, votacionTerminada } from "@/lib/ediciones";
-import { ETIQUETA_ETAPA, formatearNumero } from "@/lib/formato";
+import { ETIQUETA_ETAPA, distritosConVerbo, formatearNumero } from "@/lib/formato";
 
 /**
  * Que gano en cada distrito y con cuantos votos.
@@ -77,6 +77,11 @@ export default async function Transparencia({ searchParams }: Props) {
   const yaVoto = votacionTerminada(edicion.etapa);
   const anterior =
     !ganadores.length && !yaVoto ? await getUltimaEdicionTerminadaConGanadores() : null;
+  // Con la votacion terminada tampoco hay resultado hasta que se proclama, y
+  // se proclama de a un distrito: "no tiene proyectos ganadores" y "el distrito
+  // 1, 2, ..., 20 no eligió proyecto" eran falsos en ese tramo (ver
+  // `ganadorPorProclamar`).
+  const porProclamar = yaVoto ? stats.distritosPorProclamar : [];
 
   return (
     <div className="contenedor py-10 sm:py-14">
@@ -95,12 +100,14 @@ export default async function Transparencia({ searchParams }: Props) {
         <section className="mt-10">
           <h2 className="text-xl font-bold">Proyectos ganadores</h2>
           <div className="mt-4">
-            <Aviso tono={yaVoto ? "atencion" : "info"}>
-              {yaVoto
-                ? `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`
-                : `La edición ${edicion.anio} todavía no tiene proyectos ganadores: está en la etapa “${
-                    ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa
-                  }”, y el ganador de cada distrito sale de la votación.`}
+            <Aviso tono={yaVoto && !porProclamar.length ? "atencion" : "info"}>
+              {porProclamar.length
+                ? `La votación de la edición ${edicion.anio} terminó. Los proyectos ganadores se publican acá a medida que se proclamen.`
+                : yaVoto
+                  ? `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`
+                  : `La edición ${edicion.anio} todavía no tiene proyectos ganadores: está en la etapa “${
+                      ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa
+                    }”, y el ganador de cada distrito sale de la votación.`}
               {anterior && anterior.id !== edicion.id && (
                 <>
                   {" "}
@@ -181,7 +188,7 @@ export default async function Transparencia({ searchParams }: Props) {
                     Total
                   </td>
                   <td className="px-3 py-3 text-right tabular-nums">
-                    {formatearNumero(stats.votos)}
+                    {formatearNumero(stats.votosGanadores)}
                   </td>
                 </tr>
               </tfoot>
@@ -190,17 +197,39 @@ export default async function Transparencia({ searchParams }: Props) {
         </section>
       )}
 
-      {/* Solo con la votacion terminada: antes, "no eligió proyecto" es falso. */}
+      {/* Solo con la votacion terminada: antes, "no eligió proyecto" es falso.
+          Y sin los que esperan su proclamacion, que van en la seccion de abajo. */}
       {yaVoto && stats.distritosSinGanador.length > 0 && (
         <section className="mt-10">
           <h2 className="text-xl font-bold">Distritos sin proyecto ganador</h2>
           <p className="mt-2 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-            En la edición {stats.anio} el distrito{" "}
-            {stats.distritosSinGanador.join(", ")} no eligió proyecto. Publicarlo es parte de la
-            información: muestra dónde el programa todavía no llegó.
+            En la edición {stats.anio}{" "}
+            {distritosConVerbo(stats.distritosSinGanador, "no eligió", "no eligieron")} proyecto.
+            Publicarlo es parte de la información: muestra dónde el programa todavía no llegó.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {stats.distritosSinGanador.map((numero) => (
+              <Link
+                key={numero}
+                href={conEdicion(`/distritos/${numero}`, anioEnEnlaces)}
+                className="superficie rounded-xl px-3.5 py-2 text-sm font-medium"
+              >
+                Distrito {numero}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Votaron, pero su ganador todavia no se proclamo: no "quedaron sin". */}
+      {porProclamar.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-xl font-bold">Distritos por proclamar</h2>
+          <p className="mt-2 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+            {frasePorProclamar(stats.anio, porProclamar)}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {porProclamar.map((numero) => (
               <Link
                 key={numero}
                 href={conEdicion(`/distritos/${numero}`, anioEnEnlaces)}
@@ -252,4 +281,13 @@ export default async function Transparencia({ searchParams }: Props) {
       </section>
     </div>
   );
+}
+
+/** "el distrito 7 ya votó…", o "los distritos 2, 10 y 13 ya votaron…". */
+function frasePorProclamar(anio: number, distritos: number[]): string {
+  if (distritos.length === 1) {
+    return `En la edición ${anio} el distrito ${distritos[0]} ya votó y su ganador todavía no se proclamó. Se publica en esta página apenas se proclame.`;
+  }
+  const lista = new Intl.ListFormat("es", { type: "conjunction" }).format(distritos.map(String));
+  return `En la edición ${anio} los distritos ${lista} ya votaron y sus ganadores todavía no se proclamaron. Se publican en esta página a medida que se proclamen.`;
 }

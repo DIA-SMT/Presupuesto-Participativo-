@@ -24,6 +24,9 @@ export type Limites = {
   barrio: Largo;
   autorNombre: Largo;
   canalDetalle: Largo;
+  referenciasUbicacion: Largo;
+  organizacion: Largo;
+  autorTelefono: Largo;
 };
 
 /**
@@ -40,5 +43,8 @@ export function limitesDeLaIdea(): Limites {
     barrio: { minimo: 0, maximo: LARGOS.barrio },
     autorNombre: { minimo: 0, maximo: LARGOS.autorNombre },
     canalDetalle: { minimo: 3, maximo: LARGO_CANAL_DETALLE },
+    referenciasUbicacion: { minimo: 0, maximo: LARGOS.referenciasUbicacion },
+    organizacion: { minimo: 0, maximo: LARGOS.organizacion },
+    autorTelefono: { minimo: 0, maximo: LARGOS.autorTelefono },
   };
 }

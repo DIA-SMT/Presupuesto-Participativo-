@@ -114,8 +114,8 @@ function formulario(cambios: Record<string, string> = {}): Record<string, string
     fecha: "2026-09-12",
     autorNombre: "Juana Pérez",
     titulo: "Iluminación de la plaza del barrio",
-    categoria: "urbana",
     barrio: "Villa Luján",
+    referenciasUbicacion: "Frente a la escuela, en la esquina de la canchita.",
     solucion: "Poner luminarias LED en todo el perímetro de la plaza y en los senderos.",
     problema: "La plaza queda a oscuras de noche y los vecinos dejaron de usarla.",
     beneficios: "",
@@ -182,7 +182,9 @@ test("el panel carga una idea igual que el formulario, con su canal, su fecha y 
   assert.equal(idea.distrito, 1, "el distrito sale del punto, no lo elige nadie");
   assert.ok(avisos.codigoValido(idea.id, idea.codigo), "el codigo es el de seguimiento de esa idea");
   assert.equal(idea.anio, 2026);
-  assert.equal(idea.categoria, "Urbana", "el comprobante nombra la categoria");
+  assert.equal(idea.categoria, null, "entra sin categoria: la asigna quien evalua");
+  assert.equal(idea.referenciasUbicacion, "Frente a la escuela, en la esquina de la canchita.");
+  assert.equal(idea.organizacion, null, "sin marcar la organizacion, no hay organizacion");
 
   const fila = await filaDe(idea.id);
   assert.equal(fila.estado, "pendiente");
@@ -317,10 +319,10 @@ test("la carga valida lo mismo que el formulario publico, con mensajes que dicen
     ["sin punto", { lat: "", lon: "" }, /Marcá en el mapa/],
     ["fuera del ejido", PUNTO.fuera, /fuera de los 20 distritos/],
     ["titulo corto", { titulo: "Plaza" }, /El título tiene que tener entre 8/],
-    ["solucion corta", { solucion: "Luces." }, /“Qué se propone” tiene que tener entre 30/],
-    ["problema corto", { problema: "Oscuro." }, /“Por qué hace falta” tiene que tener entre 30/],
-    ["sin categoria", { categoria: "" }, /Elegí una categoría/],
-    ["categoria inventada", { categoria: "deportes-extremos" }, /Categoría desconocida/],
+    ["solucion corta", { solucion: "Luces." }, /“Qué les gustaría mejorar o cambiar” tiene que tener entre 30/],
+    ["problema corto", { problema: "Oscuro." }, /“Qué problema comparten en el barrio” tiene que tener entre 30/],
+    ["dni corto", { dni: "12.345" }, /El DNI tiene que tener 7 u 8 números/],
+    ["telefono con letras", { autorTelefono: "llamar a la tarde" }, /Revisá el teléfono/],
     ["canal web", { canal: "web" }, /Elegí por dónde llegó la idea/],
     ["sin de donde vino", { canalDetalle: "" }, /Contá de dónde vino/],
     ["fecha futura", { fecha: "2026-09-26" }, /no puede ser posterior a hoy/],
@@ -389,11 +391,12 @@ async function correccion(id: number, cambios: Record<string, string> = {}) {
   return {
     id: String(id),
     titulo: fila.titulo,
-    categoria: categoria?.slug ?? "urbana",
+    categoria: categoria?.slug ?? "",
     barrio: fila.barrio ?? "",
     problema: fila.problema ?? "",
     solucion: fila.solucion ?? "",
     beneficios: fila.beneficios ?? "",
+    referenciasUbicacion: fila.referenciasUbicacion ?? "",
     lat: fila.lat ?? "",
     lon: fila.lon ?? "",
     aproximada: fila.ubicacionAproximada ? "1" : "",
@@ -430,9 +433,9 @@ test("corregir cambia el texto sin tocar el slug, y deja el antes y el despues",
   assert.equal(fila.accion, "correccion");
   assert.equal(fila.estadoAnterior, null);
   assert.match(fila.nota ?? "", /Título: “Iluminacion de la plazita” → “Iluminación de la plaza Belgrano”/);
-  assert.match(fila.nota ?? "", /Categoría: Urbana → Socio-ambiental/);
+  assert.match(fila.nota ?? "", /Categoría: sin categoría → Socio-ambiental/);
   assert.match(fila.nota ?? "", /Barrio: “Villa Luján” → “Villa Alem”/);
-  assert.match(fila.nota ?? "", /Quiénes se benefician: \(vacío\) → “Las familias/);
+  assert.match(fila.nota ?? "", /A quiénes beneficia: \(vacío\) → “Las familias/);
 });
 
 test("la correccion no normaliza el titulo: la sigla que arregla una persona queda arreglada", async () => {
@@ -891,8 +894,15 @@ test("una descartada no cuenta en ningun numero del panel ni aparece en la bande
   const serie = await consultas.getSerieIdeas(edicion.id);
   assert.deepEqual(serie, [{ dia: "2030-03-01", cantidad: 1 }]);
 
+  // El contador de votos de las ideas (donde estan los de una edicion migrada)
+  // tambien deja afuera a la descartada: la lista de ediciones lo suma.
+  await base.db.update(base.schema.ideas).set({ votos: 7 }).where(eq(base.schema.ideas.id, valida));
+  await base.db.update(base.schema.ideas).set({ votos: 50 }).where(eq(base.schema.ideas.id, spam));
   const ediciones = await consultas.getEdiciones();
-  assert.equal(ediciones.find((e) => e.id === edicion.id)?.ideas, 1);
+  const listada = ediciones.find((e) => e.id === edicion.id);
+  assert.equal(listada?.ideas, 1);
+  assert.equal(listada?.votos, 0, "sin filas en votos");
+  assert.equal(listada?.votosEnIdeas, 7, "el contador no suma la descartada");
 
   const parecidas = await consultas.getIdeasParaComparar(edicion.id, 1);
   assert.deepEqual(parecidas.map((p) => p.id), [valida], "el asistente no compara contra un spam");

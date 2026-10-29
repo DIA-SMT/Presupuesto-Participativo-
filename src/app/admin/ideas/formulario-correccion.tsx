@@ -22,9 +22,10 @@
  * formulario de la misma ficha que guarda (la evaluacion) le borraria a la
  * persona lo que estaba corrigiendo.
  */
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import type { CandidataIntegracion, IdeaAdmin } from "@/db/queries";
 import { puedeCambiarDeDistrito, puedeCambiarIdea, type Etapa } from "@/lib/etapas";
+import { PREGUNTAS_DE_LA_IDEA } from "@/lib/contenido-del-programa";
 import { corregirIdea } from "./acciones";
 import type { Limites } from "./limites";
 import { DISTRITOS_MAPA, MapaDiferido, SIN_PUNTOS } from "./mapa-ficha";
@@ -147,6 +148,7 @@ function FormularioCorreccion({
     solucion: ficha.solucion ?? "",
     problema: ficha.problema ?? "",
     beneficios: ficha.beneficios ?? "",
+    referenciasUbicacion: ficha.referenciasUbicacion ?? "",
     integradaEn: ficha.integradaEn ? String(ficha.integradaEn.id) : "",
   });
   const [punto, setPunto] = useState<Punto | null>(original);
@@ -240,8 +242,24 @@ function FormularioCorreccion({
     porDistrito.set(grupo, [...(porDistrito.get(grupo) ?? []), candidata]);
   }
 
+  /*
+   * Un <form action> se resetea solo al terminar cada envio, y los <select>
+   * controlados no sobreviven al reset (React no les marca la opcion por
+   * defecto). Si la correccion fallaba ("Probá de nuevo"), el formulario
+   * quedaba abierto mostrando la primera categoria y "No está integrada", y
+   * el reintento sin tocar nada mandaba eso: cambiaba la categoria y borraba
+   * la integracion. Con preventDefault React no resetea nada; la action queda
+   * puesta para que, antes de que cargue React, no se mande solo por GET. El
+   * mismo arreglo que equipo/panel.tsx.
+   */
+  function enviar(evento: React.SubmitEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => accion(datos));
+  }
+
   return (
-    <form action={accion} className="grid gap-3">
+    <form action={accion} onSubmit={enviar} className="grid gap-3">
       <input type="hidden" name="id" value={ficha.id} />
       <input type="hidden" name="lat" value={punto ? String(punto.lat) : ""} />
       <input type="hidden" name="lon" value={punto ? String(punto.lon) : ""} />
@@ -263,14 +281,13 @@ function FormularioCorreccion({
         <Campo etiqueta="Categoría">
           <select
             name="categoria"
-            required
             value={campos.categoria}
             onChange={(evento) => escribir("categoria", evento.target.value)}
             className="rounded-xl px-3 py-2"
             style={estiloCampo}
           >
-            <option value="" disabled>
-              Elegí una categoría
+            <option value="">
+              Sin asignar todavía
             </option>
             {categorias.map((categoria) => (
               <option key={categoria.slug} value={categoria.slug}>
@@ -303,18 +320,11 @@ function FormularioCorreccion({
         </Campo>
       </div>
 
-      <Campo etiqueta="Qué se propone" cuenta={`${campos.solucion.trim().length} / ${limites.solucion.maximo}`}>
-        <textarea
-          name="solucion"
-          rows={3}
-          maxLength={limites.solucion.maximo}
-          value={campos.solucion}
-          onChange={(evento) => escribir("solucion", evento.target.value)}
-          className="resize-y rounded-xl px-3 py-2"
-          style={estiloCampo}
-        />
-      </Campo>
-      <Campo etiqueta="Por qué hace falta" cuenta={`${campos.problema.trim().length} / ${limites.problema.maximo}`}>
+      {/* En el orden y con las preguntas del papel 2026. */}
+      <Campo
+        etiqueta={PREGUNTAS_DE_LA_IDEA.problema.pregunta}
+        cuenta={`${campos.problema.trim().length} / ${limites.problema.maximo}`}
+      >
         <textarea
           name="problema"
           rows={3}
@@ -326,7 +336,35 @@ function FormularioCorreccion({
         />
       </Campo>
       <Campo
-        etiqueta="Quiénes se benefician"
+        etiqueta={PREGUNTAS_DE_LA_IDEA.referenciasUbicacion.pregunta}
+        cuenta={`${campos.referenciasUbicacion.trim().length} / ${limites.referenciasUbicacion.maximo}`}
+      >
+        <textarea
+          name="referenciasUbicacion"
+          rows={2}
+          maxLength={limites.referenciasUbicacion.maximo}
+          value={campos.referenciasUbicacion}
+          onChange={(evento) => escribir("referenciasUbicacion", evento.target.value)}
+          className="resize-y rounded-xl px-3 py-2"
+          style={estiloCampo}
+        />
+      </Campo>
+      <Campo
+        etiqueta={PREGUNTAS_DE_LA_IDEA.solucion.pregunta}
+        cuenta={`${campos.solucion.trim().length} / ${limites.solucion.maximo}`}
+      >
+        <textarea
+          name="solucion"
+          rows={3}
+          maxLength={limites.solucion.maximo}
+          value={campos.solucion}
+          onChange={(evento) => escribir("solucion", evento.target.value)}
+          className="resize-y rounded-xl px-3 py-2"
+          style={estiloCampo}
+        />
+      </Campo>
+      <Campo
+        etiqueta={PREGUNTAS_DE_LA_IDEA.beneficios.pregunta}
         cuenta={`${campos.beneficios.trim().length} / ${limites.beneficios.maximo}`}
       >
         <textarea

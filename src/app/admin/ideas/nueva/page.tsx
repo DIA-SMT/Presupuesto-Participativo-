@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCategorias, getEdicionActiva } from "@/db/queries";
+import { getEdicionActiva } from "@/db/queries";
 import { puedeCargarIdea } from "@/lib/etapas";
 import { ETIQUETA_ETAPA } from "@/lib/formato";
 import { getSesionAdmin } from "@/lib/sesion";
@@ -9,7 +9,7 @@ import { limitesDeLaIdea } from "../limites";
 import { hoyEnTucuman } from "@/lib/formato";
 import FormularioCarga from "./formulario";
 
-export const metadata = { title: "Cargar una idea" };
+export const metadata = { title: "Cargar una propuesta" };
 
 /**
  * Carga de una idea por el equipo: lo que llego de una asamblea, por mail o en
@@ -48,11 +48,12 @@ export default async function CargarIdea() {
   const encabezado = (
     <header>
       {volver}
-      <h1 className="mt-3 text-2xl font-bold">Cargar una idea · Edición {edicion.anio}</h1>
+      <h1 className="mt-3 text-2xl font-bold">Cargar una propuesta · Edición {edicion.anio}</h1>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-        Para lo que llegó de una asamblea, por mail o en papel a la oficina. Entra igual que una del
-        formulario del sitio: <strong>en evaluación y sin publicar</strong>, con su número y su
-        código de seguimiento para el vecino. No se pide ni se guarda el correo de nadie.
+        Para el formulario de papel de una asamblea o de la oficina. La pantalla sigue la hoja
+        renglón por renglón. Entra igual que una del sitio: <strong>en evaluación y sin
+        publicar</strong>, sin categoría (la asigna quien la evalúa), con el código de la propuesta
+        para escribir en el papel y el de seguimiento para el vecino.
       </p>
     </header>
   );
@@ -92,19 +93,12 @@ export default async function CargarIdea() {
     );
   }
 
-  const categorias = await getCategorias();
-
   return (
     <div>
       {encabezado}
       <FormularioCarga
         anio={edicion.anio}
         enEvaluacion={edicion.etapa === "evaluacion"}
-        categorias={categorias.map((categoria) => ({
-          slug: categoria.slug,
-          nombre: categoria.nombre,
-          descripcion: categoria.descripcion,
-        }))}
         hoy={hoyEnTucuman()}
         limites={limitesDeLaIdea()}
         sitio={urlDelSitio().replace(/^https?:\/\//, "")}

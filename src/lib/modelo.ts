@@ -115,6 +115,41 @@ export function sumarConsumo(previo: Consumo, uso: UsoCrudo): Consumo {
   };
 }
 
+/**
+ * Caracteres por token para estimar. Un texto en castellano anda cerca de 4, y
+ * el JSON del pedido suma comillas, claves y escapes que el modelo no cobra como
+ * texto: con 3 la estimacion queda por encima de lo real, que es el lado seguro
+ * para un tope de gasto.
+ */
+const CARACTERES_POR_TOKEN = 3;
+
+/**
+ * El consumo aproximado de una llamada que no llego a informar el suyo, con la
+ * forma de `usage` para pasarlo por `sumarConsumo`.
+ *
+ * En streaming el proveedor manda lo gastado en el ULTIMO trozo
+ * (`stream_options.include_usage`). Una vuelta que no termina (la persona se
+ * fue, el proveedor se quedo callado y la corto `cortarSiSeCalla`, llego un
+ * error a mitad del stream) no lo trae, y antes quedaba registrada en cero. Pero
+ * la entrada se cobra igual, y es lo mas caro de cada vuelta: las instrucciones,
+ * el historial y los resultados de las herramientas. Sin esto el tope diario no
+ * veia ese gasto, y cortar la conexion apenas llega el primer byte era una forma
+ * de gastar sin que contara.
+ *
+ * `enviado` es el cuerpo del pedido (mensajes y herramientas) y `generado` lo
+ * que el modelo alcanzo a mandar. Lo que un proveedor siga generando despues del
+ * corte no se ve desde aca y no se cuenta.
+ */
+export function estimarUso(
+  enviado: unknown,
+  generado: string,
+): { prompt_tokens: number; completion_tokens: number } {
+  return {
+    prompt_tokens: Math.ceil((JSON.stringify(enviado) ?? "").length / CARACTERES_POR_TOKEN),
+    completion_tokens: Math.ceil(generado.length / CARACTERES_POR_TOKEN),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Errores
 // ---------------------------------------------------------------------------

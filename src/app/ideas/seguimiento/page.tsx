@@ -31,7 +31,12 @@ async function consultarSeguimiento(
 ): Promise<ResultadoSeguimiento> {
   "use server";
 
-  const numero = Number(String(formulario.get("numero") ?? "").replace(/\D/g, ""));
+  // Vale el numero solo ("42") o el codigo de la propuesta del papel
+  // ("D05-P042"): de ese, el numero es lo que sigue a la P. Sin esto, sacarle
+  // las letras al codigo daba 5042.
+  const escrito = String(formulario.get("numero") ?? "");
+  const despuesDeLaP = /p\s*(\d+)/i.exec(escrito)?.[1];
+  const numero = Number(despuesDeLaP ?? escrito.replace(/\D/g, ""));
   const codigo = String(formulario.get("codigo") ?? "").trim();
 
   if (!Number.isInteger(numero) || numero <= 0 || !codigo) {
@@ -70,6 +75,7 @@ async function consultarSeguimiento(
       ok: true,
       idea: {
         anio: edicion.anio,
+        etapa: edicion.etapa,
         numero: idea.numero ?? numero,
         titulo: idea.titulo,
         estado: idea.estado,

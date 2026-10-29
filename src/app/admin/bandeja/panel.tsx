@@ -23,7 +23,14 @@
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { Chip, ChipEstado } from "@/components/ui";
 import type {
   AccionRevision,
@@ -41,13 +48,17 @@ import type {
 } from "@/db/queries";
 import { puedeCambiarIdea, puedeProclamar, type Etapa, type Veredicto } from "@/lib/etapas";
 import {
+  codigoDePropuesta,
+  diasDeCalendarioEnTucuman,
   ETIQUETA_ESTADO,
   formatearFechaCorta,
   formatearNumero,
   formatearPesos,
 } from "@/lib/formato";
+import { PREGUNTAS_DE_LA_IDEA } from "@/lib/contenido-del-programa";
 import {
   despublicarIdea,
+  estimarPresupuesto,
   evaluarIdea,
   generarInformeImpacto,
   proclamarGanador,
@@ -122,8 +133,8 @@ export type Vista = {
 
 /**
  * Direccion natural de cada orden. Es un espejo del objeto ORDENES de
- * src/db/queries.ts, que es el que manda: acá solo se usa para dibujar la
- * flecha del encabezado y calcular el proximo click.
+ * src/db/queries.ts, que es el que manda: acá solo se usa para saber cual de
+ * los botones de orden esta elegido.
  */
 const DIRECCION_NATURAL: Record<OrdenBandeja, DireccionOrden> = {
   prioridad: "asc",
@@ -132,29 +143,24 @@ const DIRECCION_NATURAL: Record<OrdenBandeja, DireccionOrden> = {
   votos: "desc",
   distrito: "asc",
   estado: "asc",
+  presupuesto: "desc",
 };
 
-/** Columnas de la tabla de trabajo. `clave` null = columna que no ordena. */
-const COLUMNAS: { etiqueta: string; clave: OrdenBandeja | null; alDerecha?: boolean }[] = [
-  { etiqueta: "N°", clave: null },
-  { etiqueta: "Idea", clave: null },
-  { etiqueta: "Estado", clave: "estado" },
-  { etiqueta: "Devolución", clave: null },
-  { etiqueta: "Contacto", clave: null },
-  { etiqueta: "Distrito", clave: "distrito" },
-  { etiqueta: "Barrio", clave: null },
-  { etiqueta: "Ingresó", clave: "antigua" },
-  { etiqueta: "Votos", clave: "votos", alDerecha: true },
-];
-
 /**
- * La columna "Ingresó" cubre los dos ordenes por fecha: "antigua" (las más
- * viejas arriba) y "reciente", que es el mismo criterio al revés. Si alguien
- * llega con orden=reciente en el enlace, la columna se muestra igual activa.
+ * Los ordenes que se ofrecen, con nombre. Antes eran los encabezados de la
+ * tabla, con flechas que habia que adivinar que hacian; con las tarjetas son
+ * botones que dicen lo que hacen. "Mayor" y "menor presupuesto" son el mismo
+ * orden en las dos direcciones; las ideas sin estimacion van al final en los
+ * dos (ver listarIdeasBandeja).
  */
-function columnaDe(orden: OrdenBandeja): OrdenBandeja {
-  return orden === "reciente" ? "antigua" : orden;
-}
+const ORDENES_A_LA_VISTA: { etiqueta: string; orden: OrdenBandeja; dir: DireccionOrden | null }[] = [
+  { etiqueta: "Para trabajar", orden: "prioridad", dir: null },
+  { etiqueta: "Más recientes", orden: "reciente", dir: null },
+  { etiqueta: "Más votadas", orden: "votos", dir: null },
+  { etiqueta: "Mayor presupuesto", orden: "presupuesto", dir: "desc" },
+  { etiqueta: "Menor presupuesto", orden: "presupuesto", dir: "asc" },
+  { etiqueta: "Por distrito", orden: "distrito", dir: null },
+];
 
 /** Fechas con hora en la zona de Tucumán: el historial se lee por minuto. */
 const fechaHora = new Intl.DateTimeFormat("es-AR", {
@@ -169,10 +175,11 @@ const fechaHora = new Intl.DateTimeFormat("es-AR", {
 /**
  * Antiguedad en palabras. El "ahora" lo fija el server component y viaja por
  * props: si cada lado usara su propio reloj, el HTML del servidor y el del
- * cliente podrian no coincidir.
+ * cliente podrian no coincidir. Se cuenta por dia de calendario de Tucuman y no
+ * en bloques de 24 h: "hoy" tiene que coincidir con la fecha del title.
  */
 function antiguedad(desde: Date, ahora: number): string {
-  const dias = Math.floor((ahora - desde.getTime()) / 86_400_000);
+  const dias = diasDeCalendarioEnTucuman(desde, new Date(ahora));
   if (dias <= 0) return "hoy";
   if (dias === 1) return "hace 1 día";
   if (dias < 60) return `hace ${dias} días`;
@@ -265,6 +272,10 @@ function usarFiltrosEnVivo(vista: Vista) {
         temporizador.current = null;
         navegar({ q: valor });
       }, DEMORA_BUSQUEDA);
+    },
+    /** El select de distrito: navega enseguida, sin demora. */
+    elegirDistrito(valor: string) {
+      navegar({ distrito: valor, idea: "" });
     },
     /** Enter en el buscador: no esperar la demora. */
     buscarYa() {
@@ -369,7 +380,6 @@ export default function PanelBandeja({
   const desde = total === 0 ? 0 : (vista.pagina - 1) * porPagina + 1;
   const hasta = Math.min(total, vista.pagina * porPagina);
 
-  const columnaActiva = columnaDe(vista.orden);
   const direccionActiva = vista.dir ?? DIRECCION_NATURAL[vista.orden];
 
   /** Cambiar de filtro siempre vuelve a la primera página y cierra la ficha. */
@@ -377,22 +387,17 @@ export default function PanelBandeja({
     armarEnlace(vista, { pagina: 1, idea: "", ...cambios });
 
   /** Ordenar mantiene el filtro y la ficha abierta, pero vuelve a la página 1. */
-  function enlaceOrden(clave: OrdenBandeja): string {
-    const activa = columnaActiva === clave;
-    return armarEnlace(vista, {
-      orden: clave,
-      // Sobre la columna activa el click invierte; sobre otra se arranca con la
-      // dirección natural de ese orden (null).
-      dir: activa ? (direccionActiva === "asc" ? "desc" : "asc") : null,
-      pagina: 1,
-    });
+  function enlaceOrden(orden: OrdenBandeja, dir: DireccionOrden | null): string {
+    return armarEnlace(vista, { orden, dir, pagina: 1 });
   }
+  const ordenElegido = (orden: OrdenBandeja, dir: DireccionOrden | null) =>
+    vista.orden === orden && direccionActiva === (dir ?? DIRECCION_NATURAL[orden]);
 
   return (
     <div>
       <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-          <h1 className="text-2xl font-bold">Ideas · Edición {anio}</h1>
+          <h1 className="text-2xl font-bold">Propuestas · Edición {anio}</h1>
           {/*
             Lo que llega de una asamblea, por mail o en papel. Solo para quien
             puede escribir; si la etapa no deja cargar, la pantalla lo explica
@@ -404,7 +409,7 @@ export default function PanelBandeja({
               className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white"
               style={{ background: "var(--color-marca-700)" }}
             >
-              Cargar una idea
+              Cargar una propuesta
             </Link>
           )}
         </div>
@@ -463,13 +468,36 @@ export default function PanelBandeja({
           {/* El resto del filtro viaja escondido: sin JavaScript, buscar no
               tiene que borrar la tarjeta elegida ni el orden. */}
           {vista.estado && <input type="hidden" name="estado" value={vista.estado} />}
-          {vista.distrito && <input type="hidden" name="distrito" value={vista.distrito} />}
           {vista.categoria && <input type="hidden" name="categoria" value={vista.categoria} />}
           {vista.sinDevolucion && <input type="hidden" name="sindevolucion" value="1" />}
           {vista.sinPublicar && <input type="hidden" name="publicada" value="0" />}
           {vista.conContacto && <input type="hidden" name="contacto" value="1" />}
           {vista.orden !== "prioridad" && <input type="hidden" name="orden" value={vista.orden} />}
           {vista.dir && <input type="hidden" name="dir" value={vista.dir} />}
+
+          {/*
+            El distrito tambien se elige tocando su columna en el grafico de
+            arriba, pero con veinte columnas finas hacia falta apuntar: este
+            select es la forma directa. Con JavaScript navega al elegir; sin
+            JavaScript viaja con el boton "Buscar".
+          */}
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium">Distrito</span>
+            <select
+              name="distrito"
+              value={vista.distrito}
+              onChange={(evento) => filtros.elegirDistrito(evento.target.value)}
+              style={estiloCampo}
+              className="w-40 rounded-xl px-3 py-2"
+            >
+              <option value="">Todos</option>
+              {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((numero) => (
+                <option key={numero} value={numero}>
+                  Distrito {numero}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <label className="grid gap-1 text-sm">
             <span className="font-medium">Buscar</span>
@@ -478,7 +506,7 @@ export default function PanelBandeja({
               name="q"
               value={filtros.q}
               onChange={(evento) => filtros.cambiarBusqueda(evento.target.value)}
-              placeholder="Título o barrio (con o sin tildes)…"
+              placeholder="Nombre, barrio o código (P012)…"
               style={estiloCampo}
               className="w-64 rounded-xl px-3 py-2"
             />
@@ -541,25 +569,42 @@ export default function PanelBandeja({
                 </>
               )}
             </p>
-            {vista.orden === "prioridad" ? (
-              // La unica explicacion del orden en toda la pantalla. Antes lo
-              // decia tambien un parrafo de cuatro lineas abajo del titulo, a
-              // dos pantallas de distancia de la tabla que ordena.
-              <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                Primero las que no evaluó nadie, después los “no” sin devolución. Tocá una idea
-                para evaluarla.
-              </p>
-            ) : (
-              <Link
-                href={armarEnlace(vista, { orden: "prioridad", dir: null, pagina: 1 })}
-                scroll={false}
-                className="text-xs underline"
-                style={{ color: "var(--marca-texto)" }}
-              >
-                Volver al orden de trabajo
-              </Link>
-            )}
           </div>
+
+          <nav
+            aria-label="Ordenar las propuestas"
+            className="mt-3 flex flex-wrap gap-1.5"
+            data-recorrido="bandeja-orden"
+          >
+            {ORDENES_A_LA_VISTA.map((opcion) => {
+              const elegido = ordenElegido(opcion.orden, opcion.dir);
+              return (
+                <Link
+                  key={opcion.etiqueta}
+                  href={enlaceOrden(opcion.orden, opcion.dir)}
+                  scroll={false}
+                  aria-current={elegido ? "true" : undefined}
+                  className="chip-orden"
+                >
+                  {elegido && <span aria-hidden="true">✓ </span>}
+                  {opcion.etiqueta}
+                </Link>
+              );
+            })}
+          </nav>
+          {vista.orden === "prioridad" && (
+            // La unica explicacion del orden de trabajo en toda la pantalla.
+            <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+              Primero las que no evaluó nadie, después los “no” sin devolución. Tocá una propuesta
+              para abrir su ficha.
+            </p>
+          )}
+          {vista.orden === "presupuesto" && (
+            <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+              Por el presupuesto que estimó el equipo. Las que todavía no tienen estimación van al
+              final: se estima desde la ficha.
+            </p>
+          )}
 
           {filas.length === 0 ? (
             <div
@@ -575,181 +620,28 @@ export default function PanelBandeja({
               </p>
             </div>
           ) : (
-            // La tabla scrollea adentro de su caja, con el encabezado pegado
-            // arriba: 25 filas de dos renglones hacian una pagina de 1.500 px y
-            // el panorama, la ficha y el paginador quedaban a kilometros. 70vh
-            // deja ver unas doce filas y la caja termina antes del borde de la
-            // pantalla, asi se nota que hay mas abajo. Es una region con foco
-            // propio (tabIndex) para que se pueda scrollear con el teclado.
+            // Las tarjetas scrollean adentro de su caja, como lo hacia la
+            // tabla: 25 propuestas sin tope hacian una pagina larguisima y la
+            // ficha y el paginador quedaban lejos. Es una region con foco propio
+            // (tabIndex) para que se pueda scrollear con el teclado.
             <div
-              className="superficie mt-3 max-h-[70vh] overflow-auto rounded-2xl"
+              className="mt-3 max-h-[75vh] overflow-auto rounded-2xl p-1"
               role="region"
-              aria-label="Listado de ideas, con scroll propio"
+              aria-label="Propuestas, con scroll propio"
               tabIndex={0}
             >
-              <table className="w-full min-w-[56rem] border-collapse text-sm">
-                <caption className="sr-only">
-                  Ideas de la edición {anio} con su estado, distrito, barrio, antigüedad, votos, si
-                  tienen devolución escrita y si el autor dejó un dato de contacto
-                </caption>
-                <thead>
-                  <tr>
-                    {COLUMNAS.map((columna) => {
-                      const activa = columna.clave !== null && columna.clave === columnaActiva;
-                      return (
-                        <th
-                          key={columna.etiqueta}
-                          scope="col"
-                          aria-sort={
-                            columna.clave === null
-                              ? undefined
-                              : activa
-                                ? direccionActiva === "asc"
-                                  ? "ascending"
-                                  : "descending"
-                                : "none"
-                          }
-                          // sticky va en cada th y no en el thead: Chrome no lo
-                          // respeta en el thead. Y con border-collapse el borde de
-                          // la fila no acompana al encabezado pegado, por eso la
-                          // linea de abajo es una sombra interior y no un border.
-                          className={`sticky top-0 z-10 px-3 py-3 font-semibold ${
-                            columna.alDerecha ? "text-right" : "text-left"
-                          }`}
-                          style={{
-                            background: "var(--fondo-tarjeta)",
-                            boxShadow: "inset 0 -2px 0 var(--borde)",
-                          }}
-                        >
-                          {columna.clave === null ? (
-                            columna.etiqueta
-                          ) : (
-                            <Link
-                              href={enlaceOrden(columna.clave)}
-                              scroll={false}
-                              className="inline-flex items-center gap-1 hover:underline"
-                              style={{ color: activa ? "var(--marca-texto)" : "var(--texto)" }}
-                            >
-                              {columna.etiqueta}
-                              <span aria-hidden="true" style={{ opacity: activa ? 1 : 0.35 }}>
-                                {activa ? (direccionActiva === "asc" ? "↑" : "↓") : "↕"}
-                              </span>
-                            </Link>
-                          )}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filas.map((fila) => {
-                    const abierta = ficha?.id === fila.id;
-                    const falta = faltaDevolucion(fila.estado, fila.tieneDevolucion);
-                    return (
-                      <tr
-                        key={fila.id}
-                        style={{
-                          borderBottom: "1px solid var(--borde)",
-                          // Marca al costado: azul la fila abierta, ámbar la que
-                          // le debe una devolución a un vecino. Acá van las rampas
-                          // y no los tokens de texto (--marca-texto, --acento-texto)
-                          // que usan las pastillas de estas mismas filas: como
-                          // borde alcanza con el 3:1 que pide WCAG, y la rampa lo
-                          // cumple en los dos temas.
-                          borderLeft: `3px solid ${
-                            abierta
-                              ? "var(--color-marca-500)"
-                              : falta
-                                ? "var(--color-acento-600)"
-                                : "transparent"
-                          }`,
-                          background: abierta ? "var(--fondo-suave)" : undefined,
-                        }}
-                      >
-                        <td
-                          className="px-3 py-2.5 text-xs font-semibold tabular-nums"
-                          style={{ color: "var(--texto-suave)" }}
-                        >
-                          {fila.numero === null ? "—" : `#${fila.numero}`}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Link
-                            href={`${armarEnlace(vista, { idea: String(fila.id) })}#ficha`}
-                            aria-current={abierta ? "true" : undefined}
-                            className="font-medium hover:underline"
-                            style={{ color: abierta ? "var(--marca-texto)" : "var(--texto)" }}
-                          >
-                            {fila.titulo}
-                          </Link>
-                          {fila.categoria && (
-                            <span
-                              className="mt-0.5 block text-xs"
-                              style={{ color: "var(--texto-suave)" }}
-                            >
-                              {fila.categoria}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span className="flex flex-col items-start gap-1">
-                            <ChipEstado estado={fila.estado} />
-                            {!fila.publicada && (
-                              <Chip color="var(--acento-texto)">sin publicar</Chip>
-                            )}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          {falta ? (
-                            <Chip color="var(--acento-texto)">falta</Chip>
-                          ) : fila.tieneDevolucion ? (
-                            <Chip color="var(--color-cat-ambiental)">escrita</Chip>
-                          ) : (
-                            <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                              sin escribir
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          {/* Solo el booleano: el mail del autor no sale de la base. */}
-                          {fila.tieneContacto ? (
-                            <span title="El autor dejó un mail para recibir avisos. El panel nunca muestra el dato.">
-                              <Chip color="var(--marca-texto)">
-                                <span aria-hidden="true">✉</span> sí
-                              </Chip>
-                            </span>
-                          ) : (
-                            <span
-                              className="text-xs"
-                              style={{ color: "var(--texto-suave)" }}
-                              title="No hay forma de avisarle al autor por mail."
-                            >
-                              sin contacto
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums">
-                          {fila.distrito === null ? (
-                            <span style={{ color: "var(--texto-suave)" }}>—</span>
-                          ) : (
-                            `D${fila.distrito}`
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          {fila.barrio ?? <span style={{ color: "var(--texto-suave)" }}>—</span>}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span title={fechaHora.format(fila.createdAt)}>
-                            {antiguedad(fila.createdAt, ahora)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">
-                          {formatearNumero(fila.votos)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <ul className="grilla-propuestas">
+                {filas.map((fila) => (
+                  <li key={fila.id}>
+                    <TarjetaPropuesta
+                      fila={fila}
+                      abierta={ficha?.id === fila.id}
+                      href={`${armarEnlace(vista, { idea: String(fila.id) })}#ficha`}
+                      ahora={ahora}
+                    />
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -830,6 +722,106 @@ export default function PanelBandeja({
   );
 }
 
+/**
+ * Una propuesta del listado. Toda la tarjeta es el enlace a su ficha.
+ *
+ * Arriba lo que la identifica (el codigo del papel, D05-P012, y el estado),
+ * en el medio el nombre y de donde es, y abajo los tres numeros por los que se
+ * ordena: votos, presupuesto estimado y antiguedad. El borde de la izquierda
+ * repite la regla de la tabla: azul la abierta, ambar la que le debe una
+ * devolucion a un vecino.
+ */
+function TarjetaPropuesta({
+  fila,
+  abierta,
+  href,
+  ahora,
+}: {
+  fila: FilaBandeja;
+  abierta: boolean;
+  href: string;
+  ahora: number;
+}) {
+  const falta = faltaDevolucion(fila.estado, fila.tieneDevolucion);
+  return (
+    <Link
+      href={href}
+      aria-current={abierta ? "true" : undefined}
+      className="tarjeta-propuesta"
+      data-marca={abierta ? "abierta" : falta ? "debe" : undefined}
+    >
+      <span className="flex flex-wrap items-center justify-between gap-2">
+        <span
+          className="font-mono text-xs font-semibold tracking-wide"
+          style={{ color: "var(--texto-suave)" }}
+        >
+          {codigoDePropuesta(fila.distrito, fila.numero)}
+        </span>
+        <span className="flex flex-wrap items-center gap-1">
+          <ChipEstado estado={fila.estado} />
+          {!fila.publicada && <Chip color="var(--acento-texto)">sin publicar</Chip>}
+        </span>
+      </span>
+
+      <span
+        className="mt-2 block text-[0.9375rem] font-semibold leading-snug"
+        style={{ color: abierta ? "var(--marca-texto)" : "var(--texto)" }}
+      >
+        {fila.titulo}
+      </span>
+      <span className="mt-1 block text-xs" style={{ color: "var(--texto-suave)" }}>
+        {fila.distrito === null ? "Sin distrito" : `Distrito ${fila.distrito}`}
+        {fila.barrio && ` · ${fila.barrio}`}
+      </span>
+      <span className="mt-1 block text-xs" style={{ color: "var(--texto-suave)" }}>
+        {fila.categoria ?? <em>Sin categoría: se asigna al evaluar</em>}
+        {fila.organizacion && <> · {fila.organizacion}</>}
+      </span>
+
+      {falta && (
+        <span className="mt-2 block">
+          <Chip color="var(--acento-texto)">falta la devolución</Chip>
+        </span>
+      )}
+
+      {/* Empuja los numeros al pie: en una fila de tarjetas de distinto alto,
+          los votos y el presupuesto quedan alineados. */}
+      <span className="block min-h-3 flex-1" aria-hidden="true" />
+      <span
+        className="grid grid-cols-3 gap-2 pt-3 text-xs"
+        style={{ borderTop: "1px solid var(--borde)" }}
+      >
+        <span>
+          <span className="block" style={{ color: "var(--texto-suave)" }}>
+            Votos
+          </span>
+          <span className="font-semibold tabular-nums">{formatearNumero(fila.votos)}</span>
+        </span>
+        <span>
+          <span className="block" style={{ color: "var(--texto-suave)" }}>
+            Presupuesto
+          </span>
+          <span className="font-semibold tabular-nums">
+            {fila.presupuestoEstimado === null ? (
+              <span style={{ color: "var(--texto-suave)", fontWeight: 400 }}>sin estimar</span>
+            ) : (
+              formatearPesos(fila.presupuestoEstimado)
+            )}
+          </span>
+        </span>
+        <span>
+          <span className="block" style={{ color: "var(--texto-suave)" }}>
+            Ingresó
+          </span>
+          <span className="font-semibold" title={fechaHora.format(fila.createdAt)}>
+            {antiguedad(fila.createdAt, ahora)}
+          </span>
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 /** Un paso del paginador. Deshabilitado se dibuja como texto, no como enlace. */
 function EnlacePagina({
   href,
@@ -901,8 +893,10 @@ function Ficha({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-            {ficha.numero === null ? "Sin número asignado" : `Idea #${ficha.numero}`} ·{" "}
-            {ETIQUETA_CANAL[ficha.canal]}
+            <span className="font-mono font-semibold">
+              {codigoDePropuesta(ficha.distrito, ficha.numero)}
+            </span>{" "}
+            · {ETIQUETA_CANAL[ficha.canal]}
             {/* De que asamblea o por que via: no es publico, el equipo si lo ve. */}
             {ficha.canalDetalle && ` · ${ficha.canalDetalle}`}
           </p>
@@ -921,7 +915,13 @@ function Ficha({
           {ficha.distritoNombre ?? "Sin distrito asignado"}
         </DatoFicha>
         <DatoFicha etiqueta="Barrio">{ficha.barrio ?? "Sin barrio"}</DatoFicha>
-        <DatoFicha etiqueta="Categoría">{ficha.categoriaNombre ?? "Sin categoría"}</DatoFicha>
+        <DatoFicha etiqueta="Categoría">
+          {ficha.categoriaNombre ?? (
+            <span style={{ color: "var(--acento-texto)" }}>
+              Sin asignar: se elige en “Corregir la idea”
+            </span>
+          )}
+        </DatoFicha>
         <DatoFicha etiqueta="Votos">{formatearNumero(ficha.votos)}</DatoFicha>
         <DatoFicha etiqueta="Autor">
           {ficha.autorNombre ?? "Sin nombre cargado"}
@@ -934,16 +934,50 @@ function Ficha({
             </span>
           )}
         </DatoFicha>
-        <DatoFicha etiqueta="Contacto del autor">
-          {ficha.tieneContacto
-            ? ficha.autorAvisos
+        {ficha.organizacion && (
+          <DatoFicha etiqueta="En nombre de">{ficha.organizacion}</DatoFicha>
+        )}
+        {/*
+          El telefono es el unico contacto que la ficha muestra en claro: se
+          pidio para que el equipo llame. Como enlace tel:, para marcarlo desde
+          el celular del trabajo.
+        */}
+        <DatoFicha etiqueta="Teléfono">
+          {ficha.autorTelefono ? (
+            <a
+              href={`tel:${ficha.autorTelefono.replace(/[^\d+]/g, "")}`}
+              className="underline"
+              style={{ color: "var(--marca-texto)" }}
+            >
+              {ficha.autorTelefono}
+            </a>
+          ) : (
+            "No dejó"
+          )}
+        </DatoFicha>
+        {ficha.tieneContacto && (
+          <DatoFicha etiqueta="Mail del autor">
+            {ficha.autorAvisos
               ? "Dejó mail y aceptó recibir avisos"
-              : "Dejó mail, sin consentimiento de avisos"
-            : "No dejó contacto"}
+              : "Dejó mail, sin consentimiento de avisos"}
+          </DatoFicha>
+        )}
+        {ficha.autorConDni && !ficha.autorConCidituc && (
+          <DatoFicha etiqueta="Padrón">
+            Trajo DNI en el papel; se une al padrón cuando la persona ingrese con CIDITUC.
+          </DatoFicha>
+        )}
+        <DatoFicha etiqueta="Presupuesto estimado">
+          {ficha.presupuestoEstimado === null
+            ? "Sin estimar"
+            : formatearPesos(ficha.presupuestoEstimado)}
         </DatoFicha>
-        <DatoFicha etiqueta="Presupuesto cargado">
-          {formatearPesos(ficha.presupuestoTotal)}
-        </DatoFicha>
+        {/* El de la obra, el que se carga cuando gana: solo si hay uno. */}
+        {ficha.presupuestoTotal !== null && (
+          <DatoFicha etiqueta="Presupuesto de la obra">
+            {formatearPesos(ficha.presupuestoTotal)}
+          </DatoFicha>
+        )}
         {/*
           "Presentada" es la fecha que declara la idea (la del papel, si la
           cargo el equipo) e "Ingresó" es cuando entro a este sistema: en una
@@ -978,29 +1012,33 @@ function Ficha({
       </dl>
 
       <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
-        El mail del autor no sale de la base: el panel solo sabe si hay contacto, nunca cuál es.
+        El mail del autor no sale de la base: el panel solo sabe si hay, nunca cuál es. El DNI de
+        una idea en papel tampoco: se guarda cifrado, para unirla al padrón.
       </p>
 
-      {(ficha.problema || ficha.solucion || ficha.beneficios) && (
-        <details className="mt-4">
-          <summary className="cursor-pointer text-sm font-medium">Texto de la propuesta</summary>
-          <div className="mt-2 space-y-2 text-sm" style={{ color: "var(--texto-suave)" }}>
-            {ficha.problema && (
-              <p>
-                <strong>Problema:</strong> {ficha.problema}
-              </p>
+      {(ficha.problema || ficha.referenciasUbicacion || ficha.solucion || ficha.beneficios) && (
+        // Abierto: es lo que se lee para evaluar. En el orden del papel.
+        <details className="mt-4" open>
+          <summary className="cursor-pointer text-sm font-medium">La propuesta</summary>
+          <dl className="mt-2 space-y-3 text-sm">
+            {(
+              [
+                ["problema", ficha.problema],
+                ["referenciasUbicacion", ficha.referenciasUbicacion],
+                ["solucion", ficha.solucion],
+                ["beneficios", ficha.beneficios],
+              ] as const
+            ).map(([clave, texto]) =>
+              texto ? (
+                <div key={clave}>
+                  <dt className="text-xs font-semibold" style={{ color: "var(--marca-texto)" }}>
+                    {PREGUNTAS_DE_LA_IDEA[clave].pregunta}
+                  </dt>
+                  <dd className="mt-0.5 whitespace-pre-line">{texto}</dd>
+                </div>
+              ) : null,
             )}
-            {ficha.solucion && (
-              <p>
-                <strong>Solución:</strong> {ficha.solucion}
-              </p>
-            )}
-            {ficha.beneficios && (
-              <p>
-                <strong>Beneficios:</strong> {ficha.beneficios}
-              </p>
-            )}
-          </div>
+          </dl>
         </details>
       )}
 
@@ -1103,6 +1141,8 @@ function FichaEnTrabajo({
         </p>
       )}
 
+      {!soloLectura && <FormularioEstimacion ficha={ficha} />}
+
       <BloqueInforme ficha={ficha} informe={informe} soloLectura={soloLectura} />
 
       {soloLectura ? (
@@ -1151,6 +1191,49 @@ function FichaEnTrabajo({
   );
 }
 
+/**
+ * El presupuesto que estima el equipo al evaluar. Es lo que ordena "Mayor" y
+ * "Menor presupuesto" en las tarjetas; no es publico. Vacio y guardar lo borra.
+ */
+function FormularioEstimacion({ ficha }: { ficha: IdeaAdmin }) {
+  const [resultado, accion, pendiente] = useActionState(estimarPresupuesto, null);
+  return (
+    <form
+      action={accion}
+      data-recorrido="bandeja-estimacion"
+      className="mt-4 rounded-xl px-4 py-3"
+      style={{ border: "1px solid var(--borde)" }}
+    >
+      <input type="hidden" name="id" value={ficha.id} />
+      <label className="grid gap-1 text-sm">
+        <span className="font-medium">Presupuesto estimado</span>
+        <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
+          Lo que calcula el equipo que costaría, en pesos y sin puntos de miles. No se publica.
+        </span>
+        <span className="mt-1 flex flex-wrap items-center gap-2">
+          <input
+            name="presupuestoEstimado"
+            inputMode="decimal"
+            defaultValue={ficha.presupuestoEstimado ?? ""}
+            placeholder="25000000"
+            className="w-44 rounded-xl px-3 py-2 text-sm tabular-nums"
+            style={estiloCampo}
+          />
+          <button
+            type="submit"
+            disabled={pendiente}
+            className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            style={{ background: "var(--color-marca-700)" }}
+          >
+            {pendiente ? "Guardando…" : "Guardar"}
+          </button>
+        </span>
+      </label>
+      <MensajeAccion resultado={resultado} exito="Estimación guardada." />
+    </form>
+  );
+}
+
 function DatoFicha({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
     <div>
@@ -1170,6 +1253,20 @@ function FormularioEvaluacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa
   const [estado, setEstado] = useState<EstadoIdea>(inicial);
   const [devolucion, setDevolucion] = useState(ficha.motivoEstado ?? "");
 
+  // El estado elegido se toma de la ficha al montar, y el formulario no se
+  // vuelve a montar cuando otra accion de la misma ficha cambia el estado
+  // guardado (Ficha lleva key por id): despues de reabrir la revision el chip
+  // decia "En evaluación" pero el select seguia en "No factible", y "Guardar"
+  // volvia a aplicar ese "no" sin que nadie lo eligiera. Se sincroniza con el
+  // valor previo (como resultadoVisto en novedades.tsx) y no con una key, que
+  // borraria el "Evaluación guardada." de useActionState. La devolucion no se
+  // toca: reabrir no la cambia, y asi no se pierde lo que se estaba escribiendo.
+  const [estadoVisto, setEstadoVisto] = useState(ficha.estado);
+  if (ficha.estado !== estadoVisto) {
+    setEstadoVisto(ficha.estado);
+    setEstado(inicial);
+  }
+
   const exige = estado === "no_factible" || estado === "integrado";
   const escritos = devolucion.trim().length;
   const falta = exige && escritos < MINIMO_DEVOLUCION;
@@ -1185,8 +1282,24 @@ function FormularioEvaluacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etapa
   );
   const motivoBloqueo = primerMotivo([...permitidos.values()]);
 
+  /*
+   * Un <form action> se resetea solo al terminar cada envio, y un <select>
+   * controlado no sobrevive al reset (React no le marca la opcion por
+   * defecto): despues de "Evaluación guardada." el chip decia "Factible" y el
+   * select mostraba "En evaluación", y un segundo "Guardar" mandaba eso y
+   * devolvia la idea a evaluacion sin que nadie lo eligiera. Con
+   * preventDefault React no resetea nada; la action queda puesta para que,
+   * antes de que cargue React, el formulario no se mande solo por GET. El
+   * mismo arreglo que equipo/panel.tsx.
+   */
+  function enviar(evento: React.SubmitEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => accion(datos));
+  }
+
   return (
-    <form action={accion} className="grid gap-3">
+    <form action={accion} onSubmit={enviar} className="grid gap-3">
       <input type="hidden" name="id" value={ficha.id} />
       <h3 className="text-sm font-bold">Evaluar la idea</h3>
 
@@ -1256,9 +1369,20 @@ function FormularioPublicacion({ ficha, etapa }: { ficha: IdeaAdmin; etapa: Etap
     ficha.publicada ? despublicarIdea : publicarIdea,
     null,
   );
-  const veredicto = puedeCambiarIdea(etapa, ficha, {
+  const porEtapa = puedeCambiarIdea(etapa, ficha, {
     accion: ficha.publicada ? "despublicar" : "publicar",
   });
+  // La misma regla que reglaParaPublicar (admin/comun.ts, que no se importa
+  // aca porque abre la base): un ganador no se despublica sin reabrir antes su
+  // revision. La accion la vuelve a aplicar sobre la fila bloqueada.
+  const veredicto: Veredicto =
+    ficha.publicada && ficha.ganador
+      ? {
+          permitido: false,
+          motivo:
+            "Esta idea está proclamada como ganadora. Reabrí la revisión antes de sacarla del sitio.",
+        }
+      : porEtapa;
   const bloqueado = !veredicto.permitido;
 
   return (

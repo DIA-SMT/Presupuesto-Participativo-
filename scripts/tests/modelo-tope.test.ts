@@ -6,11 +6,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CONSUMO_VACIO,
   cortarSiSeCalla,
+  estimarUso,
   gastoDelDiaAgotado,
   leerTopeDiario,
   motivoDeFalla,
   OpenAI,
+  sumarConsumo,
   topeAlcanzado,
 } from "../../src/lib/modelo";
 
@@ -84,6 +87,21 @@ test("si no se puede leer el gasto, cuenta como agotado", async () => {
   } finally {
     console.error = errorOriginal;
   }
+});
+
+test("la estimacion de una vuelta cortada cuenta el pedido entero y lo generado, por encima", () => {
+  const instrucciones = "Sos Migue, el asistente del Presupuesto Participativo. ".repeat(200);
+  const enviado = { messages: [{ role: "system", content: instrucciones }], tools: [] };
+  const uso = estimarUso(enviado, "Se presentaron 12 ideas.");
+  // Un texto en castellano anda cerca de 4 caracteres por token: la estimacion
+  // no puede quedar por debajo de eso.
+  assert.ok(uso.prompt_tokens >= Math.ceil(instrucciones.length / 4), `${uso.prompt_tokens}`);
+  assert.ok(uso.completion_tokens >= Math.ceil("Se presentaron 12 ideas.".length / 4));
+  // Y se suma como cualquier consumo informado.
+  const consumo = sumarConsumo(CONSUMO_VACIO, uso);
+  assert.equal(consumo.tokensEntrada, uso.prompt_tokens);
+  assert.equal(consumo.tokensSalida, uso.completion_tokens);
+  assert.deepEqual(estimarUso({}, ""), { prompt_tokens: 1, completion_tokens: 0 });
 });
 
 // ---------------------------------------------------------------------------

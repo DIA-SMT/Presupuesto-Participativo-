@@ -15,6 +15,7 @@
  */
 import { revalidatePath } from "next/cache";
 import { consumir } from "@/lib/rate-limit";
+import { resumenDeError } from "@/lib/errores-base";
 import { exigirAdmin, sinPermiso, type Resultado } from "../comun";
 import {
   aplicarCorreccion,
@@ -71,7 +72,7 @@ export async function cargarIdea(
     if (resultado.ok) revalidatePath("/admin");
     return resultado;
   } catch (causa) {
-    console.error("[admin] cargarIdea fallo", causa);
+    console.error("[admin] cargarIdea fallo", resumenDeError(causa));
     return {
       ok: false,
       error: errorDeEscritura(causa, "No se pudo guardar la idea. Probá de nuevo en un momento."),
@@ -93,7 +94,7 @@ export async function corregirIdea(
     if (resultado.ok) revalidatePath("/", "layout");
     return resultado;
   } catch (causa) {
-    console.error("[admin] corregirIdea fallo", causa);
+    console.error("[admin] corregirIdea fallo", resumenDeError(causa));
     return {
       ok: false,
       error: errorDeEscritura(causa, "No se pudo guardar la corrección. Probá de nuevo en un momento."),
@@ -115,7 +116,7 @@ export async function descartarIdea(
     if (resultado.ok) revalidatePath("/", "layout");
     return resultado;
   } catch (causa) {
-    console.error("[admin] descartarIdea fallo", causa);
+    console.error("[admin] descartarIdea fallo", resumenDeError(causa));
     return {
       ok: false,
       error: errorDeEscritura(causa, "No se pudo descartar la idea. Probá de nuevo en un momento."),
@@ -136,7 +137,7 @@ export async function restaurarIdea(
     if (resultado.ok) revalidatePath("/admin");
     return resultado;
   } catch (causa) {
-    console.error("[admin] restaurarIdea fallo", causa);
+    console.error("[admin] restaurarIdea fallo", resumenDeError(causa));
     return {
       ok: false,
       error: errorDeEscritura(causa, "No se pudo deshacer el descarte. Probá de nuevo en un momento."),

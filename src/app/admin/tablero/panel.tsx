@@ -149,7 +149,7 @@ export default function PanelTablero({
       {/* --- Cabecera y selector de edicion ------------------------------- */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Tablero · Edición {edicion.anio}</h1>
+          <h1 className="text-2xl font-bold">Estadísticas · Edición {edicion.anio}</h1>
           {/*
             Solo la etapa. Antes esta linea decia tambien "edición activa en el
             sitio", que ya lo dice el "(activa)" del selector de al lado, y

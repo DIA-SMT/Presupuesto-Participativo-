@@ -19,7 +19,8 @@
  * Por eso tiene doble candado. Contra una base remota exige `--produccion`
  * (scripts/produccion.ts, como todo script que escribe), y aun con el flag solo
  * corre si esa base esta vacia: el unico uso remoto legitimo es la primera
- * carga de un proyecto de Supabase nuevo.
+ * carga de un proyecto de Supabase nuevo. Y ahi no crea la cuenta del panel:
+ * esa va con `npm run crear-admin` (ver "Usuario del backoffice" mas abajo).
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
 import "./cargar-env";
@@ -105,8 +106,8 @@ async function main() {
         `\nNO SE ESCRIBIO NADA: ${destino.descripcion} ya tiene datos` +
           ` (${cargado.ediciones} ediciones, ${cargado.ideas} ideas).` +
           "\n\nEl seed contra una base remota solo sirve para la primera carga de una" +
-          "\nbase vacia. Sobre una con datos reactivaria la 2025, reescribiria sus ideas," +
-          "\nborraria las preguntas frecuentes y le cambiaria la contrasena al admin." +
+          "\nbase vacia. Sobre una con datos reactivaria la 2025, reescribiria sus ideas" +
+          "\ny borraria las preguntas frecuentes y el cronograma." +
           "\n\nPara lo que se suele querer en produccion:" +
           "\n  - una cuenta del panel ........ npm run crear-admin -- --produccion ..." +
           "\n  - la etapa del proceso ........ /admin/ediciones" +
@@ -311,9 +312,20 @@ async function main() {
   // -------------------------------------------------------------------------
   // Usuario del backoffice
   // -------------------------------------------------------------------------
+  // Contra una base remota no se crea: ADMIN_PASSWORD es la de desarrollo (si
+  // no se la pasa en la terminal, cargar-env la completa desde .env.local), y
+  // la cuenta quedaria sin contrasena provisoria ni minimo de largo, con una
+  // clave que conoce cualquiera que tenga el .env.local. La primera cuenta de
+  // un proyecto nuevo sale de crear-admin, que genera una provisoria al azar,
+  // obliga a cambiarla en el primer ingreso y deja la fila en la bitacora.
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
-  if (email && password) {
+  if (destino.tipo === "remota") {
+    console.log(
+      "Backoffice: en una base remota el seed no crea cuentas. La primera, con:" +
+        '\n  npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" admin --produccion',
+    );
+  } else if (email && password) {
     await db
       .insert(admins)
       .values({

@@ -12,36 +12,48 @@
  * se agrega `--produccion` (en cualquier lugar despues del `--`): sin el flag el
  * script se niega a escribir en una base remota (scripts/produccion.ts).
  *
- * La contrasena sale de ADMIN_PASSWORD; si la variable no esta, la genera al
- * azar y la imprime UNA sola vez. Cuando la genera el script, la cuenta queda
- * marcada con `debe_cambiar_password`: quien la reciba tiene que cambiarla en
- * su primer ingreso.
+ * La contrasena la genera el script al azar (16 caracteres) y la imprime UNA
+ * sola vez, y la cuenta queda marcada con `debe_cambiar_password`: quien la
+ * reciba la cambia en su primer ingreso. No se toma del entorno: ADMIN_PASSWORD
+ * es la del seed y vive en .env.local (ver `guardarCuentaDesdeConsola` en
+ * scripts/cuenta-de-consola.ts).
  *
  * Si la cuenta ya existe, la actualiza y le cierra las sesiones abiertas del
  * panel, como un restablecimiento desde /admin/equipo: sirve tambien para una
- * cuenta comprometida o para recuperar el acceso del ultimo administrador.
+ * cuenta comprometida o para recuperar el acceso del ultimo administrador. El
+ * rol es opcional: sin el, una cuenta que ya existe conserva el suyo (una nueva
+ * nace moderador), y degradar al ultimo administrador activo se rechaza, como
+ * en el panel (ver `guardarCuentaDesdeConsola`).
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
 import "./cargar-env";
 import { randomBytes } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { consultar, db } from "../src/db";
-import { admins, bitacoraEquipo } from "../src/db/schema";
+import type { AccionEquipo } from "../src/db/queries";
 import { hashearPassword } from "../src/lib/password";
-import { MINIMO_PASSWORD } from "../src/lib/politica-password";
+import { CuentaDeConsolaRechazada, guardarCuentaDesdeConsola } from "./cuenta-de-consola";
 import { exigirPermisoDeEscritura, sinFlagProduccion } from "./produccion";
 
 const ROLES = ["admin", "moderador", "lector"] as const;
 type Rol = (typeof ROLES)[number];
 
-/** Quien figura en la bitacora: el cambio no salio del panel sino de la consola. */
-const AUTOR = "consola (scripts/crear-admin)";
+/** Como se lee en la consola cada fila que quedo en la bitacora. */
+const QUE_SE_HIZO: Record<AccionEquipo, string> = {
+  alta: "alta",
+  reactivacion: "reactivada",
+  cambio_rol: "cambio de rol",
+  cambio_password: "contrasena restablecida",
+  desactivacion: "desactivada",
+  eliminacion: "eliminada",
+};
 
 function salirConUso(mensaje: string): never {
   console.error(`\n${mensaje}`);
   console.error(
     '\nUso: npm run crear-admin -- <correo> "<Nombre Apellido>" [admin|moderador|lector] [--produccion]\n' +
-      "\nLa contrasena se toma de ADMIN_PASSWORD; si no esta, se genera una al azar." +
+      "\nSin rol, una cuenta que ya existe conserva el suyo y una nueva nace moderador." +
+      "\nLa contrasena es una provisoria al azar que se cambia en el primer ingreso." +
       "\n--produccion hace falta cuando DATABASE_URL apunta a una base remota.\n",
   );
   process.exit(1);
@@ -49,10 +61,10 @@ function salirConUso(mensaje: string): never {
 
 async function main() {
   // Los posicionales se leen sin el flag: asi `--produccion` puede ir en
-  // cualquier lugar sin correr el correo o el rol.
-  const [emailCrudo, nombreCrudo, rolCrudo = "moderador"] = sinFlagProduccion(
-    process.argv.slice(2),
-  );
+  // cualquier lugar sin correr el correo o el rol. El rol no tiene valor por
+  // defecto aca: cual corresponde depende de si la cuenta ya existe, y eso se
+  // sabe recien en la transaccion (ver `guardarCuentaDesdeConsola`).
+  const [emailCrudo, nombreCrudo, rolCrudo] = sinFlagProduccion(process.argv.slice(2));
 
   const email = (emailCrudo ?? "").trim().toLowerCase();
   const nombre = (nombreCrudo ?? "").trim();
@@ -63,15 +75,19 @@ async function main() {
   if (nombre.length < 3) {
     salirConUso("Falta el nombre completo (va entre comillas si tiene espacios).");
   }
-  if (!ROLES.includes(rolCrudo as Rol)) {
+  if (rolCrudo !== undefined && !ROLES.includes(rolCrudo as Rol)) {
     salirConUso(`Rol desconocido: "${rolCrudo}". Tiene que ser admin, moderador o lector.`);
   }
-  const rol = rolCrudo as Rol;
+  const rolPedido = (rolCrudo as Rol | undefined) ?? null;
 
   // Despues de validar (un error de tipeo no tiene por que esperar la cuenta
   // regresiva) y antes de abrir ninguna conexion: contra una base remota hace
-  // falta el flag.
-  await exigirPermisoDeEscritura(`npm run crear-admin -- ${email} "${nombre}" ${rol}`);
+  // falta el flag. El comando va tal como se escribio, sin rol si no lo tenia:
+  // con un rol inventado aca, la cuenta regresiva mostraria uno que quizas no
+  // es el que queda.
+  await exigirPermisoDeEscritura(
+    `npm run crear-admin -- ${email} "${nombre}"${rolPedido ? ` ${rolPedido}` : ""}`,
+  );
 
   // PGlite es de proceso unico: si `npm run dev` esta corriendo, la carpeta de
   // datos esta tomada y esta escritura la romperia.
@@ -85,100 +101,44 @@ async function main() {
     process.exit(1);
   }
 
-  const desdeElEntorno = process.env.ADMIN_PASSWORD?.trim();
-  const generada = !desdeElEntorno;
-  // La provisoria que se genera sigue siendo de 16 caracteres al azar: el
-  // minimo corto es para la que despues elige la persona, no para esta.
-  const password = desdeElEntorno || randomBytes(12).toString("base64url");
-  if (password.length < MINIMO_PASSWORD) {
-    console.error(
-      `\nADMIN_PASSWORD tiene menos de ${MINIMO_PASSWORD} caracteres. Elegi una mas larga.\n`,
-    );
-    process.exit(1);
-  }
+  // 16 caracteres al azar: el minimo corto de la politica es para la que
+  // despues elige la persona, no para esta (src/lib/politica-password.ts).
+  const password = randomBytes(12).toString("base64url");
   const passwordHash = await hashearPassword(password);
 
-  const [existente] = await db
-    .select({ id: admins.id, rol: admins.rol })
-    .from(admins)
-    .where(eq(admins.email, email))
-    .limit(1);
-
-  if (existente) {
-    await db.transaction(async (tx) => {
-      await tx
-        .update(admins)
-        .set({
-          nombre,
-          rol,
-          passwordHash,
-          activo: true,
-          // Si la contrasena la eligio el entorno (una persona la escribio para
-          // otra), tambien conviene que la cambie; pero al reestablecer la
-          // propia con ADMIN_PASSWORD eso molestaria. Solo se exige el cambio
-          // cuando la genero el script.
-          debeCambiarPassword: generada,
-          // Como en el panel (src/app/admin/equipo/cuentas.ts): la contrasena
-          // cambia, y quizas el rol y el estado, asi que las sesiones abiertas
-          // de la cuenta se cortan (ver `sesionVigente` en src/lib/sesion.ts).
-          // Sin esto, restablecer desde aca la contrasena de una cuenta
-          // comprometida dejaba adentro a quien ya tenia la cookie, y con la
-          // provisoria marcada esa cookie podia elegir una contrasena nueva sin
-          // saber la actual. Tambien evita que `activo: true` reviva las cookies
-          // de una cuenta dada de baja a mano en la base.
-          versionSesion: sql`${admins.versionSesion} + 1`,
-        })
-        .where(eq(admins.id, existente.id));
-
-      await tx.insert(bitacoraEquipo).values({
-        adminId: null,
-        adminNombre: AUTOR,
-        objetivoId: existente.id,
-        objetivoEmail: email,
-        accion: existente.rol === rol ? "cambio_password" : "cambio_rol",
-        rolAnterior: existente.rol,
-        rolNuevo: rol,
-      });
+  let resultado;
+  try {
+    resultado = await guardarCuentaDesdeConsola(db, {
+      email,
+      nombre,
+      rol: rolPedido,
+      passwordHash,
     });
-    console.log(
-      `\nCuenta actualizada: ${email} (${rol}). Si tenia el panel abierto, esas sesiones se cerraron.`,
-    );
-  } else {
-    await db.transaction(async (tx) => {
-      const [creada] = await tx
-        .insert(admins)
-        .values({
-          email,
-          nombre,
-          passwordHash,
-          rol,
-          activo: true,
-          debeCambiarPassword: generada,
-        })
-        .returning({ id: admins.id });
-
-      await tx.insert(bitacoraEquipo).values({
-        adminId: null,
-        adminNombre: AUTOR,
-        objetivoId: creada.id,
-        objetivoEmail: email,
-        accion: "alta",
-        rolNuevo: rol,
-      });
-    });
-    console.log(`\nCuenta creada: ${email} (${rol}).`);
+  } catch (error) {
+    // Una regla que frena el cambio no es una falla: se dice por que y no se
+    // imprime ninguna contrasena, porque no quedo ninguna.
+    if (error instanceof CuentaDeConsolaRechazada) {
+      console.error(`\nNO SE ESCRIBIO NADA.\n\n${error.message}\n`);
+      process.exit(1);
+    }
+    throw error;
   }
 
-  if (generada) {
-    console.log(
-      `Contrasena provisoria: ${password}` +
-        "\n\nSe imprime UNA sola vez y no queda guardada en claro en ningun lado." +
-        "\nEntregala en mano; el panel va a pedir cambiarla en el primer ingreso.",
-    );
+  if (resultado.creada) {
+    console.log(`\nCuenta creada: ${email} (${resultado.rol}).`);
   } else {
-    console.log("Contrasena tomada de ADMIN_PASSWORD (no se imprime).");
+    const hechos = resultado.acciones.map((accion) => QUE_SE_HIZO[accion]).join(", ");
+    console.log(
+      `\nCuenta actualizada: ${email} (${resultado.rol}): ${hechos}.` +
+        "\nSi tenia el panel abierto, esas sesiones se cerraron.",
+    );
   }
-  console.log("");
+
+  console.log(
+    `Contrasena provisoria: ${password}` +
+      "\n\nSe imprime UNA sola vez y no queda guardada en claro en ningun lado." +
+      "\nEntregala en mano; el panel va a pedir cambiarla en el primer ingreso.\n",
+  );
 }
 
 main()

@@ -6,9 +6,10 @@ import { indiceDeBarrios } from "@/lib/barrios";
 import { Aviso } from "@/components/ui";
 import { db } from "@/db";
 import { votos } from "@/db/schema";
-import { getEdicionActiva, getTextos, listarIdeas } from "@/db/queries";
+import { getDistritoEnPadron, getEdicionActiva, getTextos, listarIdeas } from "@/db/queries";
 import { getSesionVotante } from "@/lib/sesion";
 import { formatearRango } from "@/lib/formato";
+import { votacionTerminada } from "@/lib/ediciones";
 
 export const metadata: Metadata = {
   title: "Votar",
@@ -42,16 +43,26 @@ export default async function Votar() {
   if (abierta && !sesion) redirect("/ingresar");
 
   /*
+   * El distrito de la boleta es el del padron, no el de la cookie (ver
+   * getDistritoEnPadron): si la persona lo cambio desde otro dispositivo, la
+   * cookie de este dice el anterior, y con ella la boleta era la del distrito
+   * viejo aunque se recargara. Sin fila en el padron queda sin distrito: al
+   * declararlo, /api/votos/distrito responde "sin-votante" y cierra la sesion.
+   */
+  const distrito =
+    abierta && sesion ? ((await getDistritoEnPadron(sesion.votanteId))?.distrito ?? null) : null;
+
+  /*
    * La boleta va en orden alfabetico, siempre. El orden por defecto de
    * listarIdeas es por votos: en cada distrito el que iba ganando aparecia
    * primero —y el primer lugar de una boleta suma votos por estar ahi— y quien
    * votaba veia el ranking en vivo sin que nadie lo publicara.
    */
   const proyectos =
-    abierta && sesion?.distrito
+    abierta && distrito
       ? await listarIdeas({
           edicionId: edicion.id,
-          distrito: sesion.distrito,
+          distrito,
           estado: "factible",
           orden: "alfabetico",
         })
@@ -86,9 +97,9 @@ export default async function Votar() {
         <PanelVotacion
           // Con otro distrito la boleta es otra: el panel arranca de cero (y
           // deja de mostrar el cambio de distrito que lo trajo hasta aca).
-          key={sesion.distrito ?? 0}
+          key={distrito ?? 0}
           sesion={{
-            distrito: sesion.distrito,
+            distrito,
             nombre: sesion.nombre,
             sugerido: sesion.sugerido ?? null,
           }}
@@ -109,10 +120,16 @@ export default async function Votar() {
         <div className="mt-6 max-w-3xl">
           <Aviso tono="atencion">
             <strong>La votación no está abierta en este momento.</strong>{" "}
+            {/*
+              "Fue" o "será" lo dice la etapa y no la fecha cargada: el equipo
+              puede cerrar la votacion antes de `votacionHasta`, o dejarla vacia,
+              y con la fecha el aviso decia "será" de una votacion que ya
+              termino.
+            */}
             {edicion.votacionDesde && (
               <>
                 En la edición {edicion.anio} la votación{" "}
-                {new Date(edicion.votacionHasta ?? "") < new Date() ? "fue" : "será"}{" "}
+                {votacionTerminada(edicion.etapa) ? "fue" : "será"}{" "}
                 {formatearRango(edicion.votacionDesde, edicion.votacionHasta)}.
               </>
             )}{" "}

@@ -14,7 +14,12 @@
  * Es corto para lo que este login protege: da acceso al padron y a los datos de
  * contacto de los vecinos. Lo que sostiene la seguridad es el resto de la
  * cadena, no el largo:
- *  - tope de 10 intentos por IP cada 10 minutos en `ingresarAdmin`,
+ *  - los topes de `ingresarAdmin` (src/lib/tope-ingreso-admin.ts): 10 intentos
+ *    por IP cada 10 minutos y 50 por hora contra una misma cuenta. El de la IP
+ *    solo no alcanzaba: quien rota IP con un pool de proxies probaba miles de
+ *    contraseñas por minuto contra la misma cuenta. El de la cuenta es el que
+ *    acota un diccionario, y aun asi una contraseña de las mas comunes cae en
+ *    los primeros cientos de intentos: el largo no protege de eso.
  *  - hash con scrypt (src/lib/password.ts), que hace lento el ataque offline,
  *  - las cuentas creadas desde el panel o desde scripts/crear-admin.ts nacen
  *    con una provisoria aleatoria de 16 caracteres.

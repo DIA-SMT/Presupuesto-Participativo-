@@ -9,8 +9,10 @@
  * `--produccion` es el candado de scripts/produccion.ts: sin el, `--aplicar` se
  * niega a escribir en una base remota. La simulacion no lo necesita.
  *
- * Ojo: usa postgres.js directo sobre DATABASE_URL, no src/db, asi que no sirve
- * con PGlite (sin DATABASE_URL intenta un Postgres en localhost:5432).
+ * Ojo: habla con un Postgres por DATABASE_URL (scripts/conexion-directa.ts), no
+ * con src/db, asi que no sirve con PGlite: sin una URL postgresql:// corta antes
+ * de conectarse. Antes usaba postgres.js, que sin URL caia a PGHOST o a
+ * localhost mientras el candado evaluaba "PGlite" y dejaba pasar `--aplicar`.
  *
  * Por que existe en lugar de correr el seed: el seed reconstruye la base desde
  * cero y en produccion hay 103 ideas cargadas, votos y decisiones del equipo.
@@ -28,7 +30,6 @@
  * proyecto registra las transformaciones para poder auditarlas despues.
  */
 import "./cargar-env";
-import postgres from "postgres";
 import { readFileSync } from "node:fs";
 import {
   centroideDelMultipoligono,
@@ -36,6 +37,7 @@ import {
   parsearCoordenada,
   type ColeccionDistritos,
 } from "../src/lib/geo";
+import { abrirPostgres } from "./conexion-directa";
 import { destinoDeLaBase, exigirPermisoDeEscritura } from "./produccion";
 
 const APLICAR = process.argv.includes("--aplicar");
@@ -57,15 +59,18 @@ async function main() {
     ? (await exigirPermisoDeEscritura("npx tsx scripts/aplicar-geografia.ts --aplicar")).destino
     : destinoDeLaBase(process.env.DATABASE_URL);
 
-  const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
+  // Solo un Postgres por DATABASE_URL: la misma base que acaba de evaluar el
+  // candado. Sin URL (que el candado lee como PGlite) corta aca.
+  const pool = abrirPostgres();
   console.log(`Base: ${destino.descripcion}`);
   console.log(APLICAR ? "MODO: aplicando cambios\n" : "MODO: simulacion, no se escribe nada\n");
 
   // -------------------------------------------------------------------------
   // 1. Geometria y centroide de los distritos
   // -------------------------------------------------------------------------
-  const filasDistrito = await sql<{ id: number; numero: number; centroide_lat: string; centroide_lon: string }[]>`
-    SELECT id, numero, centroide_lat, centroide_lon FROM distritos ORDER BY numero`;
+  const { rows: filasDistrito } = await pool.query<{
+    id: number; numero: number; centroide_lat: string; centroide_lon: string;
+  }>("SELECT id, numero, centroide_lat, centroide_lon FROM distritos ORDER BY numero");
   const idPorNumero = new Map(filasDistrito.map((d) => [Number(d.numero), d.id]));
 
   console.log("--- distritos ---");
@@ -84,12 +89,16 @@ async function main() {
     );
 
     if (APLICAR) {
-      await sql`
-        UPDATE distritos
-           SET geojson = ${sql.json(feature.geometry as never)},
-               centroide_lat = ${centro.lat.toFixed(7)},
-               centroide_lon = ${centro.lon.toFixed(7)}
-         WHERE id = ${id}`;
+      // jsonb como texto con su cast: un objeto suelto node-postgres lo
+      // serializa igual, pero un arreglo lo manda como arreglo de Postgres.
+      await pool.query(
+        `UPDATE distritos
+            SET geojson = $1::jsonb,
+                centroide_lat = $2,
+                centroide_lon = $3
+          WHERE id = $4`,
+        [JSON.stringify(feature.geometry), centro.lat.toFixed(7), centro.lon.toFixed(7), id],
+      );
     }
     console.log(`  D${String(numero).padStart(2)}: geometria actualizada, centroide se mueve ${corrimiento} m`);
   }
@@ -97,16 +106,17 @@ async function main() {
   // -------------------------------------------------------------------------
   // 2 y 3. Ideas: coordenada recuperada y distrito recalculado
   // -------------------------------------------------------------------------
-  const ideas = await sql<{
+  const { rows: ideas } = await pool.query<{
     id: number; numero: number; titulo: string; lat: string | null; lon: string | null;
     distrito_id: number; distrito: number; aproximada: boolean;
     coordenadas_originales: string | null; notas_migracion: string[] | null;
-  }[]>`
-    SELECT i.id, i.numero, i.titulo, i.lat, i.lon, i.distrito_id,
-           d.numero AS distrito, i.ubicacion_aproximada AS aproximada,
-           i.coordenadas_originales, i.notas_migracion
-      FROM ideas i JOIN distritos d ON d.id = i.distrito_id
-     ORDER BY i.numero`;
+  }>(
+    `SELECT i.id, i.numero, i.titulo, i.lat, i.lon, i.distrito_id,
+            d.numero AS distrito, i.ubicacion_aproximada AS aproximada,
+            i.coordenadas_originales, i.notas_migracion
+       FROM ideas i JOIN distritos d ON d.id = i.distrito_id
+      ORDER BY i.numero`,
+  );
 
   console.log(`\n--- ideas (${ideas.length}) ---`);
   let recuperadas = 0;
@@ -169,14 +179,23 @@ async function main() {
 
     if (APLICAR) {
       const nuevoId = idPorNumero.get(nuevo)!;
-      await sql`
-        UPDATE ideas
-           SET distrito_id = ${nuevoId},
-               lat = ${lat.toFixed(7)},
-               lon = ${lon.toFixed(7)},
-               ubicacion_aproximada = ${cambioCoordenada ? false : idea.aproximada},
-               notas_migracion = ${notas}
-         WHERE id = ${idea.id}`;
+      await pool.query(
+        `UPDATE ideas
+            SET distrito_id = $1,
+                lat = $2,
+                lon = $3,
+                ubicacion_aproximada = $4,
+                notas_migracion = $5::jsonb
+          WHERE id = $6`,
+        [
+          nuevoId,
+          lat.toFixed(7),
+          lon.toFixed(7),
+          cambioCoordenada ? false : idea.aproximada,
+          JSON.stringify(notas),
+          idea.id,
+        ],
+      );
     }
   }
 
@@ -189,7 +208,7 @@ async function main() {
       : "\nNada se escribio. Para aplicar: npx tsx scripts/aplicar-geografia.ts --aplicar" +
           (destino.tipo === "remota" ? " --produccion" : ""),
   );
-  await sql.end();
+  await pool.end();
 }
 
 // Antes era `void main()`, y un error salia como traza de rechazo sin manejar.

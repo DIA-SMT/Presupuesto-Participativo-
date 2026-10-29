@@ -7,11 +7,16 @@ import { Aviso } from "@/components/ui";
 import { getEdicionActiva } from "@/db/queries";
 import { RUTA_INGRESO, ingresoHabilitado } from "@/lib/cidituc";
 import { proveedorActivo } from "@/lib/empadronamiento";
+import { votacionTerminada } from "@/lib/ediciones";
+import { mensajeDeErrorIngreso } from "@/lib/errores-ingreso";
 import { formatearRango } from "@/lib/formato";
+import type { Etapa } from "@/lib/etapas";
 import {
   PANTALLA_DEL_DESTINO,
   destinoDeIngreso,
   etapaDejaIngresar,
+  otroDestino,
+  puertaDeIngreso,
   type DestinoIngreso,
 } from "@/lib/ingreso-vecino";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
@@ -30,48 +35,36 @@ export const metadata: Metadata = {
  */
 const TEXTOS_DEL_DESTINO: Record<
   DestinoIngreso,
-  { titulo: string; para: string; cerrada: string; vuelta: string }
+  { titulo: string; para: string; cerrada: string; vuelta: string; pregunta: string }
 > = {
   votar: {
     titulo: "Ingresá para votar",
     para: "Para votar",
     cerrada: "La votación no está abierta en este momento.",
     vuelta: "volvés acá para elegir tu proyecto",
+    pregunta: "¿Venías a votar?",
   },
   ideas: {
     titulo: "Ingresá para presentar tu idea",
     para: "Para presentar una idea",
     cerrada: "La presentación de ideas no está abierta en este momento.",
     vuelta: "volvés directo al formulario para cargar tu idea",
+    pregunta: "¿Venías a presentar una idea?",
   },
 };
 
-export const dynamic = "force-dynamic";
-
 /**
- * Los motivos con los que puede volver el ingreso de CIDITUC
- * (src/app/auth/cidituc/callback/route.ts y .../ingresar/route.ts). Cada
- * uno dice algo distinto a proposito: reintentar arregla "no pudimos consultar
- * tus datos" y no arregla "la votacion no esta abierta", asi que no pueden
- * compartir el mismo cartel.
+ * Si la puerta de ese destino esta abierta. La misma regla que el callback y
+ * que la salida a CIDITUC: si aca se ofrece el boton, a la vuelta se abre la
+ * sesion.
  */
-const MENSAJE_ERROR_INGRESO: Record<string, string> = {
-  "sin-token": "El ingreso volvió sin credencial. Probá de nuevo desde el botón.",
-  estado:
-    "No pudimos confirmar que el ingreso haya empezado en este navegador, así que no lo dimos por válido. Entrá de nuevo desde el botón.",
-  "token-invalido":
-    "Tu credencial de CIDITUC no es válida o ya venció. Volvé a ingresar para obtener una nueva.",
-  "sin-perfil":
-    "No pudimos consultar tus datos en CIDITUC en este momento. Probá de nuevo en un rato; si sigue igual, avisanos.",
-  "sin-documento":
-    "CIDITUC no nos devolvió tu número de documento, así que no podemos empadronarte. Escribinos para que lo revisemos.",
-  "sin-padron": "No pudimos guardar tu empadronamiento. Probá de nuevo en un rato.",
-  // Este depende del destino: lo arma TEXTOS_DEL_DESTINO.cerrada.
-  "fuera-de-etapa": "",
-  "demasiados-intentos": "Hubo demasiados intentos desde tu conexión. Esperá unos minutos.",
-  "ingreso-cerrado":
-    "El ingreso con ciudadanía digital todavía no está habilitado. Cuando lo esté, vas a poder entrar desde acá.",
-};
+async function puertaAbierta(destino: DestinoIngreso, etapa: Etapa | undefined): Promise<boolean> {
+  const fueraDeEtapa =
+    destino === "ideas" && etapa !== "ideas" && (await puedeCargarFueraDeEtapa());
+  return etapaDejaIngresar(destino, etapa, fueraDeEtapa);
+}
+
+export const dynamic = "force-dynamic";
 
 type Props = {
   searchParams: Promise<{ error?: string; salida?: string; para?: string }>;
@@ -94,12 +87,12 @@ export default async function IngresarVecino({ searchParams }: Props) {
   const { error, salida, para } = await searchParams;
   const destino = destinoDeIngreso(para);
   const textos = TEXTOS_DEL_DESTINO[destino];
+  // Solo un motivo conocido: `?error=constructor` tiraba la pagina entera (ver
+  // `mensajeDeErrorIngreso`).
   const mensajeError =
     error === "fuera-de-etapa"
       ? `${textos.cerrada} No hace falta ingresar.`
-      : error
-        ? MENSAJE_ERROR_INGRESO[error]
-        : undefined;
+      : mensajeDeErrorIngreso(error);
   /*
    * Vuelta del boton "Salir" del panel de votacion (POST /api/auth/salir). El
    * cartel confirma que la sesion se cerro, que es lo que necesita ver quien
@@ -109,11 +102,16 @@ export default async function IngresarVecino({ searchParams }: Props) {
    */
   const salio = salida === "1";
   const edicion = await getEdicionActiva();
-  // La misma regla que el callback: si aca se ofrece el boton, a la vuelta se
-  // abre la sesion.
-  const fueraDeEtapa =
-    destino === "ideas" && edicion?.etapa !== "ideas" && (await puedeCargarFueraDeEtapa());
-  const abierta = etapaDejaIngresar(destino, edicion?.etapa, fueraDeEtapa);
+  const abierta = await puertaAbierta(destino, edicion?.etapa);
+  /*
+   * Con esta puerta cerrada, la otra puede estar abierta: quien llega a
+   * /ingresar pelado en la etapa de ideas (un enlace escrito a mano, el de
+   * /admin/ingresar) venia a presentar una idea. Sin el enlace a la otra
+   * puerta la pantalla no tenia ningun boton, y varios de los errores de
+   * arriba dicen "entra de nuevo desde el boton".
+   */
+  const otra = otroDestino(destino);
+  const otraAbierta = !abierta && (await puertaAbierta(otra, edicion?.etapa));
 
   if (abierta && (await getSesionVotante())) redirect(PANTALLA_DEL_DESTINO[destino]);
 
@@ -188,25 +186,46 @@ export default async function IngresarVecino({ searchParams }: Props) {
               <div className="mt-5">
                 <Aviso tono="atencion">
                   <strong>{textos.cerrada}</strong>{" "}
+                  {/*
+                    "Fue" o "será" lo dice la etapa y no la fecha cargada: el
+                    equipo puede cerrar una etapa antes de su fecha de fin, o
+                    dejarla vacia, y con la fecha el aviso decia "será" de algo
+                    que ya habia terminado. Las ideas son la primera etapa: con
+                    su puerta cerrada, ya pasaron.
+                  */}
                   {destino === "ideas" && edicion?.ideasDesde && (
                     <>
                       En la edición {edicion.anio} la presentación de ideas{" "}
-                      {new Date(edicion.ideasHasta ?? "") < new Date() ? "fue" : "será"}{" "}
+                      {edicion.etapa !== "ideas" ? "fue" : "será"}{" "}
                       {formatearRango(edicion.ideasDesde, edicion.ideasHasta)}.
                     </>
                   )}
                   {destino === "votar" && edicion?.votacionDesde && (
                     <>
                       En la edición {edicion.anio} la votación{" "}
-                      {new Date(edicion.votacionHasta ?? "") < new Date() ? "fue" : "será"}{" "}
+                      {votacionTerminada(edicion.etapa) ? "fue" : "será"}{" "}
                       {formatearRango(edicion.votacionDesde, edicion.votacionHasta)}.
                     </>
                   )}
                 </Aviso>
+                {otraAbierta && (
+                  <>
+                    <p className="mt-5 text-sm font-semibold">{TEXTOS_DEL_DESTINO[otra].pregunta}</p>
+                    <Link
+                      href={puertaDeIngreso(otra)}
+                      className="mt-2 flex w-full items-center justify-center rounded-xl px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-110"
+                      style={{ background: "var(--color-marca-700)" }}
+                    >
+                      {TEXTOS_DEL_DESTINO[otra].titulo}
+                    </Link>
+                  </>
+                )}
               </div>
             ) : habilitado ? (
               <a
-                href={destino === "votar" ? RUTA_INGRESO : `${RUTA_INGRESO}?para=${destino}`}
+                // Con el destino siempre, tambien el de votar: sin `?para` la
+                // salida lo deduce de la etapa, y el boton ya sabe cual es.
+                href={`${RUTA_INGRESO}?para=${destino}`}
                 className="mt-6 flex w-full items-center justify-center rounded-xl px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-110"
                 style={{ background: "var(--color-marca-700)" }}
               >
@@ -215,7 +234,7 @@ export default async function IngresarVecino({ searchParams }: Props) {
             ) : (
               error !== "ingreso-cerrado" && (
                 <p className="mt-5 text-sm font-medium" style={{ color: "var(--acento-texto)" }}>
-                  {MENSAJE_ERROR_INGRESO["ingreso-cerrado"]}
+                  {mensajeDeErrorIngreso("ingreso-cerrado")}
                 </p>
               )
             )}

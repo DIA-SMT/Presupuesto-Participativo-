@@ -140,6 +140,16 @@ test("en produccion sin DNI_PEPPER la IP se sigue hasheando (el sitio no se cae)
     () => conEntorno({ ...entorno, SESSION_SECRET: undefined }, () => hashearIp("1.2.3.4")),
     /Falta DNI_PEPPER/,
   );
+  // El relleno de la plantilla vieja tiene el largo pero es publico: con el, los
+  // 2^32 IPv4 se recorren y el hash no protege nada. Tiene que tirar igual.
+  assert.throws(
+    () =>
+      conEntorno(
+        { ...entorno, SESSION_SECRET: "cambiar-por-un-secreto-de-64-caracteres-hexadecimales-aleatorio" },
+        () => hashearIp("1.2.3.4"),
+      ),
+    /Falta DNI_PEPPER/,
+  );
 });
 
 // --- El login de prueba ------------------------------------------------------

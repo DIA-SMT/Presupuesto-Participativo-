@@ -82,18 +82,18 @@ export const PASOS: PasoRecorrido[] = [
     seccion: "Propuestas",
     ruta: "/admin",
     anclas: ["bandeja-buscador"],
-    titulo: "Buscar una idea",
+    titulo: "Buscar una propuesta",
     texto:
-      "Buscá por título o por barrio, con o sin tildes: el listado se actualiza solo. Los filtros que tengas puestos aparecen al lado, y cada uno se saca tocándolo.",
+      "Elegí un distrito, o buscá por nombre, por barrio o por el código del papel (D05-P012): el listado se actualiza solo. Los filtros que tengas puestos aparecen al lado, y cada uno se saca tocándolo.",
   },
   {
     id: "bandeja-listado",
     seccion: "Propuestas",
     ruta: "/admin",
     anclas: ["bandeja-listado"],
-    titulo: "El listado",
+    titulo: "Las propuestas",
     texto:
-      "Las ideas de la edición, ordenadas por prioridad. Tocá el encabezado de una columna para ordenar por ella, y una fila para abrir la ficha de esa idea.",
+      "Cada tarjeta es una propuesta, con su código, su estado, los votos y el presupuesto que estimó el equipo. Arriba elegís el orden: para trabajar, más recientes, más votadas o de mayor a menor presupuesto. Tocá una tarjeta para abrir su ficha.",
   },
   {
     id: "bandeja-ficha",
@@ -105,9 +105,9 @@ export const PASOS: PasoRecorrido[] = [
       lector:
         "Al abrir una idea, su ficha muestra los datos, dónde queda en el mapa, el informe de impacto si lo hay y el historial de revisiones. Vos la ves en solo lectura.",
       moderador:
-        "Al abrir una idea, desde su ficha la evaluás (el estado y la devolución al vecino), la publicás o la despublicás, la corregís, la descartás o pedís el informe de impacto. Lo que la etapa no permite aparece deshabilitado, con el motivo. Todo queda en el historial con tu nombre.",
+        "Al abrir una idea, desde su ficha estimás su presupuesto, la evaluás (el estado y la devolución al vecino), la publicás o la despublicás, la corregís (ahí se le asigna la categoría), la descartás o pedís el informe de impacto. Lo que la etapa no permite aparece deshabilitado, con el motivo. Todo queda en el historial con tu nombre.",
       admin:
-        "Al abrir una idea, desde su ficha la evaluás, la publicás, la corregís, la descartás o pedís el informe de impacto. Cuando cierra la votación, desde la misma ficha proclamás el proyecto ganador del distrito. Todo queda en el historial con tu nombre.",
+        "Al abrir una idea, desde su ficha estimás su presupuesto, la evaluás, la publicás, la corregís (ahí se le asigna la categoría), la descartás o pedís el informe de impacto. Cuando cierra la votación, desde la misma ficha proclamás el proyecto ganador del distrito. Todo queda en el historial con tu nombre.",
     },
   },
   {
@@ -115,19 +115,19 @@ export const PASOS: PasoRecorrido[] = [
     seccion: "Propuestas",
     ruta: "/admin",
     anclas: ["bandeja-cargar"],
-    titulo: "Cargar una idea",
+    titulo: "Cargar una propuesta en papel",
     texto: {
       moderador:
-        "Las ideas que llegan por una asamblea, por mail o en papel se cargan con “Cargar una idea”, indicando por qué canal llegaron.",
+        "Los formularios de papel se cargan con “Cargar una propuesta”: la pantalla sigue la hoja renglón por renglón y, al guardar, te da el código (D05-P012) para escribir en el papel.",
       admin:
-        "Las ideas que llegan por una asamblea, por mail o en papel se cargan con “Cargar una idea”, indicando por qué canal llegaron.",
+        "Los formularios de papel se cargan con “Cargar una propuesta”: la pantalla sigue la hoja renglón por renglón y, al guardar, te da el código (D05-P012) para escribir en el papel.",
     },
   },
 
   // --- Tablero ----------------------------------------------------------------
   {
     id: "tablero-resumen",
-    seccion: "Tablero",
+    seccion: "Propuestas · Estadísticas",
     ruta: "/admin/tablero",
     anclas: ["tablero-resumen"],
     titulo: "Los números de la edición",
@@ -136,7 +136,7 @@ export const PASOS: PasoRecorrido[] = [
   },
   {
     id: "tablero-ejecucion",
-    seccion: "Tablero",
+    seccion: "Propuestas · Estadísticas",
     ruta: "/admin/tablero",
     anclas: ["tablero-ejecucion", "tablero-resumen"],
     titulo: "Ejecución presupuestaria",
@@ -147,7 +147,7 @@ export const PASOS: PasoRecorrido[] = [
   // --- Migue --------------------------------------------------------------------
   {
     id: "migue",
-    seccion: "Migue",
+    seccion: "Proceso · Migue",
     ruta: "/admin/migue",
     anclas: ["migue-sin-resolver", "migue-encabezado"],
     titulo: "Lo que preguntan los vecinos",
@@ -164,7 +164,7 @@ export const PASOS: PasoRecorrido[] = [
   // --- Etapa del proceso (/admin/ediciones) ---------------------------------------
   {
     id: "ediciones-etapa",
-    seccion: "Etapa del proceso",
+    seccion: "Proceso · Etapa",
     ruta: "/admin/ediciones",
     anclas: ["ediciones-etapa"],
     titulo: "La etapa del proceso",
@@ -179,7 +179,7 @@ export const PASOS: PasoRecorrido[] = [
   },
   {
     id: "ediciones-fechas",
-    seccion: "Etapa del proceso",
+    seccion: "Proceso · Etapa",
     ruta: "/admin/ediciones",
     anclas: ["ediciones-fechas"],
     titulo: "Fechas y presupuesto",
@@ -192,7 +192,7 @@ export const PASOS: PasoRecorrido[] = [
   },
   {
     id: "ediciones-cronograma",
-    seccion: "Etapa del proceso",
+    seccion: "Proceso · Etapa",
     ruta: "/admin/ediciones",
     anclas: ["ediciones-cronograma"],
     titulo: "El cronograma público",
@@ -206,7 +206,7 @@ export const PASOS: PasoRecorrido[] = [
   },
   {
     id: "ediciones-nueva",
-    seccion: "Etapa del proceso",
+    seccion: "Proceso · Etapa",
     ruta: "/admin/ediciones",
     anclas: ["ediciones-nueva"],
     titulo: "Una edición nueva",
@@ -219,7 +219,7 @@ export const PASOS: PasoRecorrido[] = [
   // --- Contenido y Equipo: solo administradores --------------------------------------
   {
     id: "contenido",
-    seccion: "Contenido",
+    seccion: "Proceso · Contenido",
     ruta: "/admin/contenido",
     anclas: ["contenido-secciones"],
     titulo: "El contenido del sitio",

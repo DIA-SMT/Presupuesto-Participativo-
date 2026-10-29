@@ -28,6 +28,7 @@
  * cerro a mitad de la respuesta) hacia que TODAS las consultas siguientes
  * contestaran "Consulta mal formada." hasta que la persona apretara Limpiar.
  */
+import { sinCaracteresDeControl } from "./texto-limpio";
 
 export type RolMensaje = "usuario" | "asistente";
 
@@ -63,6 +64,17 @@ export const TOPES_HISTORIAL = {
 
 export type TopesHistorial = { [K in keyof typeof TOPES_HISTORIAL]: number };
 
+/**
+ * El texto como llega al modelo y al registro: sin caracteres de control (un
+ * NUL hacia fallar el INSERT de `chat_consultas` y la consulta no contaba para
+ * el tope de gasto; ver src/lib/texto-limpio.ts) y sin espacios en los bordes.
+ * Se limpia despues de verificar la firma, que es sobre el texto tal cual se
+ * mostro.
+ */
+function limpio(texto: string): string {
+  return sinCaracteresDeControl(texto).trim();
+}
+
 /** Recorta con puntos suspensivos, para que el modelo sepa que hubo mas. */
 export function recortarTexto(texto: string, tope: number): string {
   return texto.length > tope ? `${texto.slice(0, tope - 1).trimEnd()}…` : texto;
@@ -90,7 +102,7 @@ export function recortarHistorial(
   esAutentica: (mensaje: MensajeRecibido) => boolean,
   topes: TopesHistorial = TOPES_HISTORIAL,
 ): { pregunta: string; turnos: TurnoModelo[] } | null {
-  const conTexto = mensajes.filter((m) => m.texto.trim().length > 0);
+  const conTexto = mensajes.filter((m) => limpio(m.texto).length > 0);
 
   const ultima = conTexto.at(-1);
   if (!ultima || ultima.rol !== "usuario") return null;
@@ -99,14 +111,14 @@ export function recortarHistorial(
     .slice(0, -1)
     .filter((m) => m.rol === "usuario" || esAutentica(m));
 
-  const pregunta = recortarTexto(ultima.texto.trim(), topes.largoPregunta);
+  const pregunta = recortarTexto(limpio(ultima.texto), topes.largoPregunta);
   const turnos: TurnoModelo[] = [{ rol: "usuario", texto: pregunta }];
   let total = pregunta.length;
 
   for (let i = anteriores.length - 1; i >= 0 && turnos.length < topes.turnos; i -= 1) {
     const mensaje = anteriores[i];
     const texto = recortarTexto(
-      mensaje.texto.trim(),
+      limpio(mensaje.texto),
       mensaje.rol === "usuario" ? topes.largoPregunta : topes.largoRespuesta,
     );
     // Se corta en el primero que no entra, no se saltea: saltearlo dejaria una

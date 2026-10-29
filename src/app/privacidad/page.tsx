@@ -195,9 +195,9 @@ export default async function Privacidad() {
               publicados en el sitio y en el archivo de ediciones.
             </li>
             <li>
-              <strong>Tu correo</strong> se guarda mientras dura la edición en la que presentaste la
-              idea y se borra al cerrarla, porque después ya no hay nada que avisarte. También lo
-              borramos antes si nos lo pedís.
+              <strong>Tu correo y tu teléfono</strong> se guardan mientras dura la edición en la que
+              presentaste la idea y se borran al cerrarla, porque después ya no hay nada que
+              consultarte ni avisarte. También los borramos antes si nos lo pedís.
             </li>
             <li>
               <strong>El padrón</strong> (documento hasheado, nombre y distrito de quien ingresó con
@@ -313,7 +313,28 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
     caracter: "Obligatorio",
     color: "var(--marca-texto)",
     finalidad:
-      "Título, categoría, barrio, problema, solución, beneficios y el punto que marcás en el mapa. Se usan para evaluar técnicamente la propuesta, asignarla a un distrito y publicarla en el sitio para que se pueda votar. Este contenido es público.",
+      "El problema, dónde ocurre (el punto que marcás en el mapa, el barrio y las referencias que escribas), qué te gustaría mejorar, a quiénes beneficiaría y el nombre de la propuesta. Se usan para evaluar técnicamente la propuesta, asignarla a un distrito y publicarla en el sitio para que se pueda votar. Este contenido es público.",
+  },
+  {
+    dato: "La organización que presenta la idea",
+    caracter: "Facultativo",
+    color: "var(--marca-texto)",
+    finalidad:
+      "Si presentás la propuesta en nombre de una organización (un centro vecinal, un club, una cooperadora), guardamos su nombre para que el equipo sepa quién la impulsa. No se publica en el sitio.",
+  },
+  {
+    dato: "Un teléfono de contacto",
+    caracter: "Facultativo",
+    color: "var(--acento-texto)",
+    finalidad:
+      "Si lo dejás, lo usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se borra cuando cierra la edición.",
+  },
+  {
+    dato: "Tu documento, si presentás la idea en papel",
+    caracter: "Facultativo",
+    color: "var(--color-cat-ambiental)",
+    finalidad:
+      "En el formulario de papel de las asambleas podés escribir tu DNI. Al cargarlo, el equipo no lo guarda en claro: se guarda hasheado, solo para unir la propuesta con tu registro del padrón cuando ingreses con CIDITUC. Tu domicilio y los datos de las personas de referencia que pide el papel no se cargan en el sistema: quedan en el papel, que archiva el programa.",
   },
   {
     dato: "Tu identidad de CIDITUC, al presentar una idea",

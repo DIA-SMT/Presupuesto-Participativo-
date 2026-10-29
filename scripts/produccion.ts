@@ -214,7 +214,7 @@ export function sinFlagProduccion(argumentos: readonly string[]): string[] {
 }
 
 /** Segundos que se espera, con el host a la vista, antes de escribir en remoto. */
-const SEGUNDOS_PARA_CANCELAR = 5;
+export const SEGUNDOS_PARA_CANCELAR = 5;
 
 /**
  * El candado, listo para la primera linea de un script que escribe.
@@ -255,4 +255,140 @@ export async function exigirPermisoDeEscritura(comando: string): Promise<{
   }
 
   return { destino: veredicto.destino, argumentos: sinFlagProduccion(argumentos) };
+}
+
+// ---------------------------------------------------------------------------
+// drizzle-kit (drizzle.config.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * La variable que habilita drizzle-kit contra una base remota, para una
+ * corrida. Es una variable y no `--produccion` porque drizzle-kit rechaza las
+ * opciones que no conoce ("Unrecognized options for command"). Y cuenta solo si
+ * viene de la terminal: escrita en .env.local quedaria habilitada para siempre,
+ * que es el descuido del que cuida este modulo.
+ */
+export const VARIABLE_DRIZZLE_KIT = "DRIZZLE_KIT_PRODUCCION";
+
+/**
+ * Comandos de drizzle-kit que no abren ninguna conexion: trabajan sobre
+ * schema.ts y la carpeta drizzle/. Lista cerrada por lo mismo que
+ * HOSTS_LOCALES: un comando que no esta aca (studio, push, migrate, pull, o uno
+ * nuevo de otra version) se trata como uno que abre la base.
+ */
+const COMANDOS_DRIZZLE_KIT_SIN_BASE = new Set(["generate", "check", "up", "drop", "export"]);
+
+export type VeredictoDrizzleKit =
+  | { permitido: true; destino: DestinoBase; comando: string; abreLaBase: boolean }
+  | { permitido: false; destino: DestinoBase; motivo: string };
+
+/**
+ * Decide si drizzle-kit puede abrir la base de DATABASE_URL. Es la parte pura
+ * del candado de drizzle.config.ts, que lo corre al cargarse.
+ *
+ * Por que hace falta: drizzle.config.ts carga .env.local, y con la URL de
+ * Supabase ahi `npm run db:studio` abria Studio contra produccion con el
+ * usuario de la URL, que es el dueno de las tablas y no pasa por RLS: cada
+ * celda editada o fila borrada se escribia en el acto, sin flag ni aviso. Los
+ * scripts que escriben tienen `exigirPermisoDeEscritura`; drizzle-kit no pasa
+ * por ellos.
+ *
+ * `push` no corre contra una base remota ni pidiendolo: aplica el esquema sin
+ * dejar registro en drizzle.__drizzle_migrations y la migracion siguiente
+ * falla o pisa un cambio (README, "Cambios de esquema"). Es el criterio de
+ * `setup` (scripts/exigir-base-local.ts): lo que no tiene uso legitimo contra
+ * produccion no tiene flag.
+ */
+export function evaluarDrizzleKit(entrada: {
+  url: string | undefined;
+  /** process.argv sin node ni el binario: el comando va primero. */
+  argumentos: readonly string[];
+  /** El valor de VARIABLE_DRIZZLE_KIT en el entorno, venga de donde venga. */
+  permiso: string | undefined;
+  /**
+   * Si la variable esta escrita en .env.local o .env. Entonces el permiso no
+   * cuenta, aunque la terminal tambien la traiga: la regla vive aca, y no en
+   * quien llama, para que la cubran las pruebas.
+   */
+  permisoEnArchivo?: boolean;
+}): VeredictoDrizzleKit {
+  const destino = destinoDeLaBase(entrada.url);
+  const comando = entrada.argumentos.find((argumento) => !argumento.startsWith("-")) ?? "";
+
+  if (COMANDOS_DRIZZLE_KIT_SIN_BASE.has(comando)) {
+    return { permitido: true, destino, comando, abreLaBase: false };
+  }
+  if (destino.tipo === "pglite" || destino.tipo === "postgres-local") {
+    return { permitido: true, destino, comando, abreLaBase: true };
+  }
+
+  const ejemplo = `npx drizzle-kit ${comando || "<comando>"}`;
+  const encabezado = [
+    destino.tipo === "remota"
+      ? `DATABASE_URL apunta a una base remota: ${destino.descripcion}.`
+      : `${destino.descripcion}.`,
+    "",
+  ];
+  const sinUrl = [
+    "",
+    "Si no queres tocar esa base, saca DATABASE_URL del entorno y de .env.local:",
+    "sin ella drizzle-kit usa PGlite en ./data/pg.",
+  ];
+
+  if (destino.tipo === "desconocida") {
+    return {
+      permitido: false,
+      destino,
+      motivo: [
+        ...encabezado,
+        "No se sabe a que base se conectaria drizzle-kit, asi que no se conecta, tampoco",
+        `con ${VARIABLE_DRIZZLE_KIT}.`,
+        ...sinUrl,
+      ].join("\n"),
+    };
+  }
+
+  if (comando === "push") {
+    return {
+      permitido: false,
+      destino,
+      motivo: [
+        ...encabezado,
+        "`drizzle-kit push` no se corre contra una base remota, tampoco pidiendolo:",
+        "aplica el esquema sin dejar registro en drizzle.__drizzle_migrations, y la",
+        "migracion siguiente falla o pisa un cambio. El camino es `npm run db:generate`,",
+        "leer el SQL que deja en drizzle/, y `npm run db:migrate -- --produccion`.",
+      ].join("\n"),
+    };
+  }
+
+  if (entrada.permiso === "1" && !entrada.permisoEnArchivo) {
+    return { permitido: true, destino, comando, abreLaBase: true };
+  }
+
+  return {
+    permitido: false,
+    destino,
+    motivo: [
+      ...encabezado,
+      `\`drizzle-kit ${comando || "<comando>"}\` se conecta con el usuario de esa URL, que en`,
+      "Supabase es el dueno de las tablas y no pasa por RLS: en Studio, cada celda",
+      "que se edita o fila que se borra se escribe ahi en el acto. drizzle-kit es para",
+      "la base local; las migraciones a produccion van con",
+      "`npm run db:migrate -- --produccion`.",
+      "",
+      "Si de verdad hace falta contra esa base, pedilo para esta corrida, en la terminal:",
+      "",
+      `  PowerShell: $env:${VARIABLE_DRIZZLE_KIT} = "1"; ${ejemplo}; Remove-Item Env:${VARIABLE_DRIZZLE_KIT}`,
+      `  Git Bash:   ${VARIABLE_DRIZZLE_KIT}=1 ${ejemplo}`,
+      ...(entrada.permisoEnArchivo
+        ? [
+            "",
+            `${VARIABLE_DRIZZLE_KIT} esta escrita en .env.local o .env, y desde ahi no cuenta:`,
+            "quedaria habilitada para siempre. Sacala del archivo.",
+          ]
+        : []),
+      ...sinUrl,
+    ].join("\n"),
+  };
 }

@@ -722,13 +722,90 @@
   border-color: var(--color-marca-600);
 }
 
+/*
+ * Los botones de orden de las propuestas ("Más votadas", "Mayor presupuesto").
+ * Son enlaces con forma de pastilla: el elegido se rellena con el azul de
+ * marca, como una solapa marcada, y los demas quedan con borde.
+ */
+.chip-orden {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--texto);
+  background: var(--fondo-tarjeta);
+  border: 1px solid var(--borde);
+  transition: border-color 120ms;
+}
+
+.chip-orden:hover {
+  border-color: var(--borde-control);
+}
+
+.chip-orden[aria-current] {
+  color: #fff;
+  font-weight: 600;
+  background: var(--color-marca-700);
+  border-color: var(--color-marca-700);
+}
+
+/*
+ * La grilla de propuestas del panel. auto-fill con un minimo de 17rem: con la
+ * ficha abierta al costado entran dos por fila, a pantalla completa tres o
+ * cuatro, y en el telefono una.
+ */
+.grilla-propuestas {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
+}
+
+.tarjeta-propuesta {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: 1rem;
+  background: var(--fondo-tarjeta);
+  border: 1px solid var(--borde);
+  border-left-width: 4px;
+  color: var(--texto);
+  transition:
+    border-color 120ms,
+    box-shadow 120ms,
+    transform 120ms;
+}
+
+.tarjeta-propuesta:hover {
+  border-color: var(--borde-control);
+  transform: translateY(-1px);
+}
+
+/* La que le debe una devolucion a un vecino. */
+.tarjeta-propuesta[data-marca="debe"] {
+  border-left-color: var(--color-acento-600);
+}
+
+.tarjeta-propuesta[data-marca="abierta"] {
+  border-color: var(--color-marca-600);
+  box-shadow:
+    inset 0 0 0 1px var(--color-marca-600),
+    0 0 0 3px color-mix(in srgb, var(--color-marca-600) 18%, transparent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tarjeta-filtro,
+  .tarjeta-propuesta,
+  .chip-orden,
   .columna-distrito {
     transition: none;
   }
 
-  .tarjeta-filtro:hover {
+  .tarjeta-filtro:hover,
+  .tarjeta-propuesta:hover {
     transform: none;
   }
 }
@@ -747,6 +824,19 @@
   background: var(--color-marca-700);
   color: white;
   border-radius: 0.5rem;
+}
+
+/*
+ * Las tarjetas de la boleta (src/components/PanelVotacion.tsx). Cada una es un
+ * <label> con su radio adentro, oculto con sr-only: el foco general
+ * (:focus-visible) se dibujaba sobre ese radio de 1px recortado y no se veia, y
+ * quien vota con teclado entraba al grupo sin saber en que proyecto estaba
+ * parado (WCAG 2.4.7). El foco va en la tarjeta entera, con el mismo trazo que
+ * el resto del sitio. Con el mouse no aparece: un clic no da :focus-visible.
+ */
+.opcion-boleta:has(input:focus-visible) {
+  outline: 3px solid var(--color-marca-600);
+  outline-offset: 2px;
 }
 
 /* MapLibre: el CSS propio se importa en el componente del mapa. */

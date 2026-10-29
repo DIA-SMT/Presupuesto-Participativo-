@@ -15,17 +15,16 @@
  *    ciegas requiere acertar los dos.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { exigirSecretoDeSesion } from "@/lib/secreto-sesion";
 
 /** Sin ambiguedad visual: no van I, L, O, U, 0 ni 1. */
 const ALFABETO = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const LARGO = 8;
 
 function pimienta(): string {
-  const secreto = process.env.SESSION_SECRET;
-  if (!secreto || secreto.length < 32) {
-    throw new Error("SESSION_SECRET faltante o demasiado corto (minimo 32 caracteres).");
-  }
-  return secreto;
+  // Con el valor de relleno de .env.example cualquiera calcularia el codigo de
+  // cualquier idea: ver src/lib/secreto-sesion.ts.
+  return exigirSecretoDeSesion();
 }
 
 /** Codigo de seguimiento de la idea con ese id. Siempre el mismo. */

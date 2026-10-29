@@ -1,13 +1,17 @@
 import "./cargar-env";
-import postgres from "postgres";
+import { abrirPostgres } from "./conexion-directa";
 
 async function main() {
-  const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false });
-  const ediciones = await sql`SELECT anio, etapa, activa FROM ediciones ORDER BY anio`;
-  const [ideas] = await sql`SELECT count(*)::int AS n FROM ideas`;
+  const pool = abrirPostgres();
+  const { rows: ediciones } = await pool.query(
+    "SELECT anio, etapa, activa FROM ediciones ORDER BY anio",
+  );
+  const {
+    rows: [ideas],
+  } = await pool.query<{ n: number }>("SELECT count(*)::int AS n FROM ideas");
   console.log("ediciones:", JSON.stringify(ediciones));
   console.log("ideas:", ideas.n);
-  await sql.end();
+  await pool.end();
 }
 
 main().catch((e) => {

@@ -35,13 +35,14 @@
  * llamadas al modelo por pedido, con el formulario cerrado: un asistente de
  * carga sin carga posible es un modelo pago a disposicion de quien conozca la
  * ruta. La excepcion es la misma que la del alta, `puedeCargarFueraDeEtapa`
- * (src/lib/modo-prueba.ts): el equipo con sesion o MODO_PRUEBA_IDEAS=1, para
- * mostrar el circuito completo.
+ * (src/lib/modo-prueba.ts): el equipo con sesion de moderador o mas, o
+ * MODO_PRUEBA_IDEAS=1, para mostrar el circuito completo.
  *
  * Con el tope diario de gasto pasado (CHAT_TOPE_TOKENS_DIA, ver
  * src/lib/modelo.ts) responde lo determinístico con un aviso de que la ayuda
  * de IA no esta disponible ahora, igual que cuando el modelo falla.
  */
+import type OpenAI from "openai";
 import { z } from "zod";
 import { db } from "@/db";
 import { chatConsultas } from "@/db/schema";
@@ -50,10 +51,14 @@ import {
   getEdicionActiva,
   getIdeasParaComparar,
   getTokensUsadosHoy,
+  registrarConsumoDeRespaldo,
 } from "@/db/queries";
+import { sinCaracteresDeControl } from "@/lib/texto-limpio";
+import { resumenDeError } from "@/lib/errores-base";
 import { faltantesBasicos, LARGOS } from "@/lib/idea-esquema";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
-import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { consumirDelVecino, hashearIp, ipDe } from "@/lib/rate-limit";
+import { getSesionVotanteDe } from "@/lib/sesion";
 import { exigirMismoOrigen } from "@/lib/origen";
 import { similitud } from "@/lib/texto";
 import { SISTEMA_BENEFICIOS, sistemaFormalizar } from "@/lib/redaccion-prompts";
@@ -71,8 +76,25 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Pedidos por hora y por IP. Uno solo alcanza para toda la propuesta. */
+/**
+ * Pedidos por hora y por persona (por IP en el modo prueba sin sesion). Uno
+ * solo alcanza para toda la propuesta.
+ */
 const TOPE_POR_HORA = 15;
+
+/**
+ * Pedidos por hora y por persona a la parte sin modelo (lo que falta y las
+ * ideas parecidas, que es una consulta a la base). Va en un contador aparte del
+ * de arriba porque esa parte corre siempre, aun sin clave del proveedor o con
+ * el gasto del dia pasado, y esos dos atajos devuelven antes del tope del
+ * modelo: sin este, la busqueda de parecidas quedaba sin ningun limite. Mas
+ * holgado que el del modelo, porque todo pedido con modelo pasa tambien por aca.
+ */
+const TOPE_BASICO_POR_HORA = 60;
+
+/** Lo mismo que dice el alta (/api/ideas) con la sesion vencida, para la ayuda. */
+const SIN_SESION =
+  "Para usar la ayuda tenés que ingresar con CIDITUC, y tu sesión no está activa (dura 4 horas). Copiá lo que escribiste, entrá de nuevo desde «Presentá tu idea» y pegalo.";
 /**
  * Tope de salida de CADA llamada. Es un tope, no un gasto: se paga lo que el
  * modelo genera, asi que subirlo no encarece las llamadas cortas.
@@ -102,11 +124,27 @@ const MINIMO_PARA_FORMALIZAR = 15;
 /** Para deducir los beneficios hace falta sustancia en los otros dos campos. */
 const MINIMO_DE_CONTEXTO = 25;
 
+/**
+ * Lo que falta cuando el pedido llega sin distrito. Con el mismo texto que el
+ * paso 1 del formulario (`faltaEnElPaso`), mas lo que se pierde sin el lugar.
+ */
+const SIN_LUGAR =
+  "Marcá en el mapa dónde sería la obra: con el lugar te decimos si ya hay propuestas parecidas en tu distrito.";
+
 const esquema = z.object({
   titulo: z.string().trim().max(LARGOS.titulo).nullish(),
   categoria: z.string().trim().max(60).nullish(),
   barrio: z.string().trim().max(LARGOS.barrio).nullish(),
-  distrito: z.number().int().min(1).max(20),
+  /**
+   * Puede faltar, y no es un pedido mal armado: el formulario manda el distrito
+   * que tiene, que es null mientras no hay punto marcado, mientras se ubica o
+   * si el punto quedo fuera del ejido, y el boton se puede apretar igual (el
+   * riel deja saltar al paso 2 sin marcar el mapa). Antes esto exigia un
+   * numero y la persona recibia "No se entendió el pedido." sin ninguna pista
+   * de que lo que faltaba era el lugar. Sin distrito no hay con que buscar
+   * parecidas; lo demas sale igual.
+   */
+  distrito: z.number().int().min(1).max(20).nullish(),
   problema: z.string().trim().max(LARGOS.problema).nullish(),
   solucion: z.string().trim().max(LARGOS.solucion).nullish(),
   beneficios: z.string().trim().max(LARGOS.beneficios).nullish(),
@@ -247,6 +285,9 @@ const salidaRevision = z.object({
 // compartidos con scripts/probar-redaccion.ts.
 // ---------------------------------------------------------------------------
 
+/** Lo que dice el prompt cuando la persona no eligio categoria (lo normal desde 2026). */
+const SIN_CATEGORIA = "sin elegir";
+
 function sistemaRevision(
   categorias: Array<{ slug: string; nombre: string; descripcion: string }>,
   categoriaElegida: string,
@@ -269,11 +310,11 @@ function sistemaRevision(
 
 # Los campos, como los ve la persona en el formulario
 
-- \`solucion\`: "¿Qué querés proponer?" — la obra o mejora que pide.
-- \`problema\`: "¿Por qué hace falta?" — qué pasa hoy y a quién afecta.
-- \`beneficios\`: "¿Quiénes se benefician?" — opcional.
-- \`titulo\`: el título de la idea.
-- \`categoria\`: la categoría elegida.
+- \`problema\`: "¿Qué problema comparten en el barrio?" — qué pasa hoy y a quién afecta.
+- \`solucion\`: "¿Qué les gustaría mejorar o cambiar?" — la obra o mejora que pide.
+- \`beneficios\`: "¿A quiénes beneficiaría?" — opcional.
+- \`titulo\`: el nombre de la propuesta.
+- \`categoria\`: la categoría, si la persona eligió una.
 
 En cada observación devolvés el campo al que corresponde, con esas claves.
 
@@ -281,7 +322,13 @@ En cada observación devolvés el campo al que corresponde, con esas claves.
 
 ${categorias.map((c) => `- ${c.nombre} (${c.slug}): ${c.descripcion}`).join("\n")}
 
-La persona eligió: ${categoriaElegida}. Si por el texto corresponde otra, decilo como un señalamiento con campo "categoria". Si corresponde, no digas nada sobre la categoría.
+${
+  categoriaElegida === SIN_CATEGORIA
+    ? // Desde el formulario 2026 la persona no elige la categoria: la asigna el
+      // equipo. Pedirle que la cambie seria pedirle algo que no tiene donde hacer.
+      "La persona no elige la categoría: la asigna el equipo al evaluar. No digas nada sobre la categoría."
+    : `La persona eligió: ${categoriaElegida}. Si por el texto corresponde otra, decilo como un señalamiento con campo "categoria". Si corresponde, no digas nada sobre la categoría.`
+}
 
 # Importante
 
@@ -327,14 +374,48 @@ export async function POST(request: Request) {
       { status: 409 },
     );
   }
+  /*
+   * Y el mismo criterio de sesion: en la etapa, el alta exige la de CIDITUC
+   * (/api/ideas) y el formulario no se muestra sin ella, asi que un pedido sin
+   * sesion no viene del formulario. Sin esto, cualquiera con un `curl` (el
+   * Origin se pone a mano) tenia cuatro llamadas pagas por pedido, que es lo
+   * que el encabezado de este archivo dice que no tiene que pasar. En el modo
+   * prueba, fuera de la etapa, sigue sin pedirla, igual que el alta.
+   */
+  const sesion = await getSesionVotanteDe(request);
+  if (edicion.etapa === "ideas" && !sesion) {
+    return Response.json({ error: SIN_SESION }, { status: 401 });
+  }
+
+  // Antes de `buscarParecidas` y de los atajos sin modelo (ver
+  // TOPE_BASICO_POR_HORA). No gasta el cupo del modelo: con el gasto del dia
+  // pasado, la persona conserva sus pedidos de la hora para cuando vuelva.
+  const limiteBasico = await consumirDelVecino("asistente-basico", sesion?.votanteId, request, {
+    conSesion: { maximo: TOPE_BASICO_POR_HORA, ventanaSegundos: 3600 },
+    sinSesion: { maximo: TOPE_BASICO_POR_HORA, ventanaSegundos: 3600 },
+  });
+  if (!limiteBasico.permitido) {
+    return Response.json(
+      {
+        error:
+          "Pediste muchas revisiones en la última hora. Podés seguir escribiendo a mano y enviar tu idea igual.",
+      },
+      { status: 429 },
+    );
+  }
 
   // -------------------------------------------------------------------------
   // 1. Lo determinístico: gratis, instantaneo y siempre disponible
   // -------------------------------------------------------------------------
+  const distrito = entrada.distrito ?? null;
   const faltantes = faltantesBasicos({ titulo, problema, solucion });
+  // El lugar va como uno mas de lo que falta, y no en un aviso aparte: asi la
+  // revision no dice "esta completa" de una propuesta sin punto, y la pista se
+  // va sola cuando la persona marca el mapa y vuelve a pedir.
+  if (distrito === null) faltantes.unshift(SIN_LUGAR);
   const parecidas =
-    titulo || problema
-      ? await buscarParecidas(edicion.id, { titulo, problema, distrito: entrada.distrito })
+    distrito !== null && (titulo || problema)
+      ? await buscarParecidas(edicion.id, { titulo, problema, distrito })
       : [];
 
   const sinIa = (aviso: string | null): RespuestaAsistente => ({
@@ -359,7 +440,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const limite = await consumir(`asistente:${ipHash}`, TOPE_POR_HORA, 3600);
+  // Por persona, como el alta: en un CIC o una asamblea con un solo Wi-Fi, el
+  // tope por IP se lo repartian todos los que escribian su idea a la vez. Sin
+  // sesion (solo en el modo prueba) sigue por IP.
+  const limite = await consumirDelVecino("asistente", sesion?.votanteId, request, {
+    conSesion: { maximo: TOPE_POR_HORA, ventanaSegundos: 3600 },
+    sinSesion: { maximo: TOPE_POR_HORA, ventanaSegundos: 3600 },
+  });
   if (!limite.permitido) {
     return Response.json(
       {
@@ -375,10 +462,10 @@ export async function POST(request: Request) {
   const categorias = await getCategorias();
   const modelo = modeloPara("asistente");
   const nombreCategoria =
-    categorias.find((c) => c.slug === entrada.categoria)?.nombre ?? "sin elegir";
+    categorias.find((c) => c.slug === entrada.categoria)?.nombre ?? SIN_CATEGORIA;
   const ubicacion = [
     `<barrio>${entrada.barrio ?? "no indicado"}</barrio>`,
-    `<distrito>${entrada.distrito}</distrito>`,
+    `<distrito>${distrito ?? "no indicado"}</distrito>`,
     `<categoria>${nombreCategoria}</categoria>`,
   ];
 
@@ -389,9 +476,10 @@ export async function POST(request: Request) {
     // El SDK pide un objeto indexable por string para el esquema JSON.
     esquemaSalida: Record<string, unknown>,
     validar: (crudo: unknown) => T,
-  ): Promise<{ dato: T | null; consumo: Consumo }> {
+  ): Promise<{ dato: T | null; consumo: Consumo; fallo: boolean }> {
+    let respuesta: OpenAI.Chat.Completions.ChatCompletion;
     try {
-      const respuesta = await crearCliente().chat.completions.create({
+      respuesta = await crearCliente().chat.completions.create({
         model: modelo,
         max_tokens: MAX_TOKENS,
         messages: [
@@ -403,16 +491,53 @@ export async function POST(request: Request) {
           json_schema: { name: "salida", strict: true, schema: esquemaSalida },
         },
       });
-      const crudo = respuesta.choices[0]?.message?.content ?? "{}";
-      return { dato: validar(JSON.parse(crudo)), consumo: sumarConsumo(CONSUMO_VACIO, respuesta.usage) };
     } catch (causa) {
+      // Sin respuesta no hay consumo que anotar: es el unico caso en cero.
       console.error("[asistente] una de las llamadas falló", causa);
-      return { dato: null, consumo: CONSUMO_VACIO };
+      return { dato: null, consumo: CONSUMO_VACIO, fallo: true };
+    }
+
+    /*
+     * El consumo se toma ANTES de validar, y viaja aunque la salida no sirva.
+     * Un JSON cortado en MAX_TOKENS o que no pasa el zod lo cobro el proveedor
+     * igual, entrada y salida enteras. Antes salia en la misma expresion que el
+     * `validar` y el catch lo dejaba en cero: la fila quedaba sin los tokens y
+     * CHAT_TOPE_TOKENS_DIA, el unico freno de gasto, contaba de menos. Con
+     * campos largos se puede forzar a proposito, y ya pasaba sin querer (ver
+     * MAX_TOKENS).
+     */
+    const consumo = sumarConsumo(CONSUMO_VACIO, respuesta.usage);
+    try {
+      const crudo = respuesta.choices[0]?.message?.content ?? "{}";
+      return { dato: validar(JSON.parse(crudo)), consumo, fallo: false };
+    } catch (causa) {
+      // `finish_reason` "length" es el JSON cortado en MAX_TOKENS; "stop", el zod.
+      console.error(
+        "[asistente] salida inválida, finish_reason:",
+        respuesta.choices[0]?.finish_reason,
+        causa,
+      );
+      return { dato: null, consumo, fallo: true };
     }
   }
 
+  /** La llamada que no sale porque el campo no da para tanto: no es una falla. */
+  const sinLlamar = Promise.resolve({ dato: null, consumo: CONSUMO_VACIO, fallo: false });
+
   const recorta = (texto: string, tope: number) =>
     texto.length > tope ? `${texto.slice(0, tope - 1).trimEnd()}…` : texto;
+
+  /*
+   * "Agregar lo elegido" es un pedido sobre la solucion y nada mas: los
+   * aspectos se suman a ese texto y el formulario lo escribe derecho. Antes
+   * este pedido volvia a formalizar el problema, redactaba los beneficios (aun
+   * vacios) y sugeria un titulo, y el formulario escribia los cuatro campos sin
+   * revision, pisando lo que la persona habia escrito o recien rechazado con
+   * "Dejar el mio". Ahora esas llamadas no salen (no se paga lo que no se usa)
+   * y el titulo de la revision se ignora; la revision sigue, por lo que le
+   * falta a la propuesta.
+   */
+  const soloAspectos = elegidos.length > 0;
 
   try {
     const [rSolucion, rProblema, rBeneficios, rRevision] = await Promise.all([
@@ -437,10 +562,10 @@ export async function POST(request: Request) {
             ESQ_TEXTO_Y_DETALLES,
             (c) => salidaTextoYDetalles.parse(c),
           )
-        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
+        : sinLlamar,
 
       // Por que hace falta.
-      problema.length >= MINIMO_PARA_FORMALIZAR
+      !soloAspectos && problema.length >= MINIMO_PARA_FORMALIZAR
         ? pedir(
             sistemaFormalizar("problema"),
             [
@@ -453,11 +578,13 @@ export async function POST(request: Request) {
             ESQ_TEXTO,
             (c) => salidaTexto.parse(c),
           )
-        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
+        : sinLlamar,
 
       // Quienes se benefician: el unico que puede redactarse con el campo vacio,
       // y solo si hay de donde deducirlo.
-      problema.length >= MINIMO_DE_CONTEXTO && solucion.length >= MINIMO_DE_CONTEXTO
+      !soloAspectos &&
+      problema.length >= MINIMO_DE_CONTEXTO &&
+      solucion.length >= MINIMO_DE_CONTEXTO
         ? pedir(
             SISTEMA_BENEFICIOS,
             [
@@ -474,7 +601,7 @@ export async function POST(request: Request) {
             ESQ_TEXTO,
             (c) => salidaTexto.parse(c),
           )
-        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
+        : sinLlamar,
 
       // Que le falta, y un titulo si hace falta.
       solucion || problema
@@ -492,7 +619,7 @@ export async function POST(request: Request) {
             ESQ_REVISION,
             (c) => salidaRevision.parse(c),
           )
-        : Promise.resolve({ dato: null, consumo: CONSUMO_VACIO }),
+        : sinLlamar,
     ]);
 
     const consumo = [rSolucion, rProblema, rBeneficios, rRevision].reduce<Consumo>(
@@ -513,7 +640,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const tituloSugerido = (rRevision.dato?.titulo ?? "").trim();
+    const tituloSugerido = soloAspectos ? "" : (rRevision.dato?.titulo ?? "").trim();
     const propuesta: PropuestaIA = {
       // Solo se sugiere si aporta algo: si no hay titulo o el que hay es distinto.
       titulo:
@@ -536,6 +663,18 @@ export async function POST(request: Request) {
       (d) => !elegidos.some((e) => e.toLowerCase() === d.nombre.toLowerCase()),
     );
 
+    /*
+     * Alguna de las llamadas que salieron fallo (error del proveedor, JSON
+     * cortado, zod) y otra no. Sin aviso, con la revision limpia el panel decia
+     * "Tu propuesta se entiende y está completa" sin texto ordenado ni aspectos,
+     * y la persona creia que la IA no tenia nada que mejorar; con una sola
+     * falla, la reescritura o los aspectos faltaban sin explicacion. Con aviso
+     * el panel ya no dice que esta completa. En "Agregar lo elegido" no se pone:
+     * el formulario avisa con su propio texto que los aspectos no se sumaron.
+     */
+    const algunaFallo =
+      !soloAspectos && [rSolucion, rProblema, rBeneficios, rRevision].some((r) => r.fallo);
+
     await registrar({
       titulo,
       respuesta: JSON.stringify({ propuesta, detalles: detalles.map((d) => d.nombre) }),
@@ -553,7 +692,9 @@ export async function POST(request: Request) {
       senalamientos: rRevision.dato?.senalamientos ?? [],
       propuesta,
       detalles,
-      aviso: null,
+      aviso: algunaFallo
+        ? "No pudimos ordenar parte de tu texto. Podés volver a pedir ayuda o enviar tu idea igual."
+        : null,
     } satisfies RespuestaAsistente);
   } catch (causa) {
     console.error("[asistente]", causa);
@@ -621,11 +762,14 @@ async function registrar(datos: {
   ipHash: string;
   ok: boolean;
 }) {
+  // El titulo lo escribe quien llama y la respuesta el modelo: un NUL en
+  // cualquiera de los dos hacia fallar el INSERT, y sin la fila el pedido no
+  // contaba para el tope de gasto del dia (ver src/lib/texto-limpio.ts).
   try {
     await db.insert(chatConsultas).values({
       origen: "asistente",
-      pregunta: datos.titulo || "(sin título)",
-      respuesta: datos.respuesta,
+      pregunta: sinCaracteresDeControl(datos.titulo) || "(sin título)",
+      respuesta: datos.respuesta === null ? null : sinCaracteresDeControl(datos.respuesta),
       herramientas: [],
       modelo: datos.modelo,
       tokensEntrada: datos.consumo.tokensEntrada,
@@ -636,6 +780,19 @@ async function registrar(datos: {
       ok: datos.ok,
     });
   } catch (causa) {
-    console.error("[asistente] no se pudo registrar el pedido", causa);
+    console.error("[asistente] no se pudo registrar el pedido", resumenDeError(causa));
+    // Como en el chat: el consumo cuenta para el tope aunque la fila completa
+    // no se haya podido guardar.
+    try {
+      await registrarConsumoDeRespaldo({
+        origen: "asistente",
+        modelo: datos.modelo,
+        tokensEntrada: datos.consumo.tokensEntrada,
+        tokensSalida: datos.consumo.tokensSalida,
+        ipHash: datos.ipHash,
+      });
+    } catch (otra) {
+      console.error("[asistente] tampoco se pudo registrar el consumo", resumenDeError(otra));
+    }
   }
 }

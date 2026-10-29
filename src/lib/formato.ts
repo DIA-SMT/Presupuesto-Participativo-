@@ -11,15 +11,64 @@ export const ETIQUETA_ESTADO: Record<string, string> = {
   descartado: "Descartada",
 };
 
-export const DESCRIPCION_ESTADO: Record<string, string> = {
+/**
+ * Lo que significa cada estado. No se exporta: se lee con `descripcionEstado`,
+ * porque "factible" no se dice igual en todas las etapas y por eso no esta aca.
+ */
+const DESCRIPCION_ESTADO: Record<string, string> = {
   pendiente: "Todavía está siendo evaluada por el equipo técnico.",
-  factible: "Pasó la evaluación técnica y presupuestaria: pudo ser votada.",
   no_factible: "La evaluación técnica determinó que no puede ejecutarse como está presentada.",
   integrado: "Se fusionó con otra propuesta parecida para presentarse como un solo proyecto.",
   ganador: "Fue el proyecto más votado de su distrito y se incorpora al presupuesto municipal.",
   // Solo en el panel: una descartada nunca se publica.
   descartado: "Se descartó: era una prueba, un mensaje sin propuesta o una carga repetida.",
 };
+
+/**
+ * La descripcion de un estado, dicha para la etapa de la edicion de la idea.
+ * La usan la ficha publica, las pastillas por estado de /distritos/N y el
+ * seguimiento de quien presento la idea.
+ *
+ * Solo "factible" depende de la etapa. Su texto era fijo y en pasado ("pudo ser
+ * votada"), escrito para la edicion 2025 ya votada: en una edicion en
+ * evaluacion o en votacion daba a entender que la votacion ya habia pasado. La
+ * ficha de un proyecto que estaba en la boleta decia que "pudo ser votado", y
+ * el vecino que seguia su idea recien declarada factible leia lo mismo antes de
+ * que se votara.
+ *
+ * `publicada` cuenta por lo mismo que en `seVota` (src/lib/etapas.ts): lo que
+ * entra en la boleta es factible Y publicada, y la boleta queda fija cuando se
+ * abre la votacion. Las paginas publicas solo muestran publicadas (de ahi el
+ * valor por defecto); el seguimiento del autor puede mostrar una que no lo
+ * esta. `etapa` va como string, como el resto de este archivo, que no importa
+ * tipos del esquema: una etapa que no se conoce cae en la frase sin tiempo.
+ */
+export function descripcionEstado(
+  estado: string,
+  etapa: string | null | undefined,
+  publicada = true,
+): string | undefined {
+  if (estado !== "factible") return DESCRIPCION_ESTADO[estado];
+  const paso = "Pasó la evaluación técnica y presupuestaria";
+  switch (etapa) {
+    case "ideas":
+    case "evaluacion":
+      return publicada
+        ? `${paso}: va a poder votarse en su distrito.`
+        : `${paso}: si el equipo la publica antes de la votación, va a poder votarse en su distrito.`;
+    case "votacion":
+      return publicada
+        ? `${paso}: está en la boleta de su distrito.`
+        : `${paso}, pero no está publicada: no entra en la boleta de esta votación.`;
+    case "seguimiento":
+    case "cerrada":
+      // Sin publicar no se sabe si llego a la boleta (pudo despublicarse
+      // despues de la votacion): se dice solo lo seguro.
+      return publicada ? `${paso}: pudo ser votada.` : `${paso}.`;
+    default:
+      return `${paso}.`;
+  }
+}
 
 /*
  * Estos valores terminan siendo el color de LETRA de la pastilla de estado
@@ -109,6 +158,15 @@ export const ETIQUETA_ROL: Record<string, string> = {
   lector: "Lector",
 };
 
+/**
+ * El monto mas grande que entra en `ediciones.presupuesto_total` y en
+ * `ideas.presupuesto_total`: las dos son numeric(14, 2), 12 digitos enteros.
+ * Vive aca y no en las acciones porque lo usan las dos puntas: la accion lo
+ * valida (un monto mas grande hacia fallar el UPDATE con "numeric field
+ * overflow" y tiraba la pantalla entera) y el formulario lo pone de `max`.
+ */
+export const MAXIMO_PRESUPUESTO = 999_999_999_999.99;
+
 const pesos = new Intl.NumberFormat("es-AR", {
   style: "currency",
   currency: "ARS",
@@ -124,6 +182,20 @@ export function formatearPesos(monto: number | null | undefined): string {
 
 export function formatearNumero(valor: number): string {
   return enteros.format(valor);
+}
+
+/**
+ * El codigo de la propuesta del formulario 2026, "D05-P012": el distrito y el
+ * numero de la idea en la edicion. El papel trae el casillero vacio
+ * ("Código: D___ P___") y el equipo lo completa con lo que muestra el panel al
+ * cargarla. No se guarda: sale de dos columnas que ya existen, y el numero es
+ * el identificador que no cambia (si una correccion muda la idea de distrito,
+ * el papel archivado se sigue encontrando por la P).
+ */
+export function codigoDePropuesta(distrito: number | null, numero: number | null): string {
+  const d = distrito === null ? "--" : String(distrito).padStart(2, "0");
+  const p = numero === null ? "---" : String(numero).padStart(3, "0");
+  return `D${d}-P${p}`;
 }
 
 const fechaLarga = new Intl.DateTimeFormat("es-AR", {
@@ -157,6 +229,22 @@ export function hoyEnTucuman(ahora: Date = new Date()): string {
   return `${parte("year")}-${parte("month")}-${parte("day")}`;
 }
 
+/**
+ * Cuantos dias de calendario de Tucuman van de `desde` a `hasta` (0 = el mismo
+ * dia). No se cuentan bloques de 24 h: una idea de ayer a las 23:40 vista hoy a
+ * las 9:00 es de "hace 1 dia", aunque hayan pasado 9 horas. Cada fecha se lleva
+ * a su dia local y se restan los dias a medianoche UTC, que siempre distan
+ * 86.400.000 ms (Tucuman no tiene horario de verano, y aunque lo tuviera la
+ * resta es sobre fechas, no sobre horas).
+ */
+export function diasDeCalendarioEnTucuman(desde: Date, hasta: Date): number {
+  const aDia = (fecha: Date) => {
+    const [anio, mes, dia] = hoyEnTucuman(fecha).split("-").map(Number);
+    return Date.UTC(anio, mes - 1, dia);
+  };
+  return Math.round((aDia(hasta) - aDia(desde)) / 86_400_000);
+}
+
 /** Las fechas del dataset son "YYYY-MM-DD": se parsean sin corrimiento de zona. */
 function aFecha(valor: string): Date {
   const [anio, mes, dia] = valor.split("-").map(Number);
@@ -184,6 +272,21 @@ export function formatearRango(
   if (desde) return `Desde ${formatearFecha(desde)}`;
   if (hasta) return `Hasta ${formatearFecha(hasta)}`;
   return "";
+}
+
+const conjuncion = new Intl.ListFormat("es", { type: "conjunction" });
+
+/**
+ * "el distrito 7 quedó", o "los distritos 2, 10 y 13 quedaron": los distritos
+ * con el verbo que concuerda. La portada y /transparencia armaban la frase cada
+ * una por su lado, y cuando la portada dejo de decir "el distrito 2, 10, 13
+ * quedó" (en singular aunque fueran diez), /transparencia siguio diciendo "el
+ * distrito 2, 10, 13 no eligió proyecto". Quien llama se asegura de que haya
+ * al menos uno: sin distritos no hay frase que armar.
+ */
+export function distritosConVerbo(distritos: number[], singular: string, plural: string): string {
+  if (distritos.length === 1) return `el distrito ${distritos[0]} ${singular}`;
+  return `los distritos ${conjuncion.format(distritos.map(String))} ${plural}`;
 }
 
 /** Recorta un texto en el ultimo espacio antes del limite. */

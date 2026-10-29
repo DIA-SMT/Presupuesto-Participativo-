@@ -9,14 +9,17 @@
  *   npx tsx scripts/limpiar-pruebas.ts --hasta 2026-10-31 --confirmar
  *        -> lo borra (contra una base remota, ademas --produccion)
  *   --incluir-cidituc  suma a los votantes verificados por CIDITUC (el equipo
- *                      que probo el ingreso real). Son personas reales: solo
- *                      si se sabe que todos los de antes del lanzamiento fueron
- *                      pruebas.
+ *                      que probo el ingreso real) creados HASTA LA FECHA DE
+ *                      CORTE, que con este flag se exige tambien para mirar.
+ *                      Son personas reales: solo si se sabe que todos los de
+ *                      antes del lanzamiento fueron pruebas. Los que entraron
+ *                      despues del corte (los vecinos) no se tocan.
  *
- * La fecha de corte es obligatoria para borrar ideas, chat e informes, y es
- * inclusive (hasta el fin de ese dia, hora de Tucuman). Se pone el dia ANTERIOR
- * a la apertura: lo de despues ya es de vecinos. Sin --confirmar no escribe
- * nada: primero se mira la lista, despues se borra.
+ * La fecha de corte es obligatoria para borrar ideas, chat e informes, y acota
+ * tambien a los votantes de CIDITUC; es inclusive (hasta el fin de ese dia,
+ * hora de Tucuman). Se pone el dia ANTERIOR a la apertura: lo de despues ya es
+ * de vecinos. Sin --confirmar no escribe nada: primero se mira la lista,
+ * despues se borra.
  *
  * No muestra nombres ni DNIs: del padron solo el id, el proveedor, el distrito y
  * la fecha. Para decidir si una fila es de prueba alcanza con eso.
@@ -36,7 +39,7 @@ function valorDe(argumentos: string[], flag: string): string | null {
 function mostrar(plan: PlanLimpieza) {
   const { votantes, ideas, opciones } = plan;
   console.log(`\nVotantes de prueba: ${votantes.length}` +
-    (opciones.incluirCidituc ? " (incluye los de CIDITUC)" : " (sin los de CIDITUC)"));
+    (opciones.incluirCidituc ? ` (incluye los de CIDITUC creados hasta el ${opciones.hasta})` : " (sin los de CIDITUC)"));
   for (const v of votantes) {
     console.log(`  #${v.id}  ${v.proveedor.padEnd(8)} ${v.verificado ? "verificado" : "sin verificar"}  ` +
       `distrito ${v.distrito ?? "-"}  ${v.creado}  ${v.votos} voto(s)`);
@@ -66,6 +69,13 @@ async function main() {
   }
   const opciones = { hasta, incluirCidituc: argumentos.includes("--incluir-cidituc") };
   const confirmar = argumentos.includes("--confirmar");
+  if (opciones.incluirCidituc && !hasta) {
+    console.error(
+      "\n--incluir-cidituc necesita --hasta AAAA-MM-DD, también para mirar: solo entran los de CIDITUC " +
+        "creados hasta la fecha de corte (el día anterior a la apertura). Los de después son vecinos.\n",
+    );
+    process.exit(1);
+  }
 
   console.log(`Base: ${destinoDeLaBase(process.env.DATABASE_URL).descripcion}`);
   const plan = await armarPlan(consultar, opciones);
@@ -80,7 +90,9 @@ async function main() {
     process.exit(1);
   }
 
-  await exigirPermisoDeEscritura(`npx tsx scripts/limpiar-pruebas.ts --hasta ${hasta} --confirmar`);
+  await exigirPermisoDeEscritura(
+    `npx tsx scripts/limpiar-pruebas.ts --hasta ${hasta}${opciones.incluirCidituc ? " --incluir-cidituc" : ""} --confirmar`,
+  );
   // Se vuelve a leer el plan despues de la espera del candado: si en esos
   // segundos entro algo, se borra lo que hay ahora, no lo que se mostro antes.
   const vigente = await armarPlan(consultar, opciones);

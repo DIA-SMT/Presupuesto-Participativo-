@@ -12,7 +12,7 @@
  * Logica pura, sin base ni Next: la fecha de hoy entra como parametro para
  * poder probarla (scripts/tests/portada.test.ts).
  */
-import type { Edicion } from "@/db/queries";
+import type { Edicion, Estadisticas } from "@/db/queries";
 import { votacionTerminada } from "./ediciones";
 import { formatearFecha } from "./formato";
 
@@ -39,6 +39,34 @@ type EdicionDePortada = Pick<
 >;
 
 /**
+ * Lo que ya salio de la votacion, de `getEstadisticas`: las mismas cuentas que
+ * la banda de numeros de la portada. Solo pesa con la votacion terminada.
+ *
+ * La etapa sola no alcanza: se proclama de a un distrito y despues del
+ * escrutinio, asi que toda edicion pasa un tramo en "seguimiento" con cero
+ * ganadores (ver `ganadorPorProclamar`). En ese tramo el boton llevaba a
+ * /proyectos?ganadores=1, que con la lista vacia muestra "Ninguna idea coincide
+ * con estos filtros" a un vecino que no eligio ningun filtro.
+ */
+export type ResultadoDeLaVotacion = Pick<Estadisticas, "ganadores" | "distritosPorProclamar">;
+
+/**
+ * El boton principal con la votacion terminada: los ganadores si hay alguno;
+ * si no, donde se van a publicar (/transparencia los lista por distrito a
+ * medida que se proclaman), o las ideas de la edicion si no queda nada por
+ * proclamar.
+ */
+function principalConLaVotacionTerminada(resultado: ResultadoDeLaVotacion): AccionPortada {
+  if (resultado.ganadores > 0) {
+    return { href: "/proyectos?ganadores=1", texto: "Ver los proyectos ganadores" };
+  }
+  if (resultado.distritosPorProclamar.length > 0) {
+    return { href: "/transparencia", texto: "Seguí la proclamación" };
+  }
+  return { href: "/proyectos", texto: "Ver las ideas de la edición" };
+}
+
+/**
  * "hasta el 15 de noviembre de 2026", o nada si la fecha no esta cargada o ya
  * paso: con la etapa sin cambiar despues del cierre, prometer una fecha vencida
  * seria peor que no dar ninguna.
@@ -47,8 +75,32 @@ function hasta(fecha: string | null, hoy: string): string {
   return fecha && fecha >= hoy ? ` hasta el ${formatearFecha(fecha)}` : "";
 }
 
-/** `hoy` en AAAA-MM-DD, el dia de Tucuman (`hoyEnTucuman` en formato.ts). */
-export function portadaSegunEtapa(edicion: EdicionDePortada, hoy: string): Portada {
+/**
+ * La oracion de "seguimiento" segun lo proclamado. Decia siempre que "el
+ * municipio los esta ejecutando", tambien antes del primer ganador; y aunque
+ * los hubiera, el sitio no tiene cargado ningun avance de obra (el mismo
+ * criterio que `bajadaGanadores` en src/app/page.tsx).
+ */
+function momentoDeSeguimiento(anio: number, resultado: ResultadoDeLaVotacion): string {
+  if (resultado.distritosPorProclamar.length > 0) {
+    return `Edición ${anio}: la votación terminó y los proyectos ganadores se publican a medida que se proclaman.`;
+  }
+  if (resultado.ganadores > 0) {
+    return `Edición ${anio}: la votación terminó y los proyectos ganadores ya están publicados.`;
+  }
+  return `Edición ${anio}: la votación terminó y la edición no tiene proyectos ganadores publicados.`;
+}
+
+/**
+ * `hoy` en AAAA-MM-DD, el dia de Tucuman (`hoyEnTucuman` en formato.ts).
+ * `resultado` sale de `getEstadisticas` de la misma edicion; antes de que
+ * termine la votacion no se mira.
+ */
+export function portadaSegunEtapa(
+  edicion: EdicionDePortada,
+  hoy: string,
+  resultado: ResultadoDeLaVotacion,
+): Portada {
   const yaVoto = votacionTerminada(edicion.etapa);
 
   switch (edicion.etapa) {
@@ -80,15 +132,15 @@ export function portadaSegunEtapa(edicion: EdicionDePortada, hoy: string): Porta
       };
     case "seguimiento":
       return {
-        momento: `Edición ${edicion.anio}: los vecinos ya eligieron un proyecto por distrito y el municipio los está ejecutando.`,
-        principal: { href: "/proyectos?ganadores=1", texto: "Ver los proyectos ganadores" },
+        momento: momentoDeSeguimiento(edicion.anio, resultado),
+        principal: principalConLaVotacionTerminada(resultado),
         secundaria: { href: "/distritos", texto: "Recorrer los distritos" },
         yaVoto,
       };
     case "cerrada":
       return {
         momento: `La edición ${edicion.anio} terminó. Sus proyectos y los de las ediciones anteriores siguen a la vista.`,
-        principal: { href: "/proyectos?ganadores=1", texto: "Ver los proyectos ganadores" },
+        principal: principalConLaVotacionTerminada(resultado),
         secundaria: { href: "/archivo", texto: "Ediciones anteriores" },
         yaVoto,
       };

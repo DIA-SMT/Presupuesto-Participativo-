@@ -18,7 +18,26 @@ export const LARGOS = {
   beneficios: 3000,
   autorNombre: 120,
   autorEmail: 160,
+  referenciasUbicacion: 1000,
+  organizacion: 160,
+  autorTelefono: 30,
 } as const;
+
+/**
+ * Un telefono como lo escribe la gente: digitos con espacios, guiones, barras,
+ * parentesis y un + adelante. Entre 6 y 15 digitos en total, que va de un fijo
+ * local sin caracteristica a un movil con +54 9. No se normaliza: se guarda
+ * como lo escribio la persona, para que el equipo lo lea igual que en el papel.
+ */
+export const telefono = z
+  .string()
+  .trim()
+  .max(LARGOS.autorTelefono)
+  .regex(/^\+?[\d\s()\-/.]+$/, "Solo números, espacios y guiones.")
+  .refine((valor) => {
+    const digitos = valor.replace(/\D/g, "").length;
+    return digitos >= 6 && digitos <= 15;
+  }, "El teléfono tiene que tener entre 6 y 15 números.");
 
 /** Minimos para que la propuesta se pueda evaluar. */
 export const MINIMOS = {
@@ -30,11 +49,17 @@ export const MINIMOS = {
 /**
  * El contenido de la propuesta: lo que describe la idea, sin la ubicacion ni
  * los datos de contacto. Es exactamente lo que puede ver el asistente.
+ *
+ * La categoria es OPCIONAL desde el formulario 2026: la persona ya no la elige,
+ * la asigna el equipo al evaluar (ver la ficha del panel). Se sigue aceptando
+ * si viene, pero no hace falta.
  */
 export const contenidoIdea = z.object({
   titulo: z.string().trim().min(MINIMOS.titulo).max(LARGOS.titulo),
-  categoria: z.string().trim().min(1).max(60),
+  categoria: z.string().trim().max(60).nullish(),
   barrio: z.string().trim().max(LARGOS.barrio).nullish(),
+  /** "¿Dónde ocurre?": las referencias escritas del lugar. */
+  referenciasUbicacion: z.string().trim().max(LARGOS.referenciasUbicacion).nullish(),
   problema: z.string().trim().min(MINIMOS.problema).max(LARGOS.problema),
   solucion: z.string().trim().min(MINIMOS.solucion).max(LARGOS.solucion),
   beneficios: z.string().trim().max(LARGOS.beneficios).nullish(),
@@ -48,6 +73,10 @@ export const altaIdea = contenidoIdea
     lat: z.number().min(-90).max(90),
     lon: z.number().min(-180).max(180),
     autorNombre: z.string().trim().max(LARGOS.autorNombre).nullish(),
+    /** La organizacion en cuyo nombre se presenta; vacio o null, ninguna. */
+    organizacion: z.string().trim().max(LARGOS.organizacion).nullish(),
+    /** Opcional. Solo lo ve el equipo, y se borra al cerrar la edicion. */
+    autorTelefono: z.literal("").or(telefono).nullish(),
     autorEmail: z
       .string()
       .trim()

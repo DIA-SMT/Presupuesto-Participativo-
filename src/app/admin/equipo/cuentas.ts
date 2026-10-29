@@ -88,6 +88,7 @@ async function bloquearCuenta(tx: Transaccion, id: number) {
       nombre: admins.nombre,
       rol: admins.rol,
       activo: admins.activo,
+      debeCambiarPassword: admins.debeCambiarPassword,
     })
     .from(admins)
     .where(eq(admins.id, id))
@@ -216,6 +217,10 @@ export async function cambiarRol(
  * (ya las habia cortado), pero una cuenta desactivada a mano en la base o por
  * consola conserva su version, y sus cookies viejas volverian a valer apenas se
  * reactivara: con la subida, quien vuelve entra de nuevo con su contrasena.
+ *
+ * El mensaje de la reactivacion dice con cual: si la cuenta tiene una
+ * provisoria pendiente (se la restablecieron estando de baja, o nunca la
+ * cambio), la suya ya no anda, y "con su contraseña" mandaba a probar la vieja.
  */
 export async function cambiarActivo(
   firmante: Autorizacion,
@@ -254,12 +259,13 @@ export async function cambiarActivo(
       objetivoEmail: cuenta.email,
       accion: activo ? "reactivacion" : "desactivacion",
     });
-    return {
-      ok: true,
-      mensaje: activo
-        ? "Cuenta reactivada: ya puede volver a ingresar con su contraseña."
-        : "Cuenta desactivada: sus sesiones abiertas se cerraron y no puede volver a ingresar.",
-    };
+    let mensaje = "Cuenta desactivada: sus sesiones abiertas se cerraron y no puede volver a ingresar.";
+    if (activo) {
+      mensaje = cuenta.debeCambiarPassword
+        ? "Cuenta reactivada: ya puede volver a ingresar con la contraseña provisoria que se le generó, y al entrar tiene que elegir una propia."
+        : "Cuenta reactivada: ya puede volver a ingresar con su contraseña.";
+    }
+    return { ok: true, mensaje };
   });
 }
 
@@ -320,7 +326,11 @@ export async function eliminarCuenta(
  *
  * Vale tambien para una cuenta desactivada, que es el caso de quien vuelve
  * despues de un tiempo y no se acuerda de la suya: se restablece, se reactiva,
- * y el orden da igual.
+ * y el orden da igual. Aca porque ninguna de las dos depende de la otra; en la
+ * pantalla porque la tarjeta deja la provisoria a la vista aunque despues se
+ * use otro boton (ver `provisoria` en TarjetaCuenta, ./panel.tsx). Antes se
+ * iba con el click en "Reactivar cuenta", que es justo lo que el mensaje de
+ * abajo pide hacer, y no habia forma de volver a verla.
  */
 export async function restablecerPassword(
   firmante: Autorizacion,

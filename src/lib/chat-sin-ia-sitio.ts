@@ -20,6 +20,7 @@ import {
   REQUISITO_PARA_PRESENTAR,
   buscarEnParrafos,
   mismaPregunta,
+  raicesDe,
 } from "./contenido-del-programa";
 import { votacionTerminada } from "./ediciones";
 import { formatearFecha } from "./formato";
@@ -125,7 +126,30 @@ export function responderSobreElSitio(
     case "reglamento": {
       const referencias = [{ titulo: "Reglamento", url: "/reglamento" }];
       if (contexto.reglamento.publicado) {
-        const parrafos = buscarEnParrafos(contexto.reglamento.parrafos, pregunta, 4);
+        const todos = contexto.reglamento.parrafos;
+        // "¿Qué dice el reglamento?", "¿Dónde está el reglamento?" o "¿Cuáles son
+        // las reglas?" no dejan ninguna palabra que buscar (VACIAS saca
+        // "reglamento", "reglas", "dice", "donde"): piden el reglamento, no una
+        // regla. Antes caian en "No encontré eso", que era falso con el
+        // reglamento publicado y ademas hacia que el panel la contara como
+        // consulta sin resolver. Ese "no" queda para cuando hubo palabras que
+        // buscar y el reglamento no las tiene.
+        if (!raicesDe(pregunta).length) {
+          const primeros = todos.slice(0, 4);
+          return {
+            texto: [
+              "El reglamento está publicado: lo podés leer completo en la página del reglamento.",
+              "",
+              primeros.length < todos.length ? "Así empieza:" : "Esto dice:",
+              "",
+              ...primeros.map((p) => `- ${p}`),
+              "",
+              "Si buscás una regla en particular, preguntame por ella (por ejemplo, desde qué edad se puede votar).",
+            ].join("\n"),
+            referencias,
+          };
+        }
+        const parrafos = buscarEnParrafos(todos, pregunta, 4);
         return {
           texto: parrafos.length
             ? ["Esto dice el reglamento:", "", ...parrafos.map((p) => `- ${p.texto}`)].join("\n")

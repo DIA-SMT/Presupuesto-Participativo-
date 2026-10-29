@@ -31,12 +31,25 @@ type Props = {
   /** El que sale del barrio de su cuenta de CIDITUC, si queda en uno solo. */
   sugerido: { distrito: number; barrio: string } | null;
   barrios: BarrioDelIndice[];
-  /** Solo al cambiarlo: volver a la boleta sin tocar nada. */
-  onCancelar?: () => void;
+  /**
+   * Solo al cambiarlo: volver a la boleta. Lo usan "Volver a mi boleta" (a la
+   * vista desde el principio), "Cancelar" y la confirmacion del mismo distrito
+   * que ya tenia (ver confirmar).
+   */
+  onVolver?: () => void;
 };
 
 /** De donde salio el distrito elegido, para decirselo a la persona. */
 type Eleccion = { distrito: number; como: string };
+
+/**
+ * Cuando el pedido no tuvo respuesta. `fetch` rechaza con un TypeError del
+ * navegador, en ingles ("Failed to fetch", "Load failed"), y el catch lo
+ * mostraba tal cual, como pasaba en FormularioIdea (ver su ErrorParaMostrar).
+ * Probar de nuevo no tiene riesgo: declarar el mismo distrito dos veces deja lo
+ * mismo.
+ */
+const SIN_CONEXION = "No pudimos conectarnos. Revisá tu conexión y probá de nuevo.";
 
 const DISTRITOS_DEL_MAPA = Array.from({ length: 20 }, (_, i) => ({
   numero: i + 1,
@@ -52,7 +65,7 @@ function enumerar(numeros: number[]): string {
   return `${numeros.slice(0, -1).join(", ")} y ${numeros.at(-1)}`;
 }
 
-export default function ElegirDistrito({ actual, sugerido, barrios, onCancelar }: Props) {
+export default function ElegirDistrito({ actual, sugerido, barrios, onVolver }: Props) {
   const router = useRouter();
   const [eleccion, setEleccion] = useState<Eleccion | null>(
     sugerido
@@ -65,7 +78,8 @@ export default function ElegirDistrito({ actual, sugerido, barrios, onCancelar }
   const [aviso, setAviso] = useState<string | null>(null);
   const [declaro, setDeclaro] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** `reingresar`: la sesion ya no existe, y la salida es volver a entrar. */
+  const [error, setError] = useState<{ mensaje: string; reingresar?: boolean } | null>(null);
   const geografia = useRef<ColeccionDistritos | null>(null);
 
   // Los barrios que coinciden, como los busca el chat: primero el nombre
@@ -141,21 +155,59 @@ export default function ElegirDistrito({ actual, sugerido, barrios, onCancelar }
         body: JSON.stringify({ distrito: eleccion.distrito, declaro: true }),
       });
       const cuerpo = (await respuesta.json().catch(() => ({}))) as { error?: string };
-      if (!respuesta.ok) throw new Error(cuerpo.error ?? "No pudimos guardar tu distrito.");
-      // La sesion nueva ya lleva el distrito: /votar se vuelve a dibujar con la
-      // boleta.
+      if (!respuesta.ok) {
+        setError({
+          mensaje: cuerpo.error ?? "No pudimos guardar tu distrito.",
+          // Sin sesion (vencio, o la cerro "Salir" o un voto en otra pestaña)
+          // confirmar otra vez no puede andar: como en la boleta, el enlace
+          // para volver a entrar va con el mensaje.
+          reingresar: respuesta.status === 401,
+        });
+        setEnviando(false);
+        return;
+      }
+      // El padron ya tiene el distrito: /votar se vuelve a dibujar con la
+      // boleta. Con OTRO distrito, la key del panel (el distrito del padron, en
+      // /votar) cambia y lo remonta con la boleta nueva. Con el mismo que ya tenia la
+      // key no cambia, y router.refresh() conserva el estado de los componentes
+      // cliente: nada sacaba esta pantalla y quedaba en "Guardando…" para
+      // siempre, aunque el servidor ya lo habia guardado. Ahi se vuelve a mano a
+      // la boleta, que es la misma.
       router.refresh();
-    } catch (causa) {
-      setError(causa instanceof Error ? causa.message : "No pudimos guardar tu distrito.");
+      if (eleccion.distrito === actual) {
+        setEnviando(false);
+        onVolver?.();
+      }
+    } catch {
+      // Lo que contesto el servidor ya salio arriba con su mensaje: aca llega
+      // solo el fetch sin respuesta (ver SIN_CONEXION).
+      setError({ mensaje: SIN_CONEXION });
       setEnviando(false);
     }
   }
 
   return (
     <section className="superficie mt-8 max-w-2xl rounded-2xl p-6 sm:p-8" aria-labelledby="titulo-distrito">
-      <h2 id="titulo-distrito" className="text-xl font-bold">
-        {actual ? "Cambiar tu distrito" : "¿En qué distrito vivís?"}
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <h2 id="titulo-distrito" className="text-xl font-bold">
+          {actual ? "Cambiar tu distrito" : "¿En qué distrito vivís?"}
+        </h2>
+        {/* Arriba y no solo como "Cancelar", que va en la declaracion y esa
+            recien aparece con un distrito elegido. Al cambiarlo no hay
+            sugerencia: quien abria esta pantalla para mirar, o por error, no
+            tenia como volver a la boleta, y lo unico a la vista era "Salir",
+            que cierra la sesion. */}
+        {onVolver && (
+          <button
+            type="button"
+            onClick={onVolver}
+            className="text-sm font-semibold underline"
+            style={{ color: "var(--marca-texto)" }}
+          >
+            Volver a mi boleta
+          </button>
+        )}
+      </div>
       <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
         Votás un proyecto del distrito donde vivís. Buscá tu barrio o marcá tu casa en el mapa, y el
         distrito sale solo.
@@ -297,7 +349,15 @@ export default function ElegirDistrito({ actual, sugerido, barrios, onCancelar }
                 border: "1px solid var(--color-acento-600)",
               }}
             >
-              {error}
+              {error.mensaje}
+              {error.reingresar && (
+                <>
+                  {" "}
+                  <a href="/ingresar" className="font-semibold underline">
+                    Ingresar de nuevo
+                  </a>
+                </>
+              )}
             </p>
           )}
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -310,8 +370,8 @@ export default function ElegirDistrito({ actual, sugerido, barrios, onCancelar }
             >
               {enviando ? "Guardando…" : "Confirmar mi distrito"}
             </button>
-            {onCancelar && (
-              <button type="button" onClick={onCancelar} className="text-sm underline">
+            {onVolver && (
+              <button type="button" onClick={onVolver} className="text-sm underline">
                 Cancelar
               </button>
             )}

@@ -260,3 +260,20 @@ test("el recorte con la firma real deja pasar solo lo que firmo el servidor", ()
     ["uno", real, "dos", "tres"],
   );
 });
+
+// ---------------------------------------------------------------------------
+// Caracteres de control
+// ---------------------------------------------------------------------------
+
+test("los caracteres de control no llegan al modelo ni al registro", () => {
+  // Postgres no acepta U+0000 en `text`: con un NUL la fila de chat_consultas
+  // no se guardaba y la consulta no contaba para el tope de gasto del dia.
+  const recorte = recortarHistorial(
+    [{ rol: "usuario", texto: "\u0000que se\u0007 presento\n en el\tdistrito 3\u0000" }],
+    soloOk,
+  );
+  assert.equal(recorte?.pregunta, "que se presento\n en el\tdistrito 3");
+
+  // Un mensaje que es solo un NUL es un mensaje vacio.
+  assert.equal(recortarHistorial([{ rol: "usuario", texto: "\u0000 \u0000" }], soloOk), null);
+});

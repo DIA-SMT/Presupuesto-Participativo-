@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
-import { esBaseRemota, opcionesDeConexion } from "../../src/db";
+import { conexionEnCampos, esBaseRemota, opcionesDeConexion } from "../../src/db";
 
 const REMOTA = "postgres://postgres.abc:clave@aws-0-sa-east-1.pooler.supabase.com:6543/postgres";
 const PEM = "-----BEGIN CERTIFICATE-----\nMIIDxDCC\n-----END CERTIFICATE-----";
@@ -116,4 +116,41 @@ test("sacar los parametros ssl no cambia usuario, clave, host ni base", () => {
   assert.equal(final.host, "aws-0-sa-east-1.pooler.supabase.com");
   assert.equal(final.port, 6543);
   assert.equal(final.database, "postgres");
+});
+
+// --- En campos sueltos (drizzle-kit) -----------------------------------------
+
+test("en campos sueltos la base remota lleva el mismo TLS que en la aplicacion", () => {
+  // Es lo que drizzle.config.ts le pasa a drizzle-kit: con `{ url }` iba en claro.
+  assert.deepEqual(conexionEnCampos(REMOTA, PEM).ssl, { ca: PEM, rejectUnauthorized: true });
+  const sinPem = conexionEnCampos(`${REMOTA}?sslmode=disable`, undefined);
+  assert.deepEqual(sinPem.ssl, { rejectUnauthorized: false });
+  assert.ok(sinPem.avisos.some((aviso) => /SIN verificar/.test(aviso)));
+});
+
+test("los campos sueltos son los que node-postgres leeria de la URL", () => {
+  for (const url of [
+    REMOTA,
+    "postgres://postgres.abc:cl%40ve%23ra%2Fra@aws-0-sa-east-1.pooler.supabase.com:6543/postgres",
+    // ?host= manda sobre la autoridad, igual que para el candado y para pg.
+    "postgres://u:p@localhost:5432/pp?host=db.remota.com",
+    // Sin puerto, pg usa el 5432; sin base, el nombre del usuario.
+    "postgresql://usuario:p@db.remota.com",
+    "postgres://u:p@db.remota.com:5432/pp?user=otro&password=otra&port=6000",
+  ]) {
+    const campos = conexionEnCampos(url, PEM);
+    const pg = new ConnectionParameters({ connectionString: url });
+    assert.equal(campos.host, pg.host, url);
+    assert.equal(campos.port ?? 5432, pg.port, url);
+    assert.equal(campos.user, pg.user, url);
+    assert.equal(campos.password, pg.password, url);
+    assert.equal(campos.database, pg.database, url);
+  }
+});
+
+test("en campos sueltos se avisa lo que no tiene donde ir, sin la clave", () => {
+  const { avisos } = conexionEnCampos(`${REMOTA}?application_name=pp-smt&pgbouncer=true`, PEM);
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /application_name, pgbouncer.*se ignora/);
+  assert.ok(!avisos[0].includes("clave"), avisos[0]);
 });

@@ -10,7 +10,7 @@
  * de Ideas, al lado de un filtro: era la accion mas peligrosa del panel puesta
  * en el lugar mas cotidiano.
  */
-import { useState, useActionState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import SelectorEtapa from "../selector-etapa";
 import { Chevron } from "@/components/ui";
 import {
@@ -23,6 +23,7 @@ import {
 import {
   ETAPAS,
   puedeActivarOtraEdicion,
+  votosDeLaEdicion,
   type ContextoEdicion,
   type Etapa,
 } from "@/lib/etapas";
@@ -31,6 +32,7 @@ import {
   formatearNumero,
   formatearPesos,
   formatearRango,
+  MAXIMO_PRESUPUESTO,
 } from "@/lib/formato";
 
 type Hito = {
@@ -54,11 +56,48 @@ export type FilaEdicion = {
   votacionDesde: string | null;
   votacionHasta: string | null;
   ideas: number;
+  /** Filas de la tabla `votos`: los emitidos desde esta plataforma. */
   votos: number;
+  /** Suma del contador `ideas.votos`, con los importados de una edicion migrada. */
+  votosEnIdeas: number;
   hitos: Hito[];
 };
 
+/**
+ * Los votos de una edicion, contados como la politica de etapas
+ * (`votosDeLaEdicion`). Las filas de `votos` solas dejaban la 2025 en "0 votos":
+ * sus 2.069 votos llegaron con la migracion, solo en el contador de las ideas,
+ * y la lista contradecia al sitio publico y al tablero sin decir por que.
+ */
+function votosDe(edicion: FilaEdicion): number {
+  return votosDeLaEdicion(edicion.votos, edicion.votosEnIdeas);
+}
+
 type Rol = "admin" | "moderador" | "lector";
+
+/*
+ * Un <form action> se resetea solo al terminar cada envio, salga bien o mal
+ * (React lo pide antes de correr la accion). Con campos sin controlar eso
+ * borraba lo escrito cuando el servidor contestaba un error que el navegador
+ * no puede ver ("La votación no puede terminar antes de empezar", "El hito no
+ * puede terminar antes de empezar"), y el <select> de etapa del hito volvia a
+ * la opcion que tenia al montarse: React no le aplica un defaultValue nuevo,
+ * y un segundo guardado le borraba la etapa sin que nadie la eligiera. Es lo
+ * mismo que resolvio equipo/panel.tsx: el envio pasa por onSubmit, con
+ * preventDefault React no corre la accion del <form> ni lo resetea, y cada
+ * formulario se vacia a mano solo cuando corresponde (el del hito nuevo, al
+ * agregarlo).
+ *
+ * La action queda puesta igual: antes de que cargue React es la que evita que
+ * el formulario se mande solo, por GET.
+ */
+function enviarSinResetear(accion: (datos: FormData) => void) {
+  return (evento: React.SubmitEvent<HTMLFormElement>) => {
+    evento.preventDefault();
+    const datos = new FormData(evento.currentTarget);
+    startTransition(() => accion(datos));
+  };
+}
 
 const anioProximo = new Date().getFullYear() + 1;
 
@@ -150,7 +189,7 @@ export default function PanelEdiciones({
                   {formatearNumero(edicion.ideas)} ideas
                 </span>
                 <span className="w-24 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
-                  {formatearNumero(edicion.votos)} votos
+                  {formatearNumero(votosDe(edicion))} votos
                 </span>
                 <span className="w-16 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
                   {edicion.hitos.length} {edicion.hitos.length === 1 ? "hito" : "hitos"}
@@ -182,9 +221,10 @@ export default function PanelEdiciones({
                         etapa={edicion.etapa}
                         rol={rol}
                         // La page lo calcula para la activa, que es esta. El
-                        // respaldo usa los votos del listado y ningun ganador:
-                        // si alguna vez falta, la accion decide igual.
-                        contexto={contextoActiva ?? { votos: edicion.votos, ganadores: 0 }}
+                        // respaldo usa los votos del listado, contados igual,
+                        // y ningun ganador: si alguna vez falta, la accion
+                        // decide igual.
+                        contexto={contextoActiva ?? { votos: votosDe(edicion), ganadores: 0 }}
                       />
                     </div>
                   ) : (
@@ -268,8 +308,10 @@ function FormularioEdicion({
 }) {
   const [estado, accion, pendiente] = useActionState(guardarEdicion, null);
 
+  // Sin reset (ver enviarSinResetear): tras un error quedan las fechas que hay
+  // que corregir; tras un guardado, lo escrito ya es lo guardado.
   return (
-    <form data-recorrido="ediciones-fechas" action={accion} className="mt-5">
+    <form data-recorrido="ediciones-fechas" action={accion} onSubmit={enviarSinResetear(accion)} className="mt-5">
       <input type="hidden" name="id" value={edicion.id} />
       <h3 className="text-sm font-bold">Fechas y presupuesto</h3>
       <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
@@ -306,6 +348,7 @@ function FormularioEdicion({
             name="presupuestoTotal"
             type="number"
             min={0}
+            max={MAXIMO_PRESUPUESTO}
             step="0.01"
             defaultValue={edicion.presupuestoTotal ?? ""}
             disabled={soloLectura}
@@ -653,8 +696,21 @@ function FormularioHito({
 }) {
   const [estado, accion, pendiente] = useActionState(guardarHito, null);
 
+  // El hito nuevo se vacia a mano solo cuando se agrego, listo para el
+  // siguiente; el de un hito existente se queda con lo guardado. Un error no
+  // toca nada (ver enviarSinResetear).
+  const formulario = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (estado?.ok && !hito) formulario.current?.reset();
+  }, [estado, hito]);
+
   return (
-    <form action={accion} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <form
+      ref={formulario}
+      action={accion}
+      onSubmit={enviarSinResetear(accion)}
+      className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+    >
       <input type="hidden" name="edicionId" value={edicionId} />
       {hito && <input type="hidden" name="id" value={hito.id} />}
 
@@ -687,7 +743,11 @@ function FormularioHito({
 
       <label className="grid gap-1 text-sm">
         <span className="font-medium">Etapa (opcional)</span>
+        {/* La key es la etapa guardada, como el rol en equipo/panel.tsx: si
+            la etapa cambia en la base, el select se vuelve a montar con ella
+            en vez de quedarse con la opcion que tenia al montarse. */}
         <select
+          key={hito?.etapa ?? ""}
           name="etapa"
           defaultValue={hito?.etapa ?? ""}
           style={estiloCampo}

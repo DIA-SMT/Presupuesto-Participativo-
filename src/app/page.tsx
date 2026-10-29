@@ -14,9 +14,10 @@ import {
   type Estadisticas,
   type IdeaVista,
 } from "@/db/queries";
-import { conEdicion } from "@/lib/ediciones";
+import { conEdicion, votacionTerminada } from "@/lib/ediciones";
 import {
   ETIQUETA_ETAPA,
+  distritosConVerbo,
   formatearFecha,
   formatearNumero,
   formatearRango,
@@ -72,16 +73,18 @@ export default async function Home() {
   const edicion = await getEdicionActiva();
   if (!edicion) return <SinDatos />;
 
-  const portada = portadaSegunEtapa(edicion, hoyEnTucuman());
   const pedidoStats = getEstadisticas(edicion);
   const [textos, stats, distritos, ganadores, hitos, novedades] = await Promise.all([
     getTextos(),
     pedidoStats,
     getDistritos(edicion.id),
-    destacados(edicion, portada.yaVoto, pedidoStats),
+    destacados(edicion, votacionTerminada(edicion.etapa), pedidoStats),
     getHitos(edicion.id),
     getNovedades(3),
   ]);
+  // Despues de las cuentas: con la votacion terminada, el boton principal
+  // depende de si ya hay ganadores proclamados.
+  const portada = portadaSegunEtapa(edicion, hoyEnTucuman(), stats);
 
   const t = (clave: string, defecto = "") => textos[clave] ?? defecto;
 
@@ -89,11 +92,31 @@ export default async function Home() {
   // ganadores ni votos que contar, y "0 proyectos ganadores" se leia como un
   // programa que no dio nada. Mientras se vota, los votos no se muestran: si se
   // publican los parciales es una decision que falta tomar (ver README).
+  //
+  // Con la votacion terminada, los ganadores se proclaman de a uno desde el
+  // panel. Mientras falta proclamar alguno, la cuenta dice que son los
+  // proclamados hasta ahora, y antes del primero no va: "0 proyectos
+  // ganadores" con la votacion hecha se leia como un programa que no dio nada.
+  //
+  // `stats.ideas` cuenta solo las publicadas (las del formulario entran sin
+  // publicar hasta que el equipo las revisa), asi que se rotulan "publicadas":
+  // "0 ideas presentadas" en plena etapa de ideas, con ideas ya recibidas, era
+  // falso.
+  const faltaProclamar = stats.distritosPorProclamar.length > 0;
   const numeros = portada.yaVoto
     ? [
-        { valor: formatearNumero(stats.ideas), etiqueta: "ideas presentadas" },
-        { valor: String(stats.ganadores), etiqueta: "proyectos ganadores" },
-        { valor: formatearNumero(stats.votos), etiqueta: "votos registrados" },
+        { valor: formatearNumero(stats.ideas), etiqueta: "ideas publicadas" },
+        ...(stats.ganadores > 0 || !faltaProclamar
+          ? [
+              {
+                valor: String(stats.ganadores),
+                etiqueta: faltaProclamar ? "ganadores ya proclamados" : "proyectos ganadores",
+              },
+            ]
+          : []),
+        // Todos los votos, no solo los de los ganadores: eso es lo que dice la
+        // etiqueta, y antes de la primera proclamacion los ganadores son cero.
+        { valor: formatearNumero(stats.votosTotales), etiqueta: "votos registrados" },
       ]
     : edicion.etapa === "votacion"
       ? [
@@ -102,7 +125,7 @@ export default async function Home() {
             etiqueta: "proyectos en votación",
           },
         ]
-      : [{ valor: formatearNumero(stats.ideas), etiqueta: "ideas presentadas" }];
+      : [{ valor: formatearNumero(stats.ideas), etiqueta: "ideas publicadas" }];
 
   return (
     <>
@@ -207,6 +230,10 @@ export default async function Home() {
             {portada.yaVoto && stats.distritosSinGanador.length > 0 && (
               <> {fraseSinGanador(stats.distritosSinGanador)}</>
             )}
+            {/* Los que esperan su proclamacion no "quedaron sin" nada. */}
+            {portada.yaVoto && faltaProclamar && (
+              <> {frasePorProclamar(stats.distritosPorProclamar, stats.distritos)}</>
+            )}
           </p>
         </Seccion>
       </div>
@@ -219,7 +246,7 @@ export default async function Home() {
               ? "Los proyectos más votados"
               : `Los ganadores de ${ganadores.anio}`
           }
-          bajada={bajadaGanadores(ganadores, edicion.anio)}
+          bajada={bajadaGanadores(ganadores, edicion.anio, faltaProclamar)}
           accion={
             <Boton
               href={conEdicion("/proyectos?ganadores=1", ganadores.anioEnEnlaces)}
@@ -243,12 +270,17 @@ export default async function Home() {
         </Seccion>
       ) : (
         portada.yaVoto && (
-          // Ya voto pero todavia no se proclamo ningun ganador: el escrutinio
-          // esta en curso. Sin esto volvia "Ver los 0 ganadores".
+          // Ya voto y no hay ningun ganador proclamado. Sin esto volvia "Ver
+          // los 0 ganadores". La promesa de publicarlos va solo si queda alguno
+          // por proclamar (`ganadorPorProclamar`): en "cerrada", o en
+          // "seguimiento" sin factibles, la banda ya dice "0 proyectos
+          // ganadores" y prometerlos seria prometer algo para siempre. Es el
+          // mismo criterio de /transparencia.
           <Seccion titulo="Los proyectos más votados">
             <Vacio>
-              Los proyectos ganadores de la edición {edicion.anio} se publican acá apenas se
-              proclamen.
+              {faltaProclamar
+                ? `Los proyectos ganadores de la edición ${edicion.anio} se publican acá apenas se proclamen.`
+                : `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`}
             </Vacio>
           </Seccion>
         )
@@ -314,14 +346,27 @@ export default async function Home() {
 /**
  * "el distrito 7 quedó sin proyecto ganador", o "los distritos 2, 10 y 13
  * quedaron…". Decia siempre "el distrito 2, 10, 13 quedó", en singular aunque
- * fueran diez.
+ * fueran diez. El armado es el de /transparencia (`distritosConVerbo`), para
+ * que las dos paginas no vuelvan a divergir.
  */
 function fraseSinGanador(distritos: number[]): string {
+  return `En esta edición ${distritosConVerbo(distritos, "quedó", "quedaron")} sin proyecto ganador.`;
+}
+
+/**
+ * Los distritos que ya votaron y esperan que se proclame su ganador (ver
+ * `ganadorPorProclamar` en src/lib/ediciones.ts). Con todos esperando, los
+ * nombra en conjunto: una lista del 1 al 20 no dice nada.
+ */
+function frasePorProclamar(distritos: number[], total: number): string {
   if (distritos.length === 1) {
-    return `En esta edición el distrito ${distritos[0]} quedó sin proyecto ganador.`;
+    return `El ganador del distrito ${distritos[0]} se publica cuando se proclame.`;
+  }
+  if (distritos.length >= total) {
+    return `Los ganadores de los ${total} distritos se publican a medida que se proclamen.`;
   }
   const lista = new Intl.ListFormat("es", { type: "conjunction" }).format(distritos.map(String));
-  return `En esta edición los distritos ${lista} quedaron sin proyecto ganador.`;
+  return `Los ganadores de los distritos ${lista} se publican a medida que se proclamen.`;
 }
 
 /** Hasta seis, que es lo que muestra la grilla: "los seis con más votos". */
@@ -331,7 +376,11 @@ const EN_LETRAS = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis"];
  * La bajada de la seccion. No dice que los proyectos "estan en obra": el sitio
  * no tiene cargado ningun avance, y la etapa "seguimiento" no lo garantiza.
  */
-function bajadaGanadores(ganadores: Destacados, anioActivo: number): string {
+function bajadaGanadores(
+  ganadores: Destacados,
+  anioActivo: number,
+  faltaProclamar: boolean,
+): string {
   const mostrados = ganadores.ideas.length;
   const enLetras = (n: number) => EN_LETRAS[n] ?? String(n);
   if (ganadores.anioEnEnlaces === null) {
@@ -341,7 +390,9 @@ function bajadaGanadores(ganadores: Destacados, anioActivo: number): string {
         : ganadores.total === 1
           ? "Este es el ganador"
           : `Estos son los ${enLetras(ganadores.total)} ganadores`;
-    return `Cada distrito eligió su propio proyecto. ${cuales} de la edición ${ganadores.anio}.`;
+    // A mitad de la proclamacion, "los tres ganadores" se leia como todos.
+    const resto = faltaProclamar ? " Los demás se publican a medida que se proclamen." : "";
+    return `Cada distrito eligió su propio proyecto. ${cuales} de la edición ${ganadores.anio}.${resto}`;
   }
   const cuales =
     ganadores.total > mostrados

@@ -382,8 +382,11 @@ sitio:
 npm run crear-admin -- correo@smt.gob.ar "Nombre Apellido" admin
 ```
 
-Toma la contraseña de `ADMIN_PASSWORD`; si no está, genera una al azar, la
-imprime una sola vez y marca la cuenta para que la persona la cambie al entrar.
+Genera la contraseña al azar, la imprime una sola vez y marca la cuenta para
+que la persona la cambie al entrar. (Al principio tomaba `ADMIN_PASSWORD` si
+estaba, sin exigir el cambio; se sacó porque esa variable es la del seed y vive
+en `.env.local`: una cuenta de producción creada desde una notebook quedaba con
+la contraseña de desarrollo.)
 
 **`scripts/purgar-contactos.ts`** — borra el contacto del autor de las ideas de
 las ediciones cerradas y deja constancia en `contacto_purgado_en`. Existe porque

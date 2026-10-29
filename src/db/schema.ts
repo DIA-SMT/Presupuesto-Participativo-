@@ -270,6 +270,27 @@ export const ideas = pgTable(
     problema: text("problema"),
     solucion: text("solucion"),
     beneficios: text("beneficios"),
+    /**
+     * "¿Dónde ocurre?" del formulario 2026: calles, esquina, altura o un punto
+     * cercano, escrito por la persona. Complementa el punto del mapa (que es el
+     * que decide el distrito) y es publico como el barrio: describe el lugar de
+     * la obra, no a nadie. Agregada en 0016.
+     */
+    referenciasUbicacion: text("referencias_ubicacion"),
+    /**
+     * La organizacion en cuyo nombre se presenta, o null si la presenta una
+     * persona a titulo propio ("¿Presenta esta propuesta en nombre de una
+     * organizacion?"). Solo el nombre: el domicilio de la organizacion queda en
+     * el papel. No es publico. Agregada en 0016.
+     */
+    organizacion: text("organizacion"),
+    /**
+     * Presupuesto que estima el equipo al evaluar la idea, en pesos. No es el
+     * monto de la obra (`presupuesto_total`, que se carga cuando gana y se
+     * ejecuta): es el numero con el que se ordena y se compara en el panel.
+     * Null hasta que alguien lo estima. No es publico. Agregada en 0016.
+     */
+    presupuestoEstimado: numeric("presupuesto_estimado", { precision: 14, scale: 2 }),
 
     lat: numeric("lat", { precision: 10, scale: 7 }),
     lon: numeric("lon", { precision: 10, scale: 7 }),
@@ -334,9 +355,27 @@ export const ideas = pgTable(
      * Contacto del autor. Se guarda SOLO si la persona marco la casilla de
      * avisos, con la finalidad declarada de contarle como sigue su idea. No es
      * un dato publico: ninguna consulta del sitio ni del chatbot lo devuelve.
-     * `autorTelefono` se elimino: se pedia y no lo leia nadie.
+     * (El telefono va aparte, en `autorTelefono`.)
      */
     autorEmail: text("autor_email"),
+    /**
+     * Un telefono de contacto, opcional, para que el equipo pueda consultar
+     * algo de la propuesta. Volvio en 0016 con el formulario 2026 (0002 lo
+     * habia sacado porque no lo leia nadie): ahora lo lee el equipo desde la
+     * ficha del panel y ninguna consulta publica ni el chat lo devuelven. Se
+     * borra con el resto del contacto al cerrar la edicion
+     * (`npm run purgar-contactos`).
+     */
+    autorTelefono: varchar("autor_telefono", { length: 30 }),
+    /**
+     * DNI de quien presento la idea en PAPEL, solo hasheado con `hashearDni`
+     * (src/lib/empadronamiento.ts, la misma pimienta que `votantes.dni_hash`).
+     * Sirve para atar la idea al padron: si la persona ya estaba empadronada se
+     * completa `votante_id`, y si entra despues con CIDITUC el hash coincide.
+     * El DNI en claro no se guarda nunca. Null en lo presentado por el sitio
+     * (ahi el vinculo es `votante_id`). Agregada en 0016.
+     */
+    autorDniHash: varchar("autor_dni_hash", { length: 64 }),
     /** Consentimiento explicito para recibir avisos, y cuando se dio. */
     autorAvisos: boolean("autor_avisos").notNull().default(false),
     autorAvisosEn: timestamp("autor_avisos_en", { withTimezone: true }),

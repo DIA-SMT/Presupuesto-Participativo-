@@ -13,7 +13,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { ChipEstado } from "@/components/ui";
-import { DESCRIPCION_ESTADO, formatearFecha } from "@/lib/formato";
+import { codigoDePropuesta, descripcionEstado, formatearFecha } from "@/lib/formato";
 
 /**
  * Estados en los que la evaluacion ya termino. Si una idea esta en uno de
@@ -34,6 +34,12 @@ const ORIGEN_FUERA_DEL_SITIO: Record<string, string> = {
 
 export type IdeaSeguida = {
   anio: number;
+  /**
+   * La etapa de la edicion de la idea: "factible" se describe distinto antes,
+   * durante y despues de la votacion (ver `descripcionEstado`). String por lo
+   * mismo que `estado`.
+   */
+  etapa: string;
   numero: number;
   titulo: string;
   estado: string;
@@ -84,14 +90,14 @@ export default function FormularioSeguimiento({ accion }: { accion: AccionSeguim
           <label className="grid gap-1.5">
             <span className="text-sm font-medium">Número de tu idea</span>
             <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
-              Es el número que te dimos cuando la enviaste, por ejemplo 42.
+              Es el número que te dimos cuando la enviaste, por ejemplo 42. También podés
+              escribir el código de la propuesta, como D05-P042.
             </span>
             <input
               name="numero"
-              inputMode="numeric"
               autoComplete="off"
               required
-              maxLength={8}
+              maxLength={12}
               value={numero}
               onChange={(evento) => setNumero(evento.target.value)}
               placeholder="42"
@@ -174,7 +180,7 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
   return (
     <article className="superficie rounded-2xl p-6">
       <p className="text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
-        Idea #{idea.numero} · Edición {idea.anio}
+        {codigoDePropuesta(idea.distrito, idea.numero)} · Edición {idea.anio}
         {idea.distrito !== null && <> · Distrito {idea.distrito}</>}
         {idea.fecha && <> · Presentada el {formatearFecha(idea.fecha)}</>}
       </p>
@@ -191,7 +197,7 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
       </div>
 
       <p className="mt-4 text-[0.9375rem] leading-relaxed">
-        {DESCRIPCION_ESTADO[idea.estado] ??
+        {descripcionEstado(idea.estado, idea.etapa, idea.publicada) ??
           "El equipo del Presupuesto Participativo está trabajando sobre tu propuesta."}
       </p>
 

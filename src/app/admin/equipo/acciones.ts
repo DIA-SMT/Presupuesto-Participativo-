@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { RolAdmin } from "@/db/queries";
 import { hashearPassword } from "@/lib/password";
+import { resumenDeError } from "@/lib/errores-base";
 import { esViolacionDeUnico, exigirAdmin, sinPermiso, type Resultado } from "../comun";
 import {
   cambiarActivo,
@@ -86,7 +87,7 @@ export async function crearAdmin(
   try {
     resultado = await darDeAlta(sesion, datos, hash);
   } catch (causa) {
-    console.error("[admin] crearAdmin fallo", causa);
+    console.error("[admin] crearAdmin fallo", resumenDeError(causa));
     if (esViolacionDeUnico(causa)) {
       return { ok: false, error: `Ya hay una cuenta con ${datos.email}.` };
     }
@@ -95,8 +96,9 @@ export async function crearAdmin(
 
   refrescarEquipo();
   if (!resultado.ok) return resultado;
-  // El formulario se vacia solo despues de la accion: el mensaje dice para que
-  // cuenta es la provisoria, que si no quedaria suelta en la pantalla.
+  // Con el alta hecha el formulario se vacia (FormularioAlta, en panel.tsx): el
+  // mensaje dice para que cuenta es la provisoria, que si no quedaria suelta en
+  // la pantalla.
   return {
     ok: true,
     passwordProvisoria: provisoria,

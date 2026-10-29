@@ -286,6 +286,29 @@ test("una cuenta desactivada tambien se puede restablecer, y sigue desactivada",
   assert.equal((await leerCuenta(deBaja)).activo, false);
 });
 
+test("al reactivar, el mensaje dice con que contrasena entra: la provisoria si tiene una pendiente", async () => {
+  const jefa = await crearCuenta({ rol: "admin" });
+  const vuelve = await crearCuenta({ rol: "moderador", activo: false });
+  const sinCambios = await crearCuenta({ rol: "lector", activo: false });
+
+  // El camino de la pantalla: se restablece estando de baja, y el mensaje pide
+  // reactivarla. Despues de eso la suya ya no anda.
+  assert.equal(
+    (await cuentas.restablecerPassword(await autorizacionDe(jefa), vuelve, "hash-provisoria")).ok,
+    true,
+  );
+  const reactivada = await cuentas.cambiarActivo(await autorizacionDe(jefa), vuelve, true);
+  assert.equal(reactivada.ok, true);
+  const mensaje = reactivada.ok ? (reactivada.mensaje ?? "") : "";
+  assert.match(mensaje, /provisoria/);
+  assert.doesNotMatch(mensaje, /con su contraseña/);
+
+  // Sin provisoria pendiente, vuelve con la que tenia.
+  const comoAntes = await cuentas.cambiarActivo(await autorizacionDe(jefa), sinCambios, true);
+  assert.equal(comoAntes.ok, true);
+  assert.match(comoAntes.ok ? (comoAntes.mensaje ?? "") : "", /con su contraseña/);
+});
+
 // ---------------------------------------------------------------------------
 // El firmante, releido adentro de la transaccion
 // ---------------------------------------------------------------------------

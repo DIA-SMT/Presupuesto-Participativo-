@@ -30,7 +30,15 @@ import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { chatConsultas } from "@/db/schema";
-import { getEdicionActiva, getEstadisticas, getTokensUsadosHoy, type Edicion } from "@/db/queries";
+import {
+  getEdicionActiva,
+  getEstadisticas,
+  getTokensUsadosHoy,
+  registrarConsumoDeRespaldo,
+  type Edicion,
+} from "@/db/queries";
+import { sinCaracteresDeControl } from "@/lib/texto-limpio";
+import { resumenDeError } from "@/lib/errores-base";
 import { HERRAMIENTAS, ejecutarHerramienta } from "@/lib/chat-herramientas";
 import { responderSinIA } from "@/lib/chat-sin-ia";
 import { firmaValida, firmarRespuesta } from "@/lib/chat-firma";
@@ -47,6 +55,7 @@ import {
   CONSUMO_VACIO,
   cortarSiSeCalla,
   crearCliente,
+  estimarUso,
   gastoDelDiaAgotado,
   hayClave,
   modeloPara,
@@ -77,6 +86,43 @@ const MAX_VUELTAS = 4;
 const MAX_TOKENS = 2048;
 
 /**
+ * Topes de lo que las herramientas le suman a una consulta.
+ *
+ * MAX_VUELTAS acota las vueltas, no lo que entra en cada una. El modelo puede
+ * pedir decenas de herramientas en la misma vuelta: se ejecutaban todas, y cada
+ * resultado se reenvia entero en las vueltas siguientes. Con 40
+ * buscar_proyectos de 25 resultados (~7,5 KB cada uno) una sola consulta pasaba
+ * el medio millon de tokens de entrada contra ~5 mil de una normal, y el rate
+ * limit cuenta pedidos, no tokens. No hacia falta un ataque: "qué se presentó
+ * en cada uno de los 20 distritos" ya pide veinte.
+ *
+ * - MAX_LLAMADAS_POR_VUELTA: con holgura para la consulta que compara (dos
+ *   distritos, dos ediciones, un barrio y su distrito). Las repetidas no ocupan
+ *   lugar porque no se ejecutan.
+ * - MAX_CARACTERES_HERRAMIENTAS: lo que pueden sumar los resultados en toda la
+ *   consulta (unos 10-12 mil tokens). Se mira antes de ejecutar, asi que se
+ *   puede pasar por un resultado, no por mas. Alcanzado el tope, la vuelta
+ *   siguiente va sin herramientas y el modelo contesta con lo que tiene.
+ */
+const MAX_LLAMADAS_POR_VUELTA = 6;
+const MAX_CARACTERES_HERRAMIENTAS = 40_000;
+
+/**
+ * Lo que recibe el modelo por una llamada que no se ejecuto. Cada tool_call
+ * necesita su mensaje `tool` aunque no se haya ejecutado: si queda una sin
+ * respuesta, el proveedor rechaza la vuelta siguiente.
+ */
+const NO_EJECUTADA = {
+  demasiadas: JSON.stringify({
+    error:
+      "No se ejecutó: se pidieron demasiadas consultas para una sola pregunta. Respondé con los datos que ya tenés y, si falta algo, sugerí una pregunta más acotada.",
+  }),
+  repetida: JSON.stringify({
+    error: "No se ejecutó: es la misma consulta que otra que ya hiciste para esta pregunta. Usá ese resultado.",
+  }),
+} as const;
+
+/**
  * Espera hasta las cabeceras de cada llamada, y reintentos. El SDK viene con
  * 60 s y dos reintentos: con el proveedor sin contestar eran tres minutos
  * mirando "Pensando…" antes de enterarse. Ahora, en el peor caso, algo mas de
@@ -97,6 +143,18 @@ const PAUSA_MAXIMA_MS = 30_000;
  * trata como una falla mas: responde el buscador (ver el catch del handler).
  */
 class VueltasAgotadas extends Error {}
+
+/**
+ * El modelo cerro la vuelta sin pedir herramientas y sin escribir nada (un
+ * `stop` con el contenido vacio). Pasa con algunos proveedores de OpenRouter,
+ * sobre todo despues de los resultados de las herramientas o con `tool_choice:
+ * "none"`, y con modelos que solo emiten razonamiento. Darla por buena dejaba al
+ * vecino con el aviso generico del widget, o solo con el preambulo de una vuelta
+ * anterior ("Voy a revisar el distrito."), registrada con ok=true y, si una
+ * herramienta trajo datos, como resuelta. Es una falla mas: responde el
+ * buscador, igual que con VueltasAgotadas.
+ */
+class RespuestaVacia extends Error {}
 
 const esquema = z.object({
   mensajes: z
@@ -143,12 +201,20 @@ const MARCA = {
   /** ...porque se paso el tope diario de gasto. */
   tope: "tope-diario",
   /**
-   * ...porque fallo el proveedor (el motivo sale de `motivoDeFalla`) o porque el
-   * modelo agoto las vueltas sin contestar (`vueltas`).
+   * ...porque fallo el proveedor (el motivo sale de `motivoDeFalla`), porque el
+   * modelo agoto las vueltas sin contestar (`vueltas`) o porque cerro con una
+   * respuesta vacia (`vacia`). Sin respuesta, porque tambien fallo el
+   * buscador, la marca va sola, sin `buscador-local` (ver el camino sin clave).
    */
   falla: (motivo: string) => `falla:${motivo}`,
   /** La persona se fue antes de que terminara la respuesta. */
   cancelada: "cancelada",
+  /**
+   * El modelo pidio herramientas que no se ejecutaron por los topes de
+   * MAX_LLAMADAS_POR_VUELTA o MAX_CARACTERES_HERRAMIENTAS. Una consulta normal
+   * no lo pisa: si aparece seguido, es alguien usando el chat para gastar.
+   */
+  topeHerramientas: "tope-herramientas",
 } as const;
 
 const MENSAJE_FALLA =
@@ -198,12 +264,18 @@ TODA la información concreta sale de las herramientas. No tenés memoria de pro
 # Estado del programa (datos del sitio en este momento)
 
 Edición vigente: ${stats.anio}. Etapa actual: ${ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}.
-Ideas presentadas: ${stats.ideas}. Proyectos ganadores: ${stats.ganadores}. Votos registrados en los ganadores: ${stats.votos}.
+Ideas publicadas: ${stats.ideas} (las que se presentan entran sin publicar hasta que el equipo las revisa: este número no cuenta las recibidas sin revisar, no lo des como el total de ideas presentadas). Proyectos ganadores: ${stats.ganadores}. Votos registrados en los ganadores: ${stats.votosGanadores}.
 La ciudad tiene 20 distritos y cada uno elige su propio proyecto.${
     // Antes de que termine la votacion, "sin proyecto ganador" en los 20
     // distritos no es un resultado: es que todavia no se voto.
     votacionTerminada(edicion.etapa) && stats.distritosSinGanador.length
       ? ` Sin proyecto ganador en esta edición: distrito ${stats.distritosSinGanador.join(", ")}.`
+      : ""
+  }${
+    // Ni despues de votar, mientras el ganador espera su proclamacion (se
+    // proclama de a un distrito desde el panel).
+    votacionTerminada(edicion.etapa) && stats.distritosPorProclamar.length
+      ? ` Votaron pero el ganador todavía no se proclamó (no quedaron sin ganador: se publica cuando se proclame): distrito ${stats.distritosPorProclamar.join(", ")}.`
       : ""
   }
 
@@ -287,7 +359,30 @@ export async function POST(request: Request) {
 
   if (sinClave || sinPresupuesto) {
     return transmitir(async (canal) => {
-      const texto = await responderConBuscador(canal, pregunta, edicion);
+      let texto: string;
+      try {
+        texto = await responderConBuscador(canal, pregunta, edicion);
+      } catch (causa) {
+        // Igual que cuando falla el buscador en el camino del modelo: la consulta
+        // queda registrada con ok=false para que el equipo vea el corte en
+        // /admin/migue. Sin `buscador-local` en las marcas: con esa marca y
+        // ok=false la fila contaria como "fallo por dentro pero se contesto",
+        // y la persona no recibio respuesta, recibio el aviso de falla.
+        await registrar({
+          pregunta,
+          respuesta: null,
+          herramientas: sinPresupuesto
+            ? [MARCA.tope, MARCA.falla("buscador")]
+            : [MARCA.falla("buscador")],
+          modelo: null,
+          consumo: CONSUMO_VACIO,
+          ms: Date.now() - inicio,
+          ipHash,
+          ok: false,
+        });
+        // `transmitir` le avisa a la persona que no se pudo.
+        throw causa;
+      }
       await registrar({
         pregunta,
         respuesta: texto,
@@ -306,15 +401,6 @@ export async function POST(request: Request) {
   // -------------------------------------------------------------------------
   const cliente = crearCliente();
   const modelo = modeloPara("chat");
-
-  const sistema = await construirSistema();
-  const mensajes: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: sistema },
-    ...historial.turnos.map((t) => ({
-      role: (t.rol === "usuario" ? "user" : "assistant") as "user" | "assistant",
-      content: t.texto,
-    })),
-  ];
 
   return transmitir(async (canal) => {
     const usadas: string[] = [];
@@ -347,56 +433,124 @@ export async function POST(request: Request) {
         ok: false,
       });
 
+    /** Nombre y argumentos de lo ya ejecutado, para no repetir una consulta. */
+    const ejecutadas = new Set<string>();
+    /** Lo que suman los resultados de las herramientas en esta consulta. */
+    let caracteres = 0;
+
     try {
+      // El prompt se arma DENTRO del try: lee la base (estadisticas, contexto
+      // del sitio), y si una de esas consultas falla tiene que seguir el mismo
+      // camino que una falla del proveedor (buscador y registro con el motivo
+      // `interno`) y no terminar en un 500 sin rastro en /admin/migue.
+      const sistema = await construirSistema();
+      const mensajes: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+        { role: "system", content: sistema },
+        ...historial.turnos.map((t) => ({
+          role: (t.rol === "usuario" ? "user" : "assistant") as "user" | "assistant",
+          content: t.texto,
+        })),
+      ];
+
       let cerroSolo = false;
 
       for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta += 1) {
-        const stream = await cliente.chat.completions.create(
-          {
-            model: modelo,
-            messages: mensajes,
-            tools: HERRAMIENTAS,
-            max_tokens: MAX_TOKENS,
-            stream: true,
-            // Sin esto el ultimo trozo no trae el consumo y no se puede auditar.
-            stream_options: { include_usage: true },
-          },
-          // La senal corta la llamada si la persona se va: lo que el modelo
-          // generaria despues se pagaria igual y no lo leeria nadie.
-          { signal: canal.senal, timeout: TIMEOUT_MS, maxRetries: REINTENTOS },
-        );
+        // La persona se fue mientras corrian las herramientas: no se llama otra
+        // vez al proveedor, y no queda una vuelta a medias que estimar.
+        if (canal.cancelado()) break;
 
+        const ultimaVuelta = vuelta === MAX_VUELTAS - 1;
         let texto = "";
         let motivo: string | null = null;
         // Las llamadas a herramientas llegan partidas en varios trozos: cada
         // delta trae un pedazo del JSON de argumentos. Se rearman por indice.
         const parciales = new Map<number, LlamadaParcial>();
+        // Si el proveedor acepto el pedido y si llego a informar lo gastado:
+        // los dos deciden si hay que estimar la vuelta (ver el finally).
+        let aceptada = false;
+        let usoRecibido = false;
 
-        for await (const trozo of cortarSiSeCalla(stream, PAUSA_MAXIMA_MS)) {
-          if (trozo.usage) consumo = sumarConsumo(consumo, trozo.usage);
+        try {
+          const stream = await cliente.chat.completions.create(
+            {
+              model: modelo,
+              messages: mensajes,
+              tools: HERRAMIENTAS,
+              // En la ultima vuelta, o con el tope de resultados alcanzado, el
+              // modelo tiene que contestar con lo que tiene: antes podia pedir
+              // otra ronda que nadie iba a leer y terminar en el buscador. Se
+              // corta con tool_choice y no sacando `tools`, porque la
+              // conversacion ya trae llamadas y resultados y hay proveedores que
+              // la rechazan sin las definiciones.
+              ...(ultimaVuelta || caracteres >= MAX_CARACTERES_HERRAMIENTAS
+                ? { tool_choice: "none" as const }
+                : {}),
+              max_tokens: MAX_TOKENS,
+              stream: true,
+              // Sin esto el ultimo trozo no trae el consumo y no se puede auditar.
+              stream_options: { include_usage: true },
+            },
+            // La senal corta la llamada si la persona se va: lo que el modelo
+            // generaria despues se pagaria igual y no lo leeria nadie.
+            { signal: canal.senal, timeout: TIMEOUT_MS, maxRetries: REINTENTOS },
+          );
+          aceptada = true;
 
-          const eleccion = trozo.choices?.[0];
-          if (!eleccion) continue;
-          if (eleccion.finish_reason) motivo = eleccion.finish_reason;
+          for await (const trozo of cortarSiSeCalla(stream, PAUSA_MAXIMA_MS)) {
+            if (trozo.usage) {
+              consumo = sumarConsumo(consumo, trozo.usage);
+              usoRecibido = true;
+            }
 
-          const contenido = eleccion.delta?.content;
-          if (contenido) {
-            texto += contenido;
-            respuesta += contenido;
-            canal.enviar({ tipo: "texto", delta: contenido });
+            const eleccion = trozo.choices?.[0];
+            if (!eleccion) continue;
+            if (eleccion.finish_reason) motivo = eleccion.finish_reason;
+
+            const contenido = eleccion.delta?.content;
+            if (contenido) {
+              // Lo que el modelo escribe antes de pedir herramientas ("Voy a
+              // ubicar el barrio.") tambien se muestra, y la vuelta siguiente
+              // arrancaba pegada: "barrio.Villa Urquiza queda...". Al primer
+              // trozo de una vuelta que sigue a texto ya mostrado se le antepone
+              // un corte de parrafo, DENTRO del mismo evento: asi lo que firma
+              // `mostrado()`, lo que se registra y lo que arma el widget siguen
+              // siendo lo mismo. Al modelo (`texto`) le vuelve lo suyo, sin el corte.
+              const separar = !texto && /\S$/.test(respuesta) && /^\S/.test(contenido);
+              const delta = separar ? `\n\n${contenido}` : contenido;
+              texto += contenido;
+              respuesta += delta;
+              canal.enviar({ tipo: "texto", delta });
+            }
+
+            for (const parcial of eleccion.delta?.tool_calls ?? []) {
+              const previo = parciales.get(parcial.index) ?? {
+                id: "",
+                nombre: "",
+                argumentos: "",
+              };
+              parciales.set(parcial.index, {
+                id: parcial.id ?? previo.id,
+                nombre: parcial.function?.name ?? previo.nombre,
+                argumentos: previo.argumentos + (parcial.function?.arguments ?? ""),
+              });
+            }
           }
-
-          for (const parcial of eleccion.delta?.tool_calls ?? []) {
-            const previo = parciales.get(parcial.index) ?? {
-              id: "",
-              nombre: "",
-              argumentos: "",
-            };
-            parciales.set(parcial.index, {
-              id: parcial.id ?? previo.id,
-              nombre: parcial.function?.name ?? previo.nombre,
-              argumentos: previo.argumentos + (parcial.function?.arguments ?? ""),
-            });
+        } finally {
+          // El consumo llega en el ultimo trozo, asi que una vuelta cortada (la
+          // persona se fue, el proveedor se callo, un error a mitad del stream)
+          // no lo trae, y su entrada se cobro igual: va estimada, para que el
+          // tope diario la vea (ver `estimarUso`). Lo mismo un stream que
+          // termina sin informarlo. Un pedido que el proveedor
+          // rechazo con las cabeceras (402, 404, 5xx) no se cobra y no se
+          // estima. El que se corto esperandolas porque la persona se fue, si:
+          // pudo haber llegado al modelo.
+          if (!usoRecibido && (aceptada || canal.cancelado())) {
+            const generado =
+              texto + [...parciales.values()].map((l) => l.nombre + l.argumentos).join("");
+            consumo = sumarConsumo(
+              consumo,
+              estimarUso({ messages: mensajes, tools: HERRAMIENTAS }, generado),
+            );
           }
         }
 
@@ -407,6 +561,10 @@ export async function POST(request: Request) {
         const llamadas = [...parciales.values()].filter((l) => l.nombre && l.id);
 
         if (!llamadas.length) {
+          // Una vuelta final sin texto no es una respuesta (ver RespuestaVacia).
+          // La cortada por tope de tokens no entra aca: esa lleva su aviso.
+          if (!texto.trim() && motivo !== "length") throw new RespuestaVacia();
+
           // Respuesta final. Si se corto por tope de tokens conviene decirlo:
           // antes quedaba truncada en seco y parecia un error del sitio.
           if (motivo === "length") {
@@ -419,6 +577,11 @@ export async function POST(request: Request) {
           break;
         }
 
+        // Si en la ultima vuelta igual pidio herramientas (no todos los
+        // proveedores respetan tool_choice), ejecutarlas es gastar en un
+        // resultado que nadie lee: se cae al buscador, como siempre.
+        if (ultimaVuelta) break;
+
         mensajes.push({
           role: "assistant",
           content: texto || null,
@@ -429,7 +592,28 @@ export async function POST(request: Request) {
           })),
         });
 
+        let enEstaVuelta = 0;
         for (const llamada of llamadas) {
+          // Ver MAX_LLAMADAS_POR_VUELTA y MAX_CARACTERES_HERRAMIENTAS.
+          const clave = `${llamada.nombre}:${llamada.argumentos.trim() || "{}"}`;
+          const repetida = ejecutadas.has(clave);
+          const demasiadas =
+            !repetida &&
+            (enEstaVuelta >= MAX_LLAMADAS_POR_VUELTA || caracteres >= MAX_CARACTERES_HERRAMIENTAS);
+          if (repetida || demasiadas) {
+            if (demasiadas && !usadas.includes(MARCA.topeHerramientas)) {
+              usadas.push(MARCA.topeHerramientas);
+            }
+            mensajes.push({
+              role: "tool",
+              tool_call_id: llamada.id,
+              content: repetida ? NO_EJECUTADA.repetida : NO_EJECUTADA.demasiadas,
+            });
+            continue;
+          }
+          ejecutadas.add(clave);
+          enEstaVuelta += 1;
+
           usadas.push(llamada.nombre);
           canal.enviar({ tipo: "herramienta", nombre: llamada.nombre });
 
@@ -449,14 +633,25 @@ export async function POST(request: Request) {
             sinDatos.add(llamada.nombre);
             // El error vuelve al modelo como resultado, no corta la respuesta:
             // puede explicarle a la persona que esa consulta no se pudo hacer.
+            //
+            // Con el detalle solo si el error es de los argumentos (el JSON o el
+            // esquema), que es lo que el modelo puede corregir. Cualquier otro es
+            // del sitio, y el de la base trae el SQL entero con sus parametros
+            // (DrizzleQueryError): lo que recibe el modelo lo puede repetir en el
+            // chat publico. Ese detalle va al log, como el resto del handler.
+            const deLosArgumentos =
+              causa instanceof SyntaxError || causa instanceof z.ZodError ? causa : null;
+            if (!deLosArgumentos) {
+              console.error(`[chat] fallo la herramienta ${llamada.nombre}`, causa);
+            }
             contenido = JSON.stringify({
-              error:
-                causa instanceof Error
-                  ? `La consulta falló: ${causa.message}`
-                  : "La consulta falló.",
+              error: deLosArgumentos
+                ? `Los argumentos de la consulta no son válidos: ${deLosArgumentos.message}`
+                : "La consulta falló por un problema del sitio. Decí que no se pudo consultar ese dato y ofrecé la página que corresponda.",
             });
           }
 
+          caracteres += contenido.length;
           mensajes.push({
             role: "tool",
             tool_call_id: llamada.id,
@@ -506,7 +701,12 @@ export async function POST(request: Request) {
       // el modelo alcanzo a escribir se descarta, porque una respuesta cortada
       // a la mitad y otra entera abajo se leen como una sola que no tiene
       // sentido. El detalle tecnico va al log; el motivo corto, al registro.
-      const motivo = causa instanceof VueltasAgotadas ? "vueltas" : motivoDeFalla(causa);
+      const motivo =
+        causa instanceof VueltasAgotadas
+          ? "vueltas"
+          : causa instanceof RespuestaVacia
+            ? "vacia"
+            : motivoDeFalla(causa);
       console.error(
         `[chat] fallo el proveedor (${motivo}); responde el buscador.` +
           (usadas.length ? ` Herramientas que alcanzo a usar: ${usadas.join(", ")}.` : ""),
@@ -541,7 +741,9 @@ export async function POST(request: Request) {
         // resuelta la consulta por datos que nadie vio. Quedan en el log.
         herramientas: [MARCA.buscador, MARCA.falla(motivo)],
         modelo,
-        // Lo que se gasto antes de fallar se gasto igual, y cuenta para el tope.
+        // Lo que se gasto antes de fallar se gasto igual, y cuenta para el tope:
+        // lo informado por las vueltas que terminaron mas la estimacion de la
+        // que se corto (ver el finally de cada vuelta).
         consumo,
         ms: Date.now() - inicio,
         ipHash,
@@ -713,24 +915,34 @@ async function registrar(datos: {
   // Solo lo necesario para las metricas: el hash de IP no sale de este sitio.
   // Para el dashboard, una falla es lo que el vecino vio como error: si cayo al buscador
   // y se fue con una respuesta, la consulta se cuenta por lo que dice esa respuesta.
-  reportarAMigue({
-    pregunta: datos.pregunta,
-    tema,
-    resuelta,
-    ok: !(datos.vioError ?? !datos.ok),
-    consumo: datos.consumo,
-    ms: datos.ms,
-  });
+  // Las canceladas (el vecino toco Limpiar o cerro la pestana) no se reportan: no
+  // se sabe si el sitio las podia contestar, y el formato del dashboard solo
+  // tiene resuelta o sin_respuesta. Es el mismo criterio del panel, que las saca
+  // de todos sus numeros (CONSULTA_CANCELADA en queries.ts); si no, las dos
+  // pantallas darian tasas de resolucion distintas para el mismo periodo.
+  if (!datos.herramientas.includes(MARCA.cancelada)) {
+    reportarAMigue({
+      pregunta: datos.pregunta,
+      tema,
+      resuelta,
+      ok: !(datos.vioError ?? !datos.ok),
+      consumo: datos.consumo,
+      ms: datos.ms,
+    });
+  }
 
+  // La pregunta ya llega limpia (recortarHistorial), pero la respuesta es del
+  // modelo: un NUL en cualquiera de las dos hace fallar el INSERT entero.
+  const pregunta = sinCaracteresDeControl(datos.pregunta);
   try {
     await db.insert(chatConsultas).values({
       origen: "chat",
-      pregunta: datos.pregunta,
+      pregunta,
       // Se calcula aca y no al leer: la base no tiene unaccent (ver CLAUDE.md),
       // asi que sin esta columna no hay forma de agrupar dos formas de escribir
       // la misma pregunta.
-      preguntaNormalizada: claveDePregunta(datos.pregunta),
-      respuesta: datos.respuesta,
+      preguntaNormalizada: claveDePregunta(pregunta),
+      respuesta: datos.respuesta === null ? null : sinCaracteresDeControl(datos.respuesta),
       herramientas: datos.herramientas,
       tema,
       resuelta,
@@ -743,8 +955,22 @@ async function registrar(datos: {
       ok: datos.ok,
     });
   } catch (causa) {
-    // El registro es para estadistica interna: si falla, no rompe la respuesta.
-    console.error("[chat] no se pudo registrar la consulta", causa);
+    // Si falla, no rompe la respuesta. Pero esta fila no es solo estadistica:
+    // es lo que suma el tope de gasto del dia (getTokensUsadosHoy). Una
+    // consulta sin fila se cobraba sin contar, asi que el consumo va igual,
+    // en una fila de respaldo.
+    console.error("[chat] no se pudo registrar la consulta", resumenDeError(causa));
+    try {
+      await registrarConsumoDeRespaldo({
+        origen: "chat",
+        modelo: datos.modelo,
+        tokensEntrada: datos.consumo.tokensEntrada,
+        tokensSalida: datos.consumo.tokensSalida,
+        ipHash: datos.ipHash,
+      });
+    } catch (otra) {
+      console.error("[chat] tampoco se pudo registrar el consumo", resumenDeError(otra));
+    }
   }
 }
 

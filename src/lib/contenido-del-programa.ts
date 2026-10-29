@@ -64,6 +64,54 @@ export const REQUISITO_PARA_PRESENTAR =
   "Para presentar una idea ingresás con tu ciudadanía digital CIDITUC, la misma cuenta que usás para los trámites de la Municipalidad: la idea queda a tu nombre, que solo ve el equipo que la evalúa. Si todavía no tenés CIDITUC, la podés hacer desde la página de la Municipalidad o en una asamblea participativa.";
 
 /**
+ * Las preguntas del formulario de propuesta 2026, con las palabras del papel
+ * que se reparte en las asambleas. El formulario del sitio, la carga del panel,
+ * el documento imprimible y la ficha las dicen igual: la persona que llena el
+ * papel y la que entra a la web contestan lo mismo, y quien transcribe un papel
+ * encuentra cada respuesta en el mismo lugar.
+ *
+ * Las claves son las columnas de `ideas`. La correspondencia no es obvia en
+ * dos: "¿Qué les gustaría mejorar o cambiar?" se guarda en `solucion` y el
+ * nombre de la propuesta en `titulo`.
+ */
+export const PREGUNTAS_DE_LA_IDEA = {
+  problema: {
+    pregunta: "¿Qué problema comparten en el barrio?",
+    ayuda: "Pensá en una situación que afecte a varios vecinos o a la comunidad.",
+  },
+  referenciasUbicacion: {
+    pregunta: "¿Dónde ocurre?",
+    ayuda:
+      "Contanos todas las referencias que nos ayuden a encontrar el lugar: calles, esquina, altura o algún punto cercano.",
+  },
+  solucion: {
+    pregunta: "¿Qué les gustaría mejorar o cambiar?",
+    ayuda:
+      "Contanos la propuesta con palabras sencillas. No hace falta saber cómo se realiza técnicamente.",
+  },
+  beneficios: {
+    pregunta: "¿A quiénes beneficiaría?",
+    ayuda:
+      "Pensá en las personas, grupos o sectores del barrio que podrían aprovechar esta mejora.",
+  },
+  titulo: {
+    pregunta: "¿Qué nombre le pondrían a la propuesta?",
+    ayuda: "Puede ser un nombre corto y sencillo que ayude a identificarla.",
+  },
+  organizacion: {
+    pregunta: "¿Presenta esta propuesta en nombre de una organización?",
+    ayuda: "Un centro vecinal, un club, una cooperadora, una parroquia…",
+  },
+} as const;
+
+/**
+ * La aclaracion del pie del formulario de papel. Va igual en el sitio, antes de
+ * enviar, y en el documento imprimible.
+ */
+export const ACLARACION_DE_LA_PROPUESTA =
+  "Esta ficha recoge una primera propuesta. Luego será revisada por las áreas municipales competentes para analizar su factibilidad. Presentarla no significa que ya esté aprobada ni que su ejecución sea automática.";
+
+/**
  * Como se vota en el sitio, paso por paso: lo que hace de verdad /votar (y
  * /ingresar antes). Lo muestra /acerca-de y lo dice el chat. Si cambia el
  * circuito de votacion, hay que cambiarlo aca.

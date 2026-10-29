@@ -65,16 +65,41 @@ export function conEdicion(ruta: string, anio: number | null | undefined): strin
 }
 
 /**
- * Si la votacion de la edicion ya termino. Desde "seguimiento" una edicion tiene
- * ganadores o no los tiene; antes, que no tenga es lo esperable, y decir "este
- * distrito no tiene proyecto ganador" se lee como que el distrito se quedo sin
- * nada cuando en realidad todavia no voto.
+ * Si la votacion de la edicion ya termino. Antes, que no tenga ganadores es lo
+ * esperable, y decir "este distrito no tiene proyecto ganador" se lee como que
+ * el distrito se quedo sin nada cuando en realidad todavia no voto.
  *
  * Es el mismo corte que `puedeProclamar` (src/lib/etapas.ts): se proclama
- * recien en "seguimiento" o "cerrada".
+ * recien en "seguimiento" o "cerrada". Que la votacion haya terminado NO quiere
+ * decir que ya haya resultado: la proclamacion es a mano y de a un distrito, y
+ * mientras tanto un distrito sin ganador puede estar esperandola (ver
+ * `ganadorPorProclamar`).
  */
 export function votacionTerminada(etapa: EtapaEdicion): boolean {
   return etapa === "seguimiento" || etapa === "cerrada";
+}
+
+/**
+ * Si un distrito SIN ganador todavia espera su proclamacion, en vez de haber
+ * quedado sin proyecto.
+ *
+ * Desde "seguimiento" se puede proclamar, pero se proclama desde el panel, de a
+ * un distrito y despues del escrutinio. Antes se tomaba la etapa como
+ * resultado: entre el pase a seguimiento y la primera proclamacion,
+ * /transparencia decia que los 20 distritos "no eligieron proyecto" y la
+ * portada contaba "0 proyectos ganadores".
+ *
+ *  - `conFactibles`: el distrito tiene ideas factibles y publicadas, que es lo
+ *    que entra en el conteo (el universo de `getVotosPorIdea`). Sin ninguna, no
+ *    tuvo nada que votar: quedo sin proyecto, se proclame o no.
+ *  - Solo en "seguimiento". "Cerrada" es el final: un distrito que llego asi
+ *    sin ganador (un empate que no se resolvio, ningun voto) quedo sin
+ *    proyecto, y decir "se publica cuando se proclame" seria prometer algo para
+ *    siempre. Mientras la edicion sigue en seguimiento, esa promesa es cierta:
+ *    falta proclamar.
+ */
+export function ganadorPorProclamar(etapa: EtapaEdicion, conFactibles: boolean): boolean {
+  return etapa === "seguimiento" && conFactibles;
 }
 
 /**

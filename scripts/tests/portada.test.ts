@@ -8,7 +8,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { portadaSegunEtapa } from "../../src/lib/portada";
+import { portadaSegunEtapa, type ResultadoDeLaVotacion } from "../../src/lib/portada";
 
 const HOY = "2026-10-20";
 type Fechas = { ideasHasta: string | null; votacionDesde: string | null; votacionHasta: string | null };
@@ -19,11 +19,15 @@ const FECHAS: Fechas = {
   votacionHasta: "2026-12-10",
 };
 
+/** Una votacion ya escrutada y proclamada en todos sus distritos. */
+const PROCLAMADA: ResultadoDeLaVotacion = { ganadores: 19, distritosPorProclamar: [] };
+
 function portada(
   etapa: "ideas" | "evaluacion" | "votacion" | "seguimiento" | "cerrada",
   fechas: Fechas = FECHAS,
+  resultado: ResultadoDeLaVotacion = PROCLAMADA,
 ) {
-  return portadaSegunEtapa({ anio: 2026, etapa, ...fechas }, HOY);
+  return portadaSegunEtapa({ anio: 2026, etapa, ...fechas }, HOY, resultado);
 }
 
 test("en la etapa de ideas se ofrece presentar una, con la fecha de cierre", () => {
@@ -68,7 +72,7 @@ test("una fecha de cierre que ya paso no se promete", () => {
 });
 
 test("el dia del cierre todavia cuenta", () => {
-  const p = portadaSegunEtapa({ anio: 2026, etapa: "ideas", ...FECHAS, ideasHasta: HOY }, HOY);
+  const p = portadaSegunEtapa({ anio: 2026, etapa: "ideas", ...FECHAS, ideasHasta: HOY }, HOY, PROCLAMADA);
   assert.match(p.momento, /hasta el 20 de octubre de 2026/);
 });
 
@@ -80,4 +84,34 @@ test("sin fechas cargadas, el momento se dice sin fecha", () => {
     "Edición 2026: el equipo técnico está evaluando las ideas presentadas.",
   );
   assert.match(portada("votacion", sinFechas).momento, /^Edición 2026: la votación está abierta\. /);
+});
+
+// Se proclama de a un distrito y despues del escrutinio: toda edicion pasa un
+// tramo en "seguimiento" con cero ganadores. El boton llevaba igual a
+// /proyectos?ganadores=1, que con la lista vacia dice "Ninguna idea coincide con
+// estos filtros", y el momento decia que el municipio ya los estaba ejecutando.
+test("en seguimiento, antes de la primera proclamacion, no se ofrece una lista vacia de ganadores", () => {
+  const p = portada("seguimiento", FECHAS, { ganadores: 0, distritosPorProclamar: [1, 2, 3] });
+  assert.equal(p.principal.href, "/transparencia");
+  assert.match(p.momento, /se publican a medida que se proclaman/);
+  assert.doesNotMatch(p.momento, /ejecutando/);
+});
+
+test("con algun ganador proclamado, el boton lleva a los ganadores", () => {
+  const aMitad = portada("seguimiento", FECHAS, { ganadores: 4, distritosPorProclamar: [5, 6] });
+  assert.equal(aMitad.principal.href, "/proyectos?ganadores=1");
+  assert.match(aMitad.momento, /a medida que se proclaman/);
+
+  const completa = portada("seguimiento");
+  assert.equal(completa.principal.href, "/proyectos?ganadores=1");
+  assert.doesNotMatch(completa.momento, /ejecutando|a medida/);
+});
+
+test("sin ganadores ni nada por proclamar, no se promete una proclamacion", () => {
+  const sinNada = { ganadores: 0, distritosPorProclamar: [] };
+  for (const etapa of ["seguimiento", "cerrada"] as const) {
+    const p = portada(etapa, FECHAS, sinNada);
+    assert.equal(p.principal.href, "/proyectos", etapa);
+    assert.doesNotMatch(p.momento, /proclam(en|an)/, etapa);
+  }
 });

@@ -21,7 +21,14 @@
  * herramienta `consultar_reglamento` y el buscador sin IA (chat-sin-ia.ts).
  */
 import { parrafosDelReglamento } from "@/app/reglamento/cuerpo";
-import { getFaq, getHitos, getNovedades, getTextos, type Edicion } from "@/db/queries";
+import {
+  getEstadisticas,
+  getFaq,
+  getHitos,
+  getNovedades,
+  getTextos,
+  type Edicion,
+} from "@/db/queries";
 import {
   PASOS_PARA_VOTAR,
   POR_QUE_NO_HAY_MONTOS,
@@ -46,6 +53,12 @@ export type ReglamentoDelSitio =
     };
 
 export type ContextoDelSitio = {
+  /**
+   * El dia de hoy en Tucuman, AAAA-MM-DD: el mismo con el que la portada decide
+   * si una fecha ya paso. El modelo recibe las fechas de abajo crudas y, sin
+   * saber que dia es, no tiene contra que compararlas.
+   */
+  hoy: string;
   /** La oracion del hero de la portada: que esta pasando y hasta cuando. */
   momento: string;
   /** Los dos botones de la portada: lo que se puede hacer hoy. */
@@ -89,13 +102,17 @@ function reglamentoDe(textos: Record<string, string>): ReglamentoDelSitio {
 }
 
 export async function contextoDelSitio(edicion: Edicion): Promise<ContextoDelSitio> {
-  const [textos, faq, hitos, novedades] = await Promise.all([
+  // Las cuentas de la votacion, para que el momento y el boton digan lo mismo
+  // que la portada antes y despues de la primera proclamacion.
+  const [textos, faq, hitos, novedades, resultado] = await Promise.all([
     getTextos(),
     getFaq(),
     getHitos(edicion.id),
     getNovedades(NOVEDADES),
+    getEstadisticas(edicion),
   ]);
-  const portada = portadaSegunEtapa(edicion, hoyEnTucuman());
+  const hoy = hoyEnTucuman();
+  const portada = portadaSegunEtapa(edicion, hoy, resultado);
 
   const bloques: Array<[string | undefined, string | undefined]> = [
     [textos["home-bloque1-titulo"], textos["home-bloque1-texto"]],
@@ -104,6 +121,7 @@ export async function contextoDelSitio(edicion: Edicion): Promise<ContextoDelSit
   ];
 
   return {
+    hoy,
     momento: portada.momento,
     acciones: [portada.principal, portada.secundaria],
     fechasIdeas: formatearRango(edicion.ideasDesde, edicion.ideasHasta) || null,
@@ -194,6 +212,11 @@ export function contextoParaElModelo(contexto: ContextoDelSitio): string {
 
   secciones.push(
     [
+      // La fecha del dia no es un dato del programa: es lo que necesita el
+      // modelo para no dar por vigente un plazo vencido (la portada ya no lo
+      // promete, ver `hasta` en src/lib/portada.ts) ni adivinar si un hito del
+      // cronograma ya fue.
+      `Hoy es ${formatearFecha(contexto.hoy)} (día de Tucumán). Si una fecha de la edición, del cronograma o de una novedad ya pasó, decilo en pasado y no la presentes como un plazo vigente. Lo que se puede hacer hoy lo dice la portada, no las fechas.`,
       `Lo que dice hoy la portada: "${contexto.momento}"`,
       `Lo que se puede hacer hoy en el sitio: ${contexto.acciones
         .map((a) => `${a.texto} (${a.href})`)

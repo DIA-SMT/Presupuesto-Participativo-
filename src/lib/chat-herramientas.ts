@@ -35,7 +35,7 @@ import {
 } from "@/db/queries";
 import { ideasDelBarrio, ubicarBarrio } from "./barrios";
 import { consultarReglamento } from "./chat-contexto";
-import { conEdicion, votacionTerminada } from "./ediciones";
+import { conEdicion, ganadorPorProclamar, votacionTerminada } from "./ediciones";
 import {
   ETIQUETA_ESTADO,
   ETIQUETA_ETAPA,
@@ -220,7 +220,7 @@ export const HERRAMIENTAS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "estadisticas",
       description:
-        "Totales de una edicion: ideas presentadas, ganadores, votos, y el reparto por categoria y por estado de evaluacion. Si la edicion todavia no voto, trae tambien los ganadores de la ultima edicion que si voto.",
+        "Totales de una edicion: ideas publicadas (las recibidas sin revisar no cuentan), ganadores, votos, y el reparto por categoria y por estado de evaluacion. Si la edicion todavia no voto, trae tambien los ganadores de la ultima edicion que si voto.",
       parameters: {
         type: "object",
         properties: { edicion: PROPIEDAD_EDICION },
@@ -603,7 +603,9 @@ export async function ejecutarHerramienta(
           edicion: edicion.anio,
           etapa_de_la_edicion: etiquetaEtapa(edicion),
           barrios_de_referencia: distrito.referencia ?? "no cargados",
-          ideas_presentadas: distrito.ideas.length,
+          // Publicadas, no presentadas: las del formulario no cuentan hasta que
+          // el equipo las revisa, igual que en /distritos/N.
+          ideas_publicadas: distrito.ideas.length,
           ideas_por_estado: porEstado,
           ganador: distrito.ganador
             ? {
@@ -615,9 +617,13 @@ export async function ejecutarHerramienta(
                 // los avances informados o dice que no hay.
                 url: conEdicion(`/proyectos/${distrito.ganador.slug}`, anioEnEnlaces),
               }
-            : yaVoto
-              ? `este distrito no tiene proyecto ganador en la edicion ${edicion.anio}`
-              : `la edicion ${edicion.anio} todavia no tiene ganador: esta en la etapa "${etiquetaEtapa(edicion)}" y el ganador sale de la votacion`,
+            : !yaVoto
+              ? `la edicion ${edicion.anio} todavia no tiene ganador: esta en la etapa "${etiquetaEtapa(edicion)}" y el ganador sale de la votacion`
+              : // Voto, pero se proclama de a un distrito: hasta entonces no
+                // "quedo sin ganador" (ver ganadorPorProclamar).
+                ganadorPorProclamar(edicion.etapa, distrito.conFactibles)
+                ? `la votacion de la edicion ${edicion.anio} termino y el ganador de este distrito todavia no se proclamo: se publica cuando se proclame. No decir que el distrito quedo sin ganador.`
+                : `este distrito no tiene proyecto ganador en la edicion ${edicion.anio}`,
           ...(anterior && ganadorAnterior
             ? {
                 ganador_en_la_ultima_edicion_que_voto: {
@@ -790,15 +796,42 @@ export async function ejecutarHerramienta(
         contenido: JSON.stringify({
           edicion: stats.anio,
           etapa_del_proceso: edicion.etapa,
-          ideas_presentadas: stats.ideas,
+          // Publicadas, como en la portada: con la clave "presentadas" Migue
+          // decia "0 ideas presentadas" con ideas recibidas sin revisar.
+          ideas_publicadas: stats.ideas,
           proyectos_ganadores: stats.ganadores,
-          votos_totales: stats.votos,
+          // `votos_totales` antes era la suma de los ganadores, y Migue la daba
+          // como el total de la edicion. Ahora van los dos, cada uno con su
+          // nombre. Antes de que termine la votacion no va ningun numero, igual
+          // que en la portada: en ideas es cero, y mientras se vota seria el
+          // parcial, que es la decision pendiente (README, "Resultados
+          // parciales").
+          ...(yaVoto
+            ? {
+                votos_totales: stats.votosTotales,
+                votos_de_los_ganadores: stats.votosGanadores,
+              }
+            : {
+                votos_totales:
+                  "la edicion todavia no termino de votar: el total de votos se publica cuando cierra la votacion",
+              }),
           distritos: stats.distritos,
           // Antes de votar, los 20 distritos figuraban "sin ganador", y el
           // modelo lo contaba como un resultado.
           distritos_sin_ganador: yaVoto
             ? stats.distritosSinGanador
             : "la edicion todavia no voto: los ganadores salen de la votacion",
+          // Y despues de votar, hasta que se proclaman (de a un distrito, desde
+          // el panel), tampoco: iban todos a `distritos_sin_ganador`.
+          ...(yaVoto && stats.distritosPorProclamar.length
+            ? {
+                distritos_por_proclamar: {
+                  distritos: stats.distritosPorProclamar,
+                  aviso:
+                    "En estos distritos la votacion ya termino pero el ganador todavia no se proclamo. No decir que quedaron sin ganador: se publica en /transparencia cuando se proclame.",
+                },
+              }
+            : {}),
           por_estado: stats.porEstado,
           por_categoria: stats.porCategoria.map((c) => ({
             categoria: c.nombre,

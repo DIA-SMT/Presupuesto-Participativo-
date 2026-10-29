@@ -22,13 +22,14 @@ import { z } from "zod";
 import { getEdicionActiva } from "@/db/queries";
 import { crearIdea } from "@/lib/alta-idea";
 import { codigoSeguimiento, VERSION_CONSENTIMIENTO } from "@/lib/avisos";
-import { consumir, hashearIp, ipDe } from "@/lib/rate-limit";
+import { consumirDelVecino } from "@/lib/rate-limit";
 import { altaIdea } from "@/lib/idea-esquema";
-import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
+import { cargaFueraDeEtapa } from "@/lib/modo-prueba";
 import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 import { exigirMismoOrigen } from "@/lib/origen";
-import { hoyEnTucuman } from "@/lib/formato";
-import { getSesionVotante } from "@/lib/sesion";
+import { codigoDePropuesta, hoyEnTucuman } from "@/lib/formato";
+import { cerrarSesionVotante, getSesionVotante } from "@/lib/sesion";
+import { resumenDeError } from "@/lib/errores-base";
 
 export const runtime = "nodejs";
 
@@ -45,8 +46,10 @@ const SIN_SESION =
 /**
  * La fila del padron de la sesion ya no existe (la borro una limpieza de
  * pruebas, por ejemplo): la clave foranea de `ideas.votante_id` rebota el
- * alta. Para la persona es lo mismo que una sesion vencida. El nombre de la
- * restriccion aparece en un `cause` del error de drizzle, no en el mensaje.
+ * alta. Para la persona tiene que ser lo mismo que una sesion vencida, y por
+ * eso la ruta cierra la cookie ademas de responder SIN_SESION (ver abajo). El
+ * nombre de la restriccion aparece en un `cause` del error de drizzle, no en
+ * el mensaje.
  */
 function votanteInexistente(causa: unknown): boolean {
   for (let error: unknown = causa; error instanceof Error; error = error.cause) {
@@ -75,14 +78,22 @@ export async function POST(request: Request) {
   const rechazo = exigirMismoOrigen(request);
   if (rechazo) return rechazo;
 
-  const ipHash = hashearIp(ipDe(request));
+  // La sesion se lee antes del tope (es la cookie, sin base) para que el tope
+  // sea de la persona y no de la conexion: en un CIC o una asamblea con un solo
+  // Wi-Fi, la sexta idea de la hora no tiene que rebotar para otro vecino. Sin
+  // sesion (pedidos anonimos, o el modo prueba) sigue siendo por IP, en un
+  // contador aparte (ver consumirDelVecino).
+  const sesion = await getSesionVotante();
 
   // Tope generoso, pero suficiente para frenar una carga automatizada.
-  const limite = await consumir(`ideas:${ipHash}`, 5, 3600);
+  const limite = await consumirDelVecino("ideas", sesion?.votanteId, request, {
+    conSesion: { maximo: 5, ventanaSegundos: 3600 },
+    sinSesion: { maximo: 5, ventanaSegundos: 3600 },
+  });
   if (!limite.permitido) {
     return Response.json(
       {
-        error: `Ya enviaste varias ideas desde esta conexión. Probá de nuevo en ${Math.ceil(
+        error: `Ya enviaste varias ideas en la última hora. Probá de nuevo en ${Math.ceil(
           limite.reiniciaEn / 60,
         )} minutos.`,
       },
@@ -113,19 +124,19 @@ export async function POST(request: Request) {
     return Response.json({ error: SIN_EDICION }, { status: 503 });
   }
   // Fuera de la ventana del reglamento el alta esta cerrada, salvo para el
-  // equipo o con MODO_PRUEBA_IDEAS=1, que es como se muestra el circuito
-  // completo con el programa en seguimiento (ver src/lib/modo-prueba.ts).
-  // La excepcion se averigua una sola vez, aca: `crearIdea` vuelve a mirar la
-  // etapa adentro de su transaccion (por si se cerro en el medio) y usa esta
-  // misma respuesta.
-  const fueraDeEtapa = edicion.etapa === "ideas" ? false : await puedeCargarFueraDeEtapa();
+  // equipo (moderador o mas) o con MODO_PRUEBA_IDEAS=1, que es como se muestra
+  // el circuito completo con el programa en seguimiento (ver
+  // src/lib/modo-prueba.ts). La excepcion se averigua una sola vez, aca:
+  // `crearIdea` vuelve a mirar la etapa adentro de su transaccion (por si se
+  // cerro en el medio) y usa esta misma respuesta.
+  const cargaDePrueba = edicion.etapa === "ideas" ? null : await cargaFueraDeEtapa();
+  const fueraDeEtapa = cargaDePrueba !== null;
   if (edicion.etapa !== "ideas" && !fueraDeEtapa) {
     return Response.json({ error: ETAPA_CERRADA }, { status: 409 });
   }
 
   // En la etapa, sin sesion no hay idea. Con la sesion vencida (dura 4 horas)
   // la persona se entera aca y no al recargar: el mensaje le dice que hacer.
-  const sesion = await getSesionVotante();
   if (!fueraDeEtapa && !sesion) {
     return Response.json({ error: SIN_SESION }, { status: 401 });
   }
@@ -144,9 +155,13 @@ export async function POST(request: Request) {
         titulo: datos.titulo,
         categoria: datos.categoria,
         barrio: datos.barrio,
+        referenciasUbicacion: datos.referenciasUbicacion,
         problema: datos.problema,
         solucion: datos.solucion,
         beneficios: datos.beneficios,
+        organizacion: datos.organizacion,
+        // Opcional y solo para el equipo: se borra al cerrar la edicion.
+        autorTelefono: datos.autorTelefono || null,
         lat: datos.lat,
         lon: datos.lon,
         canal: "web",
@@ -160,6 +175,11 @@ export async function POST(request: Request) {
           quiereAvisos && datos.autorEmail
             ? { email: datos.autorEmail, version: VERSION_CONSENTIMIENTO }
             : null,
+        // En modo prueba, la cuenta del equipo que la cargo. Es lo que en la
+        // bandeja la separa de la presentacion de un vecino ("La cargó"): sin
+        // esto entraba como web, con el nombre que se escribiera a mano y sin
+        // rastro de quien la habia metido en la edicion real.
+        cargadoPor: cargaDePrueba?.cargadoPor ?? null,
         fecha: hoyEnTucuman(),
       },
       {
@@ -183,20 +203,27 @@ export async function POST(request: Request) {
 
     // El codigo de seguimiento es lo unico que le permite a la persona ver
     // despues como sigue su idea: la pantalla de "idea recibida" lo muestra y
-    // pide anotarlo. No se guarda en la base, se recalcula desde el id.
+    // pide anotarlo. No se guarda en la base, se recalcula desde el id. El de
+    // la propuesta (D05-P012) es el mismo que el equipo escribe en el papel.
     return Response.json(
       {
         numero: creada.numero,
         distrito: creada.distrito,
+        propuesta: codigoDePropuesta(creada.distrito, creada.numero),
         codigo: codigoSeguimiento(creada.id),
       },
       { status: 201 },
     );
   } catch (causa) {
     if (votanteInexistente(causa)) {
+      // El token de la cookie sigue firmado y sin vencer (getSesionVotante no
+      // mira la base): sin cerrarla, /ideas/nueva volvia a mostrar el formulario
+      // y /ingresar mandaba de vuelta ahi, sin llegar nunca al boton de CIDITUC.
+      // Cerrada, el reingreso que pide el mensaje vuelve a crear la fila.
+      await cerrarSesionVotante();
       return Response.json({ error: SIN_SESION }, { status: 401 });
     }
-    console.error("[ideas] alta fallida", causa);
+    console.error("[ideas] alta fallida", resumenDeError(causa));
     return Response.json(
       { error: "No se pudo guardar la idea. Probá de nuevo en un momento." },
       { status: 500 },
