@@ -330,13 +330,6 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
       "Si lo dejás, lo usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se borra cuando cierra la edición.",
   },
   {
-    dato: "Tu documento, si presentás la idea en papel",
-    caracter: "Facultativo",
-    color: "var(--color-cat-ambiental)",
-    finalidad:
-      "En el formulario de papel de las asambleas podés escribir tu DNI. Al cargarlo, el equipo no lo guarda en claro: se guarda hasheado, solo para unir la propuesta con tu registro del padrón cuando ingreses con CIDITUC. Tu domicilio y los datos de las personas de referencia que pide el papel no se cargan en el sistema: quedan en el papel, que archiva el programa.",
-  },
-  {
     dato: "Tu identidad de CIDITUC, al presentar una idea",
     caracter: "Obligatorio para presentar una idea",
     color: "var(--color-cat-ambiental)",

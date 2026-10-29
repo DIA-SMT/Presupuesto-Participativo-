@@ -76,7 +76,6 @@ const SECCIONES: Seccion[] = [
     texto: "Propuestas",
     pantallas: [
       { href: "/admin", texto: "Tablero de propuestas" },
-      { href: "/admin/ideas/nueva", texto: "Cargar una propuesta", soloEscritura: true },
       { href: "/admin/tablero", texto: "Estadísticas" },
     ],
   },

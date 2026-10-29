@@ -368,12 +368,10 @@ export const ideas = pgTable(
      */
     autorTelefono: varchar("autor_telefono", { length: 30 }),
     /**
-     * DNI de quien presento la idea en PAPEL, solo hasheado con `hashearDni`
-     * (src/lib/empadronamiento.ts, la misma pimienta que `votantes.dni_hash`).
-     * Sirve para atar la idea al padron: si la persona ya estaba empadronada se
-     * completa `votante_id`, y si entra despues con CIDITUC el hash coincide.
-     * El DNI en claro no se guarda nunca. Null en lo presentado por el sitio
-     * (ahi el vinculo es `votante_id`). Agregada en 0016.
+     * SIN USO. Era el DNI hasheado de una idea cargada en papel desde el panel;
+     * desde que las ideas entran solo por el sitio con CIDITUC (el vinculo es
+     * `votante_id`) nadie la escribe. Queda vacia hasta una migracion que la
+     * borre. Agregada en 0016.
      */
     autorDniHash: varchar("autor_dni_hash", { length: 64 }),
     /** Consentimiento explicito para recibir avisos, y cuando se dio. */

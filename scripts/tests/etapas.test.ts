@@ -17,7 +17,6 @@ import {
   puedeCambiarDeDistrito,
   puedeCambiarEtapa,
   puedeCambiarIdea,
-  puedeCargarIdea,
   puedeDeclararDistrito,
   puedeDescartarse,
   puedeProclamar,
@@ -454,29 +453,6 @@ test("una idea metida en una integracion no se descarta, para ningun lado", () =
     /^Hay 3 ideas integradas en esta/,
   );
   permitido(puedeDescartarse({ votos: 0, integradaEn: null, integradas: 0 }));
-});
-
-// ---------------------------------------------------------------------------
-// Carga desde el panel (Fase 2)
-// ---------------------------------------------------------------------------
-
-test("el equipo carga ideas en presentacion y en evaluacion", () => {
-  permitido(puedeCargarIdea("ideas"));
-  // Una asamblea tardia, o lo que llego por papel y se tipea despues.
-  permitido(puedeCargarIdea("evaluacion"));
-});
-
-test("desde la votacion no se cargan ideas: la boleta ya quedo fija", () => {
-  const votacion = rechazado(puedeCargarIdea("votacion"));
-  assert.match(votacion, /La votación de esta edición está abierta: la boleta quedó fija/);
-  assert.match(votacion, /edición siguiente/);
-
-  for (const etapa of ["seguimiento", "cerrada"] as const) {
-    const motivo = rechazado(puedeCargarIdea(etapa), etapa);
-    assert.match(motivo, /Esta edición ya votó/);
-    assert.match(motivo, /edición siguiente/);
-  }
-  assert.match(rechazado(puedeCargarIdea("seguimiento")), /Seguimiento de obras/);
 });
 
 // ---------------------------------------------------------------------------

@@ -110,19 +110,6 @@ export const PASOS: PasoRecorrido[] = [
         "Al abrir una idea, desde su ficha estimás su presupuesto, la evaluás, la publicás, la corregís (ahí se le asigna la categoría), la descartás o pedís el informe de impacto. Cuando cierra la votación, desde la misma ficha proclamás el proyecto ganador del distrito. Todo queda en el historial con tu nombre.",
     },
   },
-  {
-    id: "bandeja-cargar",
-    seccion: "Propuestas",
-    ruta: "/admin",
-    anclas: ["bandeja-cargar"],
-    titulo: "Cargar una propuesta en papel",
-    texto: {
-      moderador:
-        "Los formularios de papel se cargan con “Cargar una propuesta”: la pantalla sigue la hoja renglón por renglón y, al guardar, te da el código (D05-P012) para escribir en el papel.",
-      admin:
-        "Los formularios de papel se cargan con “Cargar una propuesta”: la pantalla sigue la hoja renglón por renglón y, al guardar, te da el código (D05-P012) para escribir en el papel.",
-    },
-  },
 
   // --- Tablero ----------------------------------------------------------------
   {

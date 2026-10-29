@@ -13,9 +13,8 @@
  *  1. **Con sesion del equipo que pueda escribir** (moderador o admin). Es el
  *     camino normal para una demostracion: no hay que configurar nada ni
  *     redeployar, alcanza con estar adentro. Un lector NO: el panel le promete
- *     que "solo mira" y no le deja cargar desde /admin/ideas/nueva, y la carga
- *     fuera de etapa cae en la edicion activa de verdad, asi que esta puerta
- *     no puede ser mas ancha que la del panel. Antes bastaba con cualquier
+ *     que "solo mira", y la carga fuera de etapa cae en la edicion activa de
+ *     verdad. Antes bastaba con cualquier
  *     cookie pp_admin valida, y una cuenta lectora podia meter ideas en una
  *     edicion en evaluacion sin que quedara de quien eran.
  *  2. **Con MODO_PRUEBA_IDEAS=1.** Para mostrarlo desde un telefono o una

@@ -28,7 +28,6 @@ import { distritoDePunto } from "@/lib/geo-servidor";
 import { hashearDni } from "@/lib/empadronamiento";
 import { normalizar } from "@/lib/texto";
 import { ganadorPorProclamar } from "@/lib/ediciones";
-import type { TemaConsulta } from "@/lib/chat-temas";
 import {
   admins,
   avances,
@@ -1286,11 +1285,6 @@ export type IdeaAdmin = IdeaVista & {
    * padron no tiene nada que hacer en la pantalla.
    */
   autorConCidituc: boolean;
-  /**
-   * Se presento en papel con el DNI (hasheado en `ideas.autor_dni_hash`). El
-   * hash no sale de la base: solo si lo hay.
-   */
-  autorConDni: boolean;
   /** La organizacion en cuyo nombre se presenta, o null. */
   organizacion: string | null;
   /**
@@ -1334,8 +1328,6 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
       autorNombre: ideas.autorNombre,
       autorConCidituc: sql<number>`CASE
         WHEN ${ideas.votanteId} IS NOT NULL THEN 1 ELSE 0 END`,
-      autorConDni: sql<number>`CASE
-        WHEN ${ideas.autorDniHash} IS NOT NULL THEN 1 ELSE 0 END`,
       organizacion: ideas.organizacion,
       autorTelefono: ideas.autorTelefono,
       presupuestoEstimado: ideas.presupuestoEstimado,
@@ -1378,7 +1370,6 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     cargadoPor: fila.cargadoPor,
     autorNombre: fila.autorNombre,
     autorConCidituc: Number(fila.autorConCidituc) === 1,
-    autorConDni: Number(fila.autorConDni) === 1,
     organizacion: fila.organizacion,
     autorTelefono: fila.autorTelefono,
     presupuestoEstimado:

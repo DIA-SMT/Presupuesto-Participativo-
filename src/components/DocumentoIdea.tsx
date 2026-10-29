@@ -51,10 +51,13 @@ export type DatosDocumento = {
  * saque una foto para no perder el codigo.
  */
 export type Comprobante = {
-  numero: number;
   /** El codigo de la propuesta, D05-P012: el que se escribe en el papel. */
   propuesta: string;
-  codigo: string;
+  /**
+   * El codigo de seguimiento. Es solo del vecino: el PDF que baja el equipo
+   * desde el panel no lo lleva (null) y el pie no lo muestra.
+   */
+  codigo: string | null;
   fecha: string;
 };
 
@@ -238,10 +241,12 @@ export default function DocumentoIdea({
             <p className="doc-rotulo">Código de la propuesta</p>
             <p className="doc-dato-grande">{comprobante.propuesta}</p>
           </div>
-          <div>
-            <p className="doc-rotulo">Código de seguimiento</p>
-            <p className="doc-dato-grande doc-codigo">{comprobante.codigo}</p>
-          </div>
+          {comprobante.codigo && (
+            <div>
+              <p className="doc-rotulo">Código de seguimiento</p>
+              <p className="doc-dato-grande doc-codigo">{comprobante.codigo}</p>
+            </div>
+          )}
           <div>
             <p className="doc-rotulo">Presentada</p>
             <p className="doc-dato-grande doc-fecha">{comprobante.fecha}</p>
