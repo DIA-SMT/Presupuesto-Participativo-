@@ -3,10 +3,8 @@
  * probados contra una base de verdad.
  *
  * Lo que se fija aca:
- *  - la carga del papel guarda lo minimo que se decidio: el nombre, la
- *    organizacion (solo si se marco "Sí"), un telefono y el DNI SOLO hasheado;
- *  - el DNI de un papel ata la idea al padron, ya sea porque la persona estaba
- *    empadronada o porque entra despues con CIDITUC;
+ *  - la idea guarda lo minimo que se decidio: la organizacion, un telefono y
+ *    las referencias escritas del lugar, sin categoria;
  *  - la purga de contactos borra el telefono con el nombre y el mail;
  *  - el telefono nunca sale por una consulta publica;
  *  - la bandeja encuentra una idea por el codigo del papel (D05-P012) y ordena
@@ -20,41 +18,21 @@ import { cargarMinimo, crearBaseDePrueba, type BaseDePrueba } from "./apoyo-base
 
 let base: BaseDePrueba;
 let edicionId: number;
-let operaciones: typeof import("../../src/app/admin/ideas/operaciones");
+let alta: typeof import("../../src/lib/alta-idea");
 let consultas: typeof import("../../src/db/queries");
-let empadronamiento: typeof import("../../src/lib/empadronamiento");
 let purga: typeof import("../purga-contactos");
-let sesion: import("../../src/app/admin/comun").Autorizacion;
 
 const HOY = "2026-09-25";
 /** Un punto del distrito 1 sobre la geometria oficial. */
-const D1 = { lat: "-26.7965902", lon: "-65.2515113" };
+const D1 = { lat: -26.7965902, lon: -65.2515113 };
 
 test.before(async () => {
   base = await crearBaseDePrueba("formulario-2026");
   const minimo = await cargarMinimo(base, { etapa: "ideas" });
   edicionId = minimo.edicionId;
 
-  const [cuenta] = await base.db
-    .insert(base.schema.admins)
-    .values({
-      email: "equipo@smt.gob.ar",
-      nombre: "Equipo de prueba",
-      passwordHash: "no-se-usa",
-      rol: "moderador",
-    })
-    .returning({ id: base.schema.admins.id });
-  sesion = {
-    adminId: cuenta.id,
-    email: "equipo@smt.gob.ar",
-    nombre: "Equipo de prueba",
-    rol: "moderador",
-    version: 0,
-  };
-
-  operaciones = await import("../../src/app/admin/ideas/operaciones");
+  alta = await import("../../src/lib/alta-idea");
   consultas = await import("../../src/db/queries");
-  empadronamiento = await import("../../src/lib/empadronamiento");
   purga = await import("../purga-contactos");
 });
 
@@ -62,31 +40,31 @@ test.after(async () => {
   await base.cerrar();
 });
 
-/** Lo que manda la pantalla de carga, copiado de un papel en regla. */
-function papel(cambios: Record<string, string> = {}): Record<string, string> {
-  return {
-    canal: "asamblea",
-    canalDetalle: "Asamblea del distrito 1, 12/09/2026",
-    fecha: "2026-09-12",
-    autorNombre: "Juana Pérez",
-    dni: "30.123.456",
-    autorTelefono: "381 555-1234",
-    conOrganizacion: "1",
-    organizacion: "Centro Vecinal Villa Luján",
-    problema: "La plaza queda a oscuras de noche y los vecinos dejaron de usarla.",
-    referenciasUbicacion: "Frente a la escuela, en la esquina de la canchita.",
-    solucion: "Poner luminarias LED en todo el perímetro de la plaza y en los senderos.",
-    beneficios: "",
-    titulo: "Luz para la plaza del barrio",
-    ...D1,
-    ...cambios,
-  };
-}
-
-async function cargar(cambios: Record<string, string> = {}) {
-  const resultado = await operaciones.registrarAlta(papel(cambios), sesion, HOY);
-  assert.ok(resultado.ok, resultado.ok ? "" : resultado.error);
-  return resultado.idea;
+/**
+ * Una idea con todo lo que pide el formulario 2026, creada por la misma puerta
+ * que el sitio (crearIdea de src/lib/alta-idea.ts).
+ */
+async function cargar(cambios: { titulo?: string; organizacion?: string | null } = {}) {
+  const resultado = await alta.crearIdea(
+    {
+      edicionId,
+      titulo: cambios.titulo ?? "Luz para la plaza del barrio",
+      barrio: "Villa Luján",
+      referenciasUbicacion: "Frente a la escuela, en la esquina de la canchita.",
+      problema: "La plaza queda a oscuras de noche y los vecinos dejaron de usarla.",
+      solucion: "Poner luminarias LED en todo el perímetro de la plaza y en los senderos.",
+      organizacion: cambios.organizacion === undefined ? "Centro Vecinal Villa Luján" : cambios.organizacion,
+      autorNombre: "Juana Pérez",
+      autorTelefono: "381 555-1234",
+      lat: D1.lat,
+      lon: D1.lon,
+      canal: "web",
+      fecha: HOY,
+    },
+    { etapaPermitida: () => null },
+  );
+  assert.ok(resultado.ok, resultado.ok ? "" : resultado.mensaje);
+  return resultado;
 }
 
 async function filaDe(id: number) {
@@ -105,50 +83,14 @@ test("el codigo de la propuesta es D + distrito y P + numero, con ceros", () => 
   assert.equal(codigoDePropuesta(2, 1234), "D02-P1234");
 });
 
-test("el papel guarda lo minimo: el DNI solo hasheado, nunca en claro", async () => {
+test("guarda lo minimo: la organizacion, un telefono y las referencias, sin categoria", async () => {
   const idea = await cargar();
   const fila = await filaDe(idea.id);
-
   assert.equal(fila.organizacion, "Centro Vecinal Villa Luján");
   assert.equal(fila.autorTelefono, "381 555-1234", "el telefono se guarda como lo escribio");
   assert.equal(fila.referenciasUbicacion, "Frente a la escuela, en la esquina de la canchita.");
   assert.equal(fila.categoriaId, null, "la categoria la asigna quien evalua");
-  assert.equal(fila.autorDniHash, empadronamiento.hashearDni("30123456"));
-  // Ninguna columna de la fila tiene el numero en claro.
-  assert.ok(!JSON.stringify(fila).includes("30123456"), "el DNI no queda en claro");
-  assert.ok(!JSON.stringify(fila).includes("30.123.456"), "ni con puntos");
-});
-
-test("sin marcar la organizacion, el nombre escrito no se guarda", async () => {
-  const idea = await cargar({ conOrganizacion: "0", titulo: "Una idea sin organización" });
-  assert.equal((await filaDe(idea.id)).organizacion, null);
-});
-
-test("el DNI de un papel ata la idea al padron, antes o despues de empadronarse", async () => {
-  // Ya empadronada: la idea queda atada al cargarla.
-  const { votanteId: yaEstaba } = await empadronamiento.empadronar({
-    dni: "27111222",
-    nombre: "Ana Gómez",
-    distrito: 1,
-    proveedor: "cidituc",
-    proveedorSub: "sub-ana",
-    verificado: true,
-  });
-  const primera = await cargar({ dni: "27.111.222", titulo: "Una idea de Ana en papel" });
-  assert.equal((await filaDe(primera.id)).votanteId, yaEstaba);
-
-  // Todavia no: queda el hash, y empadronarse la ata.
-  const segunda = await cargar({ dni: "28333444", titulo: "Una idea de Luis en papel" });
-  assert.equal((await filaDe(segunda.id)).votanteId, null);
-  const { votanteId: luis } = await empadronamiento.empadronar({
-    dni: "28333444",
-    nombre: "Luis Díaz",
-    distrito: 1,
-    proveedor: "cidituc",
-    proveedorSub: "sub-luis",
-    verificado: true,
-  });
-  assert.equal((await filaDe(segunda.id)).votanteId, luis);
+  assert.equal(fila.autorDniHash, null, "la columna del papel ya no se escribe");
 });
 
 test("la purga de contactos borra el telefono con el nombre", async () => {
@@ -177,7 +119,7 @@ test("ninguna consulta publica devuelve el telefono ni la organizacion", async (
   assert.ok(texto.includes("Frente a la escuela"), "las referencias del lugar si");
 });
 
-test("la bandeja encuentra por el codigo del papel y ordena por presupuesto estimado", async () => {
+test("la bandeja encuentra por el codigo de la propuesta y ordena por presupuesto estimado", async () => {
   const cara = await cargar({ titulo: "Una obra cara para ordenar" });
   const barata = await cargar({ titulo: "Una obra barata para ordenar" });
   const sinEstimar = await cargar({ titulo: "Una obra que nadie estimó" });

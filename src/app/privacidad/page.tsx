@@ -15,8 +15,8 @@ export const metadata: Metadata = {
  * Informacion previa del art. 6 de la ley 25.326 (Proteccion de los Datos
  * Personales). Sin este texto el consentimiento del correo no seria valido.
  *
- * Los datos del organismo salen de la tabla `textos` (claves contacto-*) y se
- * cambian desde /admin/contenido, solapa "Textos del sitio" (solo admin). Lo
+ * Los datos del organismo salen de la tabla `textos` (claves contacto-*). El
+ * panel ya no los edita: se cambian en la base. Lo
  * que todavia nadie confirmo NO se inventa:
  * se muestra con un marcador PENDIENTE CONFIRMAR bien visible, para que quede a
  * la vista de quien tenga que completarlo antes de publicar la pagina.
@@ -328,13 +328,6 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
     color: "var(--acento-texto)",
     finalidad:
       "Si lo dejás, lo usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se borra cuando cierra la edición.",
-  },
-  {
-    dato: "Tu documento, si presentás la idea en papel",
-    caracter: "Facultativo",
-    color: "var(--color-cat-ambiental)",
-    finalidad:
-      "En el formulario de papel de las asambleas podés escribir tu DNI. Al cargarlo, el equipo no lo guarda en claro: se guarda hasheado, solo para unir la propuesta con tu registro del padrón cuando ingreses con CIDITUC. Tu domicilio y los datos de las personas de referencia que pide el papel no se cargan en el sistema: quedan en el papel, que archiva el programa.",
   },
   {
     dato: "Tu identidad de CIDITUC, al presentar una idea",

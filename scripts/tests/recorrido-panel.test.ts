@@ -75,12 +75,11 @@ test("el administrador ve todos los pasos", () => {
   assert.equal(pasosPara("admin").length, PASOS.length);
 });
 
-test("Contenido y Equipo son solo del administrador, como en el menu", () => {
+test("Equipo es solo del administrador, como en el menu", () => {
   // navegacion.tsx los marca `soloAdmin`: el recorrido no puede llevar a otro
   // rol a una pantalla que no tiene en el menu.
   for (const rol of ["lector", "moderador"] as const) {
     const rutas = pasosPara(rol).map((paso) => paso.ruta);
-    assert.ok(!rutas.includes("/admin/contenido"), rol);
     assert.ok(!rutas.includes("/admin/equipo"), rol);
   }
 });

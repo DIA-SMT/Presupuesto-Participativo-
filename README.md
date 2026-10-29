@@ -356,8 +356,8 @@ proyecto Landing Elecop (Dirección de IA).
   endpoint responde con un buscador determinístico (`src/lib/chat-sin-ia.ts`,
   que contesta lo del sitio con el mismo contexto en `src/lib/chat-sin-ia-sitio.ts`).
   Cada consulta queda registrada (pregunta, herramientas usadas, tokens,
-  latencia, IP hasheada) en `chat_consultas`, y el panel la muestra en
-  `/admin/migue`: qué pregunta la gente, por tema, y qué quedó sin resolver.
+  latencia, IP hasheada, tema y si quedó resuelta) en `chat_consultas`. El
+  panel no la muestra: se consulta en la base.
   La burbuja del chat es Migue saliendo de un círculo:
   `public/images/presupuesto-participativo/migue-burbuja.webp` se genera con
   `node scripts/migue-burbuja.mjs` a partir de `migue-saludo.webp`.
@@ -486,8 +486,8 @@ archivo nuevo en `drizzle/`.
   sea declarado tendría que decirlo el reglamento: es una declaración de la
   persona, no un dato verificado.
 - **Reglamento**: la página existe con las reglas confirmadas, pero el texto
-  oficial completo hay que conseguirlo. Se carga desde `/admin/contenido`,
-  solapa "Reglamento" (solo admin), con vista previa igual a `/reglamento`.
+  oficial completo hay que conseguirlo. Se carga en la base (tabla `textos`):
+  el panel no tiene pantalla de contenido.
 - **Teselas del mapa**: cambiar OSM por un proveedor con términos adecuados
   antes de salir a producción (ver arriba).
 - **Contenido de ideas no ganadoras**: el relevamiento solo recuperó el texto

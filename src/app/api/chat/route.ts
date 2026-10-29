@@ -364,8 +364,8 @@ export async function POST(request: Request) {
         texto = await responderConBuscador(canal, pregunta, edicion);
       } catch (causa) {
         // Igual que cuando falla el buscador en el camino del modelo: la consulta
-        // queda registrada con ok=false para que el equipo vea el corte en
-        // /admin/migue. Sin `buscador-local` en las marcas: con esa marca y
+        // queda registrada con ok=false para que el corte quede en
+        // chat_consultas. Sin `buscador-local` en las marcas: con esa marca y
         // ok=false la fila contaria como "fallo por dentro pero se contesto",
         // y la persona no recibio respuesta, recibio el aviso de falla.
         await registrar({
@@ -442,7 +442,7 @@ export async function POST(request: Request) {
       // El prompt se arma DENTRO del try: lee la base (estadisticas, contexto
       // del sitio), y si una de esas consultas falla tiene que seguir el mismo
       // camino que una falla del proveedor (buscador y registro con el motivo
-      // `interno`) y no terminar en un 500 sin rastro en /admin/migue.
+      // `interno`) y no terminar en un 500 sin rastro en chat_consultas.
       const sistema = await construirSistema();
       const mensajes: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: "system", content: sistema },

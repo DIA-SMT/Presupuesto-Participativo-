@@ -398,20 +398,6 @@ export default function PanelBandeja({
       <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
           <h1 className="text-2xl font-bold">Propuestas · Edición {anio}</h1>
-          {/*
-            Lo que llega de una asamblea, por mail o en papel. Solo para quien
-            puede escribir; si la etapa no deja cargar, la pantalla lo explica
-            (y la accion igual lo rechaza).
-          */}
-          {!soloLectura && (
-            <Link data-recorrido="bandeja-cargar"
-              href="/admin/ideas/nueva"
-              className="rounded-xl px-3.5 py-2 text-sm font-semibold text-white"
-              style={{ background: "var(--color-marca-700)" }}
-            >
-              Cargar una propuesta
-            </Link>
-          )}
         </div>
         {/*
           "emitidos desde esta plataforma" y no "registrados por este sitio":
@@ -907,6 +893,14 @@ function Ficha({
           <Chip color={ficha.publicada ? "var(--color-cat-ambiental)" : "var(--acento-texto)"}>
             {ficha.publicada ? "publicada" : "sin publicar"}
           </Chip>
+          {/* La propuesta como el documento que bajo el vecino, para el papel. */}
+          <Link
+            href={`/admin/ideas/${ficha.id}/documento`}
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold"
+            style={{ border: "1px solid var(--borde)", color: "var(--marca-texto)" }}
+          >
+            Descargar PDF
+          </Link>
         </div>
       </div>
 
@@ -962,11 +956,6 @@ function Ficha({
               : "Dejó mail, sin consentimiento de avisos"}
           </DatoFicha>
         )}
-        {ficha.autorConDni && !ficha.autorConCidituc && (
-          <DatoFicha etiqueta="Padrón">
-            Trajo DNI en el papel; se une al padrón cuando la persona ingrese con CIDITUC.
-          </DatoFicha>
-        )}
         <DatoFicha etiqueta="Presupuesto estimado">
           {ficha.presupuestoEstimado === null
             ? "Sin estimar"
@@ -1012,8 +1001,7 @@ function Ficha({
       </dl>
 
       <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
-        El mail del autor no sale de la base: el panel solo sabe si hay, nunca cuál es. El DNI de
-        una idea en papel tampoco: se guarda cifrado, para unirla al padrón.
+        El mail del autor no sale de la base: el panel solo sabe si hay, nunca cuál es.
       </p>
 
       {(ficha.problema || ficha.referenciasUbicacion || ficha.solucion || ficha.beneficios) && (

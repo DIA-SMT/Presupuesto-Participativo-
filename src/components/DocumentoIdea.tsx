@@ -51,10 +51,13 @@ export type DatosDocumento = {
  * saque una foto para no perder el codigo.
  */
 export type Comprobante = {
-  numero: number;
   /** El codigo de la propuesta, D05-P012: el que se escribe en el papel. */
   propuesta: string;
-  codigo: string;
+  /**
+   * El codigo de seguimiento. Es solo del vecino: el PDF que baja el equipo
+   * desde el panel no lo lleva (null) y el pie no lo muestra.
+   */
+  codigo: string | null;
   fecha: string;
 };
 
@@ -196,6 +199,7 @@ export default function DocumentoIdea({
         valor={datos.problema}
         idRotulo={`${id}-problema`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.problema.trim() || null}
       </Bloque>
@@ -207,6 +211,7 @@ export default function DocumentoIdea({
         valor={datos.referenciasUbicacion}
         idRotulo={`${id}-referencias`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.referenciasUbicacion.trim() || null}
       </Bloque>
@@ -217,6 +222,7 @@ export default function DocumentoIdea({
         valor={datos.solucion}
         idRotulo={`${id}-solucion`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.solucion.trim() || null}
       </Bloque>
@@ -228,6 +234,7 @@ export default function DocumentoIdea({
         valor={datos.beneficios}
         idRotulo={`${id}-beneficios`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.beneficios.trim() || null}
       </Bloque>
@@ -238,10 +245,12 @@ export default function DocumentoIdea({
             <p className="doc-rotulo">Código de la propuesta</p>
             <p className="doc-dato-grande">{comprobante.propuesta}</p>
           </div>
-          <div>
-            <p className="doc-rotulo">Código de seguimiento</p>
-            <p className="doc-dato-grande doc-codigo">{comprobante.codigo}</p>
-          </div>
+          {comprobante.codigo && (
+            <div>
+              <p className="doc-rotulo">Código de seguimiento</p>
+              <p className="doc-dato-grande doc-codigo">{comprobante.codigo}</p>
+            </div>
+          )}
           <div>
             <p className="doc-rotulo">Presentada</p>
             <p className="doc-dato-grande doc-fecha">{comprobante.fecha}</p>
@@ -282,10 +291,16 @@ function Bloque({
   valor,
   idRotulo,
   edicion,
+  terminado = false,
 }: {
   titulo: string;
   activo: boolean;
   vacio?: string;
+  /**
+   * El documento ya enviado (con comprobante): un bloque vacio dice "-" y no
+   * la ayuda de mientras se escribe ("Todavía no lo contaste.").
+   */
+  terminado?: boolean;
   children: ReactNode;
   /** Con `campo` y `edicion`, el cuerpo del bloque se escribe en lugar de leerse. */
   campo?: CampoEditable;
@@ -308,7 +323,7 @@ function Bloque({
           edicion={edicion}
         />
       ) : (
-        <p className={children ? "doc-cuerpo" : "doc-cuerpo doc-vacio"}>{children ?? vacio}</p>
+        <p className={children ? "doc-cuerpo" : "doc-cuerpo doc-vacio"}>{children ?? (terminado ? "-" : vacio)}</p>
       )}
     </section>
   );

@@ -299,7 +299,7 @@ export type ResultadoHerramienta = {
    * La usa el clasificador (src/lib/chat-temas.ts) para decidir si la consulta
    * quedo resuelta: si TODAS las herramientas de una consulta vuelven con esto
    * en true, al vecino le falto informacion, y eso es contenido que le falta al
-   * sitio. Es la senal que alimenta la pantalla de /admin/migue.
+   * sitio. Queda marcado en chat_consultas.resuelta.
    *
    * Cuando la herramienta no encontro nada en la edicion pedida pero trajo lo de
    * otra, NO va en true: la persona se fue con datos, marcados como de otra

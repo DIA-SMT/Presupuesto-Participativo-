@@ -12,7 +12,6 @@
  * no llega al navegador.
  */
 import { LARGOS, MINIMOS } from "@/lib/idea-esquema";
-import { LARGO_CANAL_DETALLE } from "./operaciones";
 
 export type Largo = { minimo: number; maximo: number };
 
@@ -22,17 +21,12 @@ export type Limites = {
   problema: Largo;
   beneficios: Largo;
   barrio: Largo;
-  autorNombre: Largo;
-  canalDetalle: Largo;
   referenciasUbicacion: Largo;
-  organizacion: Largo;
-  autorTelefono: Largo;
 };
 
 /**
- * Los limites de la carga (los del formulario publico, mas "de donde vino").
- * La correccion usa los mismos maximos, y del titulo el mismo minimo: sus
- * textos no tienen minimo (ver `aplicarCorreccion`).
+ * Los limites de la correccion: los maximos del formulario publico, y del
+ * titulo el mismo minimo (sus textos no tienen minimo, ver `aplicarCorreccion`).
  */
 export function limitesDeLaIdea(): Limites {
   return {
@@ -41,10 +35,6 @@ export function limitesDeLaIdea(): Limites {
     problema: { minimo: MINIMOS.problema, maximo: LARGOS.problema },
     beneficios: { minimo: 0, maximo: LARGOS.beneficios },
     barrio: { minimo: 0, maximo: LARGOS.barrio },
-    autorNombre: { minimo: 0, maximo: LARGOS.autorNombre },
-    canalDetalle: { minimo: 3, maximo: LARGO_CANAL_DETALLE },
     referenciasUbicacion: { minimo: 0, maximo: LARGOS.referenciasUbicacion },
-    organizacion: { minimo: 0, maximo: LARGOS.organizacion },
-    autorTelefono: { minimo: 0, maximo: LARGOS.autorTelefono },
   };
 }

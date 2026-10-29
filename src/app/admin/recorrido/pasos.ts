@@ -110,19 +110,6 @@ export const PASOS: PasoRecorrido[] = [
         "Al abrir una idea, desde su ficha estimás su presupuesto, la evaluás, la publicás, la corregís (ahí se le asigna la categoría), la descartás o pedís el informe de impacto. Cuando cierra la votación, desde la misma ficha proclamás el proyecto ganador del distrito. Todo queda en el historial con tu nombre.",
     },
   },
-  {
-    id: "bandeja-cargar",
-    seccion: "Propuestas",
-    ruta: "/admin",
-    anclas: ["bandeja-cargar"],
-    titulo: "Cargar una propuesta en papel",
-    texto: {
-      moderador:
-        "Los formularios de papel se cargan con “Cargar una propuesta”: la pantalla sigue la hoja renglón por renglón y, al guardar, te da el código (D05-P012) para escribir en el papel.",
-      admin:
-        "Los formularios de papel se cargan con “Cargar una propuesta”: la pantalla sigue la hoja renglón por renglón y, al guardar, te da el código (D05-P012) para escribir en el papel.",
-    },
-  },
 
   // --- Tablero ----------------------------------------------------------------
   {
@@ -142,23 +129,6 @@ export const PASOS: PasoRecorrido[] = [
     titulo: "Ejecución presupuestaria",
     texto:
       "Cuánto del presupuesto de la edición está asignado a los proyectos ganadores, y en qué etapa está cada obra. Si la edición no tiene el presupuesto total cargado, lo avisa.",
-  },
-
-  // --- Migue --------------------------------------------------------------------
-  {
-    id: "migue",
-    seccion: "Proceso · Migue",
-    ruta: "/admin/migue",
-    anclas: ["migue-sin-resolver", "migue-encabezado"],
-    titulo: "Lo que preguntan los vecinos",
-    texto: {
-      lector:
-        "Lo que la gente le pregunta al asistente del sitio. Primero aparece lo que no pudo contestar: ahí se ve qué información le falta al sitio. Después, los temas más pedidos, cuánto se usa y las últimas consultas.",
-      moderador:
-        "Lo que la gente le pregunta al asistente del sitio. Primero aparece lo que no pudo contestar: ahí se ve qué información le falta al sitio. Después, los temas más pedidos, cuánto se usa y las últimas consultas.",
-      admin:
-        "Lo que la gente le pregunta al asistente del sitio. Primero aparece lo que no pudo contestar: si es un dato que el sitio debería tener, se carga en Contenido y el asistente lo empieza a usar.",
-    },
   },
 
   // --- Etapa del proceso (/admin/ediciones) ---------------------------------------
@@ -216,18 +186,7 @@ export const PASOS: PasoRecorrido[] = [
     },
   },
 
-  // --- Contenido y Equipo: solo administradores --------------------------------------
-  {
-    id: "contenido",
-    seccion: "Proceso · Contenido",
-    ruta: "/admin/contenido",
-    anclas: ["contenido-secciones"],
-    titulo: "El contenido del sitio",
-    texto: {
-      admin:
-        "Los textos del sitio, el reglamento, las preguntas frecuentes, las novedades y el aviso urgente. Cada cambio se ve en el sitio al instante, el asistente responde con lo mismo que dicen las páginas, y queda registrado con tu nombre.",
-    },
-  },
+  // --- Equipo: solo administradores --------------------------------------
   {
     id: "equipo-alta",
     seccion: "Equipo",

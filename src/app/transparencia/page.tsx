@@ -35,13 +35,9 @@ import { ETIQUETA_ETAPA, distritosConVerbo, formatearNumero } from "@/lib/format
  * `avances`) y la ficha de cada proyecto ya sabe dibujarlos.
  *
  * El titulo y el subtitulo estan ACA y no en la tabla `textos`. Salian de la
- * base, pero la pantalla que los editaba (/admin/contenido) se borro en 98d0f8d:
- * en la base quedaban inmutables en la practica, y encima decian "cuánto se
- * ejecutó de su presupuesto". En el codigo quedan versionados y se revisan en un
- * diff. La pantalla volvio en la Fase 2 y los muestra entre los textos que
- * ninguna pagina lee: para que se editen desde ahi, esta pagina tiene que volver
- * a leer las claves transparencia-* de la tabla y pasarlas de "sin-uso" a un
- * grupo en src/app/admin/contenido/catalogo.ts (la prueba del catalogo lo pide).
+ * base, pero el panel no tiene pantalla que los edite: en la base quedaban
+ * inmutables en la practica, y encima decian "cuánto se ejecutó de su
+ * presupuesto". En el codigo quedan versionados y se revisan en un diff.
  */
 const DESCRIPCION =
   "Qué proyecto ganó en cada distrito del Presupuesto Participativo de San Miguel de Tucumán y con cuántos votos.";

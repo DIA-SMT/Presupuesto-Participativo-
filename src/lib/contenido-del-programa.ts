@@ -9,7 +9,7 @@
  * src/lib/chat-contexto.ts). Si una regla cambia, cambia para los dos.
  *
  * Lo editable (el reglamento oficial, las preguntas frecuentes, los textos de
- * cada pagina) NO va aca: vive en la base y se carga desde /admin/contenido.
+ * cada pagina) NO va aca: vive en la base (tablas `textos`, `faq`, `novedades`).
  */
 import { normalizar } from "./texto";
 

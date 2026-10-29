@@ -1,14 +1,11 @@
 /**
- * El alta de una idea, compartida por las dos puertas que la crean:
- *
- *  - el formulario publico (POST /api/ideas), que carga el vecino;
- *  - la carga del equipo desde el panel (/admin/ideas/nueva), para lo que llega
- *    de una asamblea, por mail o en papel a la oficina.
+ * El alta de una idea. La usa el formulario publico (POST /api/ideas), que
+ * carga el vecino con CIDITUC, y el modo prueba: desde 2026 el panel no carga
+ * ideas.
  *
  * Lo que cada puerta valida por su lado (el origen del pedido, los topes, el
- * esquema, quien puede cargar en que etapa) queda en su puerta. Aca vive lo que
- * tiene que ser identico en las dos, porque si divergen el sitio tiene dos
- * clases de ideas: como se deriva el distrito del punto, como se normalizan el
+ * esquema, en que etapa se puede) queda en su puerta. Aca vive lo que tiene que
+ * ser identico en todas, porque si divergen el sitio tiene dos clases de ideas: como se deriva el distrito del punto, como se normalizan el
  * titulo, el barrio y los textos, y como se asignan el numero y el slug.
  *
  * El numero y el slug se calculan ADENTRO de una transaccion que bloquea la
@@ -34,7 +31,7 @@
  */
 import { and, eq, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { categorias, ediciones, ideas, votantes } from "@/db/schema";
+import { categorias, ediciones, ideas } from "@/db/schema";
 import type { CanalCarga, EtapaEdicion } from "@/db/queries";
 import { distritoDePunto } from "@/lib/geo-servidor";
 import {
@@ -66,11 +63,6 @@ export type DatosIdeaNueva = {
   organizacion?: string | null;
   /** Telefono de contacto opcional, solo para el equipo. */
   autorTelefono?: string | null;
-  /**
-   * DNI ya hasheado (`hashearDni`) de una idea en papel. El alta busca con el
-   * la fila del padron y, si existe, completa `votanteId`.
-   */
-  autorDniHash?: string | null;
   lat: number;
   lon: number;
   /** true cuando quien carga no sabe el lugar exacto (un papel sin direccion). */
@@ -136,9 +128,8 @@ export type OpcionesAlta = {
   /**
    * Si la etapa deja crear la idea. Se llama ADENTRO de la transaccion, con la
    * etapa releida de la base y la fila de la edicion bloqueada: devuelve el
-   * motivo del rechazo (que se muestra tal cual) o null si deja. Cada puerta
-   * tiene su regla: el formulario publico, la de la etapa "ideas"; el panel,
-   * `puedeCargarIdea` de src/lib/etapas.ts.
+   * motivo del rechazo (que se muestra tal cual) o null si deja. El formulario
+   * publico deja solo en la etapa "ideas".
    */
   etapaPermitida: (edicion: { etapa: EtapaEdicion }) => string | null;
   /**
@@ -194,18 +185,7 @@ export async function crearIdea(
   const organizacion = (datos.organizacion ?? "").replace(/\s+/g, " ").trim() || null;
   const autorTelefono = (datos.autorTelefono ?? "").replace(/\s+/g, " ").trim() || null;
 
-  // Una idea en papel trae el DNI: si esa persona ya esta en el padron, la idea
-  // queda atada a su fila como si la hubiera presentado con CIDITUC. Si todavia
-  // no esta, queda el hash, y `empadronar` la ata cuando entre por primera vez.
-  let votanteId = datos.votanteId ?? null;
-  if (!votanteId && datos.autorDniHash) {
-    const [delPadron] = await db
-      .select({ id: votantes.id })
-      .from(votantes)
-      .where(eq(votantes.dniHash, datos.autorDniHash))
-      .limit(1);
-    votanteId = delPadron?.id ?? null;
-  }
+  const votanteId = datos.votanteId ?? null;
 
   return db.transaction(async (tx): Promise<IdeaCreada | RechazoAlta> => {
     const [edicion] = await tx
@@ -260,7 +240,6 @@ export async function crearIdea(
         canalDetalle: datos.canalDetalle || null,
         autorNombre: datos.autorNombre || null,
         votanteId,
-        autorDniHash: datos.autorDniHash ?? null,
         autorTelefono,
         // El contacto entra SOLO con consentimiento, y queda registrada la
         // version del texto que la persona acepto.

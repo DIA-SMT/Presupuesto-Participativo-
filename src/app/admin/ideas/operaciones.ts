@@ -1,7 +1,7 @@
 /**
  * Lo que el equipo le hace a una idea desde el panel, mas alla de evaluarla:
- * cargarla (lo que llego de una asamblea, por mail o en papel), corregirla,
- * descartarla (prueba, spam, carga repetida) y deshacer ese descarte.
+ * corregirla, descartarla (prueba, spam, carga repetida) y deshacer ese
+ * descarte. Las ideas entran solo por el formulario publico, con CIDITUC.
  *
  * Por que un archivo aparte de las acciones: las server actions
  * (./acciones.ts, "use server") leen la cookie de sesion y no se pueden invocar
@@ -15,7 +15,7 @@
  * navegador pueda llamar. Toda escritura pasa antes por `exigirAdmin` en la
  * accion correspondiente.
  *
- * Reglas que valen para las cuatro operaciones, como en el resto del panel
+ * Reglas que valen para las tres operaciones, como en el resto del panel
  * (ver src/app/admin/comun.ts):
  *  - la fila de `revisiones` va en la MISMA transaccion que el cambio;
  *  - lo que la etapa y el estado dejan hacer lo decide src/lib/etapas.ts, con
@@ -26,19 +26,13 @@ import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { categorias, distritos, ideas, revisiones, votos } from "@/db/schema";
-import { getEdicionActiva } from "@/db/queries";
-import { crearIdea } from "@/lib/alta-idea";
-import { codigoSeguimiento } from "@/lib/avisos";
 import {
   puedeCambiarDeDistrito,
   puedeCambiarIdea,
-  puedeCargarIdea,
   puedeDescartarse,
 } from "@/lib/etapas";
-import { formatearFechaCorta, hoyEnTucuman } from "@/lib/formato";
 import { distritoDePunto } from "@/lib/geo-servidor";
-import { hashearDni } from "@/lib/empadronamiento";
-import { contenidoIdea, LARGOS, MINIMOS, telefono } from "@/lib/idea-esquema";
+import { LARGOS, MINIMOS } from "@/lib/idea-esquema";
 import { normalizar, normalizarParrafo } from "@/lib/texto";
 import {
   filaRevision,
@@ -52,21 +46,6 @@ import {
 // ---------------------------------------------------------------------------
 // Lo comun
 // ---------------------------------------------------------------------------
-
-/**
- * Tope de altas por cuenta y por hora. El formulario publico tiene 5 por IP,
- * que aplicado al equipo frenaba la carga de una asamblea a la quinta idea. Una
- * tanda real es de unas 100 (89 ideas entraron por asamblea en 2025): 300 deja
- * cargar tres asambleas seguidas y todavia frena a un script que se desboque
- * con una sesion robada.
- */
-export const TOPE_ALTAS_POR_HORA = 300;
-
-/** Largo maximo de "de donde vino" (`ideas.canal_detalle`). */
-export const LARGO_CANAL_DETALLE = 200;
-
-/** Los canales que carga el equipo. "web" es solo del formulario publico. */
-export const CANALES_DEL_PANEL = ["asamblea", "municipio"] as const;
 
 /** Largo minimo del motivo de un descarte o de deshacerlo, como despublicar. */
 export const MINIMO_MOTIVO = 10;
@@ -104,13 +83,6 @@ function casilla(valor: unknown): boolean {
  * cuanto le falta. Un mensaje por campo, en el orden del formulario.
  */
 const MENSAJE_DEL_CAMPO: Record<string, string> = {
-  canal: "Elegí por dónde llegó la idea: una asamblea o el municipio.",
-  canalDetalle: `Contá de dónde vino, por ejemplo “Asamblea del distrito 7, 12/10/2026” o “Mesa de entradas”: entre 3 y ${LARGO_CANAL_DETALLE} caracteres.`,
-  fecha: "Revisá la fecha en que se presentó.",
-  autorNombre: `El nombre de quien la presentó no puede pasar de ${LARGOS.autorNombre} caracteres.`,
-  dni: "El DNI tiene que tener 7 u 8 números (los puntos no hacen falta).",
-  autorTelefono: "Revisá el teléfono: entre 6 y 15 números, con espacios o guiones si querés.",
-  organizacion: `El nombre de la organización no puede pasar de ${LARGOS.organizacion} caracteres.`,
   referenciasUbicacion: `“¿Dónde ocurre?” no puede pasar de ${LARGOS.referenciasUbicacion} caracteres.`,
   titulo: `El título tiene que tener entre ${MINIMOS.titulo} y ${LARGOS.titulo} caracteres.`,
   categoria: "Elegí una categoría.",
@@ -139,212 +111,6 @@ export function errorDeEscritura(causa: unknown, generico: string): string {
     return "Falta aplicar la migración 0012 en esta base (npm run db:migrate). Sin ella el cambio no queda en el historial, así que no se guarda.";
   }
   return generico;
-}
-
-// ---------------------------------------------------------------------------
-// Alta desde el panel
-// ---------------------------------------------------------------------------
-
-/**
- * Lo mismo que pide el formulario publico (el contenido, con sus minimos y sus
- * largos, de src/lib/idea-esquema.ts) mas lo que solo sabe el equipo: por donde
- * llego, de donde exactamente, cuando se presento y quien la presento.
- *
- * Desde el formulario 2026 la pantalla copia el papel campo por campo: nombre,
- * DNI y telefono de la persona de contacto, la organizacion, y las cinco
- * preguntas. Del papel NO entran el domicilio de la persona ni el de la
- * organizacion, ni los dos referentes: quedan en el papel archivado (se decidio
- * guardar lo minimo). El DNI no se guarda: se hashea para atar la idea al
- * padron. La categoria tampoco se pide: la asigna quien evalua.
- *
- * El correo NO esta, ni opcional: los avisos por mail estan apagados
- * (src/lib/aviso-por-mail.ts) y un dato personal sin una finalidad que se
- * cumpla no se junta. Si el formulario lo mandara igual, zod lo descarta: los
- * campos que no estan en el esquema no pasan.
- */
-const esquemaAlta = contenidoIdea.extend({
-  canal: z.enum(CANALES_DEL_PANEL),
-  canalDetalle: z.string().trim().min(3).max(LARGO_CANAL_DETALLE),
-  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  autorNombre: z.string().trim().max(LARGOS.autorNombre).optional(),
-  dni: z
-    .string()
-    .trim()
-    .transform((valor) => valor.replace(/[.\s-]/g, ""))
-    .pipe(z.literal("").or(z.string().regex(/^\d{7,8}$/)))
-    .optional(),
-  autorTelefono: z.literal("").or(telefono).optional(),
-  organizacion: z.string().trim().max(LARGOS.organizacion).optional(),
-});
-
-/** Lo que la pantalla muestra al terminar: el comprobante y el codigo. */
-export type IdeaCargada = {
-  id: number;
-  numero: number;
-  /** Codigo de seguimiento (src/lib/avisos.ts). Se muestra una sola vez. */
-  codigo: string;
-  distrito: number;
-  anio: number;
-  titulo: string;
-  categoria: string | null;
-  barrio: string | null;
-  referenciasUbicacion: string | null;
-  organizacion: string | null;
-  problema: string | null;
-  solucion: string | null;
-  beneficios: string | null;
-  lat: number;
-  lon: number;
-  fecha: string;
-};
-
-export type ResultadoAlta = { ok: true; idea: IdeaCargada } | { ok: false; error: string };
-
-/** Por que una fecha de presentacion no sirve, o null si sirve. */
-function problemaDeFecha(fecha: string, hoy: string, anio: number): string | null {
-  const [a, m, d] = fecha.split("-").map(Number);
-  const leida = new Date(Date.UTC(a, m - 1, d));
-  if (
-    leida.getUTCFullYear() !== a ||
-    leida.getUTCMonth() !== m - 1 ||
-    leida.getUTCDate() !== d
-  ) {
-    return "La fecha en que se presentó no existe: revisá el día y el mes.";
-  }
-  if (fecha > hoy) {
-    return "La fecha en que se presentó no puede ser posterior a hoy.";
-  }
-  // Un papel de la asamblea de fin del año anterior puede ser para esta
-  // edicion; uno de dos años atras, no.
-  if (fecha < `${anio - 1}-01-01`) {
-    return `La fecha en que se presentó es anterior a ${anio - 1}: no puede ser una idea para la edición ${anio}.`;
-  }
-  return null;
-}
-
-const NOMBRE_CANAL: Record<(typeof CANALES_DEL_PANEL)[number], string> = {
-  asamblea: "una asamblea",
-  municipio: "el municipio",
-};
-
-/**
- * Carga una idea en la edicion activa, a nombre de quien la carga.
- *
- * Sale igual que una del formulario publico (misma creacion, src/lib/
- * alta-idea.ts): `pendiente`, sin publicar, con numero correlativo y codigo de
- * seguimiento. Lo distinto: el canal y de donde vino, la fecha que dice el
- * papel, `cargado_por` y la fila "alta" en `revisiones`, que es lo que deja
- * constancia de que la cargo el equipo y no un vecino.
- *
- * La fila NO lleva el nombre del autor: `revisiones` no se borra nunca y
- * `npm run purgar-contactos` borra el nombre de la idea al cerrar la edicion.
- * Copiado aca, sobreviviria a la purga.
- */
-export async function registrarAlta(
-  crudo: Record<string, unknown>,
-  sesion: Autorizacion,
-  hoy: string = hoyEnTucuman(),
-): Promise<ResultadoAlta> {
-  const leido = esquemaAlta.safeParse(crudo);
-  if (!leido.success) return { ok: false, error: explicar(leido.error) };
-  const datos = leido.data;
-
-  const punto = leerPunto(crudo);
-  if (!punto) return { ok: false, error: "Marcá en el mapa dónde sería la obra." };
-
-  const edicion = await getEdicionActiva();
-  if (!edicion) {
-    return { ok: false, error: "No hay una edición activa. Activá una antes de cargar ideas." };
-  }
-
-  const fechaMal = problemaDeFecha(datos.fecha, hoy, edicion.anio);
-  if (fechaMal) return { ok: false, error: fechaMal };
-
-  // Se pregunta aca para no calcular nada si la etapa ya lo impide, y se vuelve
-  // a preguntar adentro de la transaccion, con la etapa releida y bloqueada.
-  const porEtapa = puedeCargarIdea(edicion.etapa);
-  if (!porEtapa.permitido) return { ok: false, error: porEtapa.motivo };
-
-  const aproximada = casilla(crudo.aproximada);
-  const creada = await crearIdea(
-    {
-      edicionId: edicion.id,
-      titulo: datos.titulo,
-      barrio: datos.barrio,
-      referenciasUbicacion: datos.referenciasUbicacion,
-      problema: datos.problema,
-      solucion: datos.solucion,
-      beneficios: datos.beneficios,
-      // Solo si el papel dice que la presenta una organizacion.
-      organizacion: casilla(crudo.conOrganizacion) ? datos.organizacion : null,
-      autorTelefono: datos.autorTelefono || null,
-      autorDniHash: datos.dni ? hashearDni(datos.dni) : null,
-      lat: punto.lat,
-      lon: punto.lon,
-      ubicacionAproximada: aproximada,
-      canal: datos.canal,
-      canalDetalle: limpiarLinea(datos.canalDetalle),
-      autorNombre: limpiarLinea(datos.autorNombre) || null,
-      contacto: null,
-      cargadoPor: sesion.nombre,
-      fecha: datos.fecha,
-    },
-    {
-      etapaPermitida: ({ etapa }) => {
-        const veredicto = puedeCargarIdea(etapa);
-        return veredicto.permitido ? null : veredicto.motivo;
-      },
-      enLaMismaTransaccion: async (tx, idea) => {
-        await tx.insert(revisiones).values(
-          filaRevision({
-            ideaId: idea.id,
-            sesion,
-            accion: "alta",
-            estadoNuevo: "pendiente",
-            nota:
-              `Cargada desde el panel. Llegó por ${NOMBRE_CANAL[datos.canal]}: ` +
-              `${limpiarLinea(datos.canalDetalle)}. Presentada el ${formatearFechaCorta(datos.fecha)}.` +
-              (aproximada ? " El punto marcado es aproximado." : ""),
-          }),
-        );
-      },
-    },
-  );
-
-  if (!creada.ok) {
-    return {
-      ok: false,
-      error:
-        creada.motivo === "edicion"
-          ? "La edición activa cambió mientras cargabas la idea. Volvé a abrir la pantalla."
-          : creada.mensaje,
-    };
-  }
-
-  // De aca en adelante la idea YA esta guardada: nada de lo que sigue va a la
-  // base. Un error aca lo mostraria la accion como "no se pudo guardar", y el
-  // reintento la cargaria dos veces sin que nadie vea el primer codigo.
-  return {
-    ok: true,
-    idea: {
-      id: creada.id,
-      numero: creada.numero,
-      codigo: codigoSeguimiento(creada.id),
-      distrito: creada.distrito,
-      anio: edicion.anio,
-      titulo: creada.titulo,
-      categoria: creada.categoria,
-      barrio: creada.barrio,
-      referenciasUbicacion: creada.referenciasUbicacion,
-      organizacion: creada.organizacion,
-      problema: creada.problema,
-      solucion: creada.solucion,
-      beneficios: creada.beneficios,
-      lat: punto.lat,
-      lon: punto.lon,
-      fecha: datos.fecha,
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------

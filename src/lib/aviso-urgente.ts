@@ -1,6 +1,5 @@
 /**
- * El aviso urgente del sitio: un texto que el equipo carga desde el panel
- * (/admin/contenido, solapa "Aviso urgente") y que aparece arriba de todas las
+ * El aviso urgente del sitio: un texto de la tabla `textos` que aparece arriba de todas las
  * paginas publicas mientras no este vacio. Es para lo que no puede esperar a
  * que alguien lea una novedad: "la votacion se extiende hasta el viernes por la
  * caida de CIDITUC", "el sitio va a estar en mantenimiento el sabado".
@@ -43,8 +42,7 @@ export type TrozoAviso =
  *
  * Todo lo demas queda como texto, incluido el formato [texto](url) de
  * markdown: con ese formato el vecino no ve a donde lo manda el enlace, y la
- * banda sale en TODAS las paginas del sitio. El panel avisa si alguien lo
- * intenta (ver `avisosDeFormato` en src/app/admin/contenido/catalogo.ts).
+ * banda sale en TODAS las paginas del sitio.
  *
  * Se recorre palabra por palabra y no con una expresion regular con
  * lookbehind a proposito: el lookbehind no existe en Safari anterior a 16.4 y

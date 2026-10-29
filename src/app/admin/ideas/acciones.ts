@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Server actions de las ideas que el equipo carga, corrige y descarta desde el
+ * Server actions de las ideas que el equipo corrige y descarta desde el
  * panel.
  *
  * Cada una hace lo mismo y en el mismo orden: `exigirAdmin("moderador")` (el
@@ -14,7 +14,6 @@
  * mostrar algo, y el detalle queda en el log del servidor.
  */
 import { revalidatePath } from "next/cache";
-import { consumir } from "@/lib/rate-limit";
 import { resumenDeError } from "@/lib/errores-base";
 import { exigirAdmin, sinPermiso, type Resultado } from "../comun";
 import {
@@ -22,9 +21,6 @@ import {
   aplicarDescarte,
   aplicarRestauracion,
   errorDeEscritura,
-  registrarAlta,
-  TOPE_ALTAS_POR_HORA,
-  type ResultadoAlta,
 } from "./operaciones";
 
 /** El FormData como objeto de textos. Los archivos no se esperan en ningun campo. */
@@ -34,50 +30,6 @@ function comoObjeto(formulario: FormData): Record<string, string> {
     if (typeof valor === "string" && !(clave in campos)) campos[clave] = valor;
   }
   return campos;
-}
-
-/** El rechazo por permisos, con la forma del resultado del alta. */
-function sinPermisoParaCargar(): ResultadoAlta {
-  const rechazo = sinPermiso("moderador");
-  return { ok: false, error: rechazo.ok ? "Tu sesión no tiene permisos." : rechazo.error };
-}
-
-/**
- * Carga una idea que llego por fuera del formulario del sitio: una asamblea,
- * mesa de entradas, un mail. Devuelve el numero y el codigo de seguimiento
- * para el comprobante del vecino.
- */
-export async function cargarIdea(
-  _previo: ResultadoAlta | null,
-  formulario: FormData,
-): Promise<ResultadoAlta> {
-  const sesion = await exigirAdmin("moderador");
-  if (!sesion) return sinPermisoParaCargar();
-
-  // Tope por cuenta y no por IP: el equipo carga desde la misma red de la
-  // oficina, y el de IP del formulario publico (5 por hora) lo frenaba en la
-  // quinta idea de una asamblea.
-  const limite = await consumir(`alta-panel:${sesion.adminId}`, TOPE_ALTAS_POR_HORA, 3600);
-  if (!limite.permitido) {
-    const minutos = Math.max(1, Math.ceil(limite.reiniciaEn / 60));
-    return {
-      ok: false,
-      error: `Ya cargaste ${TOPE_ALTAS_POR_HORA} ideas en la última hora. Probá de nuevo en ${minutos} ${minutos === 1 ? "minuto" : "minutos"}.`,
-    };
-  }
-
-  try {
-    const resultado = await registrarAlta(comoObjeto(formulario), sesion);
-    // Entra sin publicar: el sitio publico no cambia, pero la bandeja si.
-    if (resultado.ok) revalidatePath("/admin");
-    return resultado;
-  } catch (causa) {
-    console.error("[admin] cargarIdea fallo", resumenDeError(causa));
-    return {
-      ok: false,
-      error: errorDeEscritura(causa, "No se pudo guardar la idea. Probá de nuevo en un momento."),
-    };
-  }
 }
 
 /** Corrige titulo, textos, categoria, barrio, punto o integracion de una idea. */

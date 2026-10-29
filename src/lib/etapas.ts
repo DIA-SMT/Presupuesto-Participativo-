@@ -450,41 +450,6 @@ export function puedeDescartarse(idea: {
   return PERMITIDO;
 }
 
-// ---------------------------------------------------------------------------
-// Ideas que carga el equipo desde el panel
-// ---------------------------------------------------------------------------
-
-/**
- * Si el equipo puede cargar una idea (de una asamblea, de mesa de entradas, de
- * un mail) en una edicion que esta en `etapa`.
- *
- *  - En "ideas", si: es la etapa de presentacion.
- *  - En "evaluacion", tambien: una asamblea puede hacerse despues de que cierre
- *    el formulario del sitio, y lo que llega por papel o mail tarda en pasar a
- *    la carga. Esas ideas todavia se pueden evaluar y, si son factibles, entrar
- *    a la votacion junto con las demas: nadie voto todavia.
- *  - Desde "votacion", no. La boleta queda fija cuando empieza la votacion (ver
- *    `puedeCambiarIdea`): una idea cargada en plena votacion no podria
- *    publicarse como factible, asi que quedaria en la bandeja como una
- *    propuesta sin ningun proceso por delante. En "seguimiento" y "cerrada" la
- *    edicion ya voto. Lo que llega tarde se carga en la edicion siguiente.
- *
- * Es mas amplio que el formulario publico, que se cierra al terminar la etapa
- * "ideas" (lo dice el reglamento para la presentacion del vecino): la carga del
- * equipo es el camino de lo que se presento por otra via dentro de los plazos.
- */
-export function puedeCargarIdea(etapa: Etapa): Veredicto {
-  if (etapa === "ideas" || etapa === "evaluacion") return PERMITIDO;
-  if (etapa === "votacion") {
-    return rechazo(
-      "La votación de esta edición está abierta: la boleta quedó fija cuando empezó, así que una idea nueva ya no puede entrar a competir. Lo que llegó tarde se carga en la edición siguiente.",
-    );
-  }
-  return rechazo(
-    `Esta edición ya votó (está en ${nombre(etapa)}): una idea nueva no tiene evaluación ni votación en la que entrar. Se carga en la edición siguiente, cuando esté activa (se activa desde “Etapa del proceso”).`,
-  );
-}
-
 /**
  * Si la persona puede declarar (o cambiar) el distrito donde vive. Solo con la
  * votacion abierta, que es cuando existe su sesion de votante y cuando el

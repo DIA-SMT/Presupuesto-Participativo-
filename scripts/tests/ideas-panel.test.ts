@@ -1,5 +1,5 @@
 /**
- * Las ideas que el equipo carga, corrige y descarta desde el panel
+ * Las ideas que el equipo corrige y descarta desde el panel
  * (src/app/admin/ideas/operaciones.ts), probadas contra una base de verdad.
  *
  * Las server actions (acciones.ts) no se pueden invocar sin contexto de pedido
@@ -8,20 +8,13 @@
  * probar lo que el panel hace.
  *
  * Lo que se fija aca:
- *  - la carga sale igual que una del formulario (pendiente, sin publicar,
- *    numero correlativo, codigo de seguimiento) y deja su fila "alta";
- *  - dos cargas a la vez no repiten el numero (el bug del max()+1 suelto);
- *  - la politica de etapas vale adentro de la transaccion;
  *  - una correccion no cambia el slug, deja el antes y el despues, y no muda de
  *    distrito una idea con votos;
  *  - una descartada no cuenta en ningun numero, ni publico ni del panel, aunque
  *    alguien la publicara a mano.
  *
- * Lo que no se prueba: la espera entre dos transacciones a la vez. PGlite
- * atiende de a una, asi que las cargas "simultaneas" de abajo se serializan
- * solas. Lo que si muestran es que el numero y el slug se calculan adentro de
- * la transaccion que inserta: con el calculo afuera, como era antes, la segunda
- * carga leia el mismo max() que la primera.
+ * Las ideas se crean por la puerta del formulario publico: el panel ya no
+ * carga ideas.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -39,7 +32,6 @@ let operaciones: typeof import("../../src/app/admin/ideas/operaciones");
 let consultas: typeof import("../../src/db/queries");
 let alta: typeof import("../../src/lib/alta-idea");
 let comun: typeof import("../../src/app/admin/comun");
-let avisos: typeof import("../../src/lib/avisos");
 // El tipo de verdad, no uno copiado: cuando Autorizacion cambia (la Fase 2 le
 // sumo `version`), el compilador lo marca aca en vez de fallar al integrar.
 let sesion: import("../../src/app/admin/comun").Autorizacion;
@@ -99,30 +91,12 @@ test.before(async () => {
   consultas = await import("../../src/db/queries");
   alta = await import("../../src/lib/alta-idea");
   comun = await import("../../src/app/admin/comun");
-  avisos = await import("../../src/lib/avisos");
 });
 
 test.after(async () => {
   await base.cerrar();
 });
 
-/** Lo que manda el formulario del panel, con todo en regla. */
-function formulario(cambios: Record<string, string> = {}): Record<string, string> {
-  return {
-    canal: "asamblea",
-    canalDetalle: "Asamblea del distrito 1, 12/09/2026",
-    fecha: "2026-09-12",
-    autorNombre: "Juana Pérez",
-    titulo: "Iluminación de la plaza del barrio",
-    barrio: "Villa Luján",
-    referenciasUbicacion: "Frente a la escuela, en la esquina de la canchita.",
-    solucion: "Poner luminarias LED en todo el perímetro de la plaza y en los senderos.",
-    problema: "La plaza queda a oscuras de noche y los vecinos dejaron de usarla.",
-    beneficios: "",
-    ...PUNTO.d1,
-    ...cambios,
-  };
-}
 
 async function etapa(nueva: "ideas" | "evaluacion" | "votacion" | "seguimiento" | "cerrada") {
   const { eq } = await import("drizzle-orm");
@@ -150,23 +124,30 @@ async function historialDe(id: number) {
     .orderBy(asc(base.schema.revisiones.id));
 }
 
-async function cuantasIdeas(): Promise<number> {
-  const [fila] = await base.consultar<{ total: number }>(
-    base.sql`SELECT count(*)::int AS total FROM ideas`,
+/**
+ * Crea una idea por la misma puerta que el formulario publico (crearIdea de
+ * src/lib/alta-idea.ts), sin mirar la etapa, y la devuelve o falla la prueba.
+ */
+async function cargar(cambios: { titulo?: string; categoria?: string } = {}) {
+  const resultado = await alta.crearIdea(
+    {
+      edicionId,
+      titulo: cambios.titulo ?? "Iluminación de la plaza del barrio",
+      categoria: cambios.categoria ?? null,
+      barrio: "Villa Luján",
+      referenciasUbicacion: "Frente a la escuela, en la esquina de la canchita.",
+      solucion: "Poner luminarias LED en todo el perímetro de la plaza y en los senderos.",
+      problema: "La plaza queda a oscuras de noche y los vecinos dejaron de usarla.",
+      lat: Number(PUNTO.d1.lat),
+      lon: Number(PUNTO.d1.lon),
+      canal: "web",
+      fecha: HOY,
+    },
+    { etapaPermitida: () => null },
   );
-  return Number(fila.total);
+  assert.ok(resultado.ok, resultado.ok ? "" : resultado.mensaje);
+  return resultado;
 }
-
-/** Carga con el formulario y devuelve la idea, o falla la prueba. */
-async function cargar(cambios: Record<string, string> = {}) {
-  const resultado = await operaciones.registrarAlta(formulario(cambios), sesion, HOY);
-  assert.ok(resultado.ok, resultado.ok ? "" : resultado.error);
-  return resultado.idea;
-}
-
-// ---------------------------------------------------------------------------
-// Carga
-// ---------------------------------------------------------------------------
 
 test("el dia de hoy es el de Tucuman, no el de UTC", () => {
   // 23:30 del 25 en Tucuman son las 02:30 del 26 en UTC: toISOString() daba
@@ -174,208 +155,6 @@ test("el dia de hoy es el de Tucuman, no el de UTC", () => {
   // panel y el formulario publico, que hasta la Fase 2 guardaba la de UTC.
   assert.equal(hoyEnTucuman(new Date("2026-09-26T02:30:00Z")), "2026-09-25");
   assert.equal(hoyEnTucuman(new Date("2026-09-26T03:30:00Z")), "2026-09-26");
-});
-
-test("el panel carga una idea igual que el formulario, con su canal, su fecha y su fila de alta", async () => {
-  const idea = await cargar();
-
-  assert.equal(idea.distrito, 1, "el distrito sale del punto, no lo elige nadie");
-  assert.ok(avisos.codigoValido(idea.id, idea.codigo), "el codigo es el de seguimiento de esa idea");
-  assert.equal(idea.anio, 2026);
-  assert.equal(idea.categoria, null, "entra sin categoria: la asigna quien evalua");
-  assert.equal(idea.referenciasUbicacion, "Frente a la escuela, en la esquina de la canchita.");
-  assert.equal(idea.organizacion, null, "sin marcar la organizacion, no hay organizacion");
-
-  const fila = await filaDe(idea.id);
-  assert.equal(fila.estado, "pendiente");
-  assert.equal(fila.publicada, false, "entra sin publicar, como las del formulario");
-  assert.equal(fila.canal, "asamblea");
-  assert.equal(fila.canalDetalle, "Asamblea del distrito 1, 12/09/2026");
-  assert.equal(fila.fecha, "2026-09-12", "la fecha es la del papel, no la de la carga");
-  assert.equal(fila.cargadoPor, "Equipo de prueba");
-  assert.equal(fila.autorNombre, "Juana Pérez");
-  assert.equal(fila.autorEmail, null, "el panel no pide ni guarda correo");
-  assert.equal(fila.autorAvisos, false);
-  assert.equal(fila.ubicacionAproximada, false);
-  assert.equal(fila.beneficios, null, "un campo opcional vacio queda en nulo");
-
-  const historial = await historialDe(idea.id);
-  assert.equal(historial.length, 1);
-  assert.equal(historial[0].accion, "alta");
-  assert.equal(historial[0].estadoNuevo, "pendiente");
-  assert.equal(historial[0].adminId, sesion.adminId);
-  assert.match(historial[0].nota ?? "", /Llegó por una asamblea: Asamblea del distrito 1/);
-  assert.match(historial[0].nota ?? "", /Presentada el 12\/09\/2026/);
-  // El historial no se borra nunca y la purga de contactos si borra el nombre:
-  // copiarlo aca lo haria sobrevivir a la purga.
-  assert.ok(!(historial[0].nota ?? "").includes("Juana"), "el nombre del autor no va al historial");
-});
-
-test("un correo que llegue igual en el formulario del panel no se guarda", async () => {
-  const idea = await cargar({
-    autorEmail: "vecina@example.com",
-    autorAvisos: "1",
-    titulo: "Veredas nuevas frente a la escuela",
-  });
-  const fila = await filaDe(idea.id);
-  assert.equal(fila.autorEmail, null);
-  assert.equal(fila.autorAvisos, false);
-});
-
-test("el punto aproximado queda marcado, y el titulo se normaliza como en el formulario", async () => {
-  const idea = await cargar({
-    aproximada: "1",
-    titulo: "PLAYON DEPORTIVO DEL BARRIO",
-    barrio: "b° villa luján",
-  });
-  const fila = await filaDe(idea.id);
-  assert.equal(fila.ubicacionAproximada, true);
-  assert.equal(fila.titulo, "Playón Deportivo del Barrio");
-  assert.equal(idea.titulo, fila.titulo, "el comprobante muestra lo que quedo guardado");
-  assert.equal(fila.barrio, "Villa luján", "sin el prefijo, como normaliza el formulario");
-  const historial = await historialDe(idea.id);
-  assert.match(historial[0].nota ?? "", /El punto marcado es aproximado/);
-});
-
-test("cargas simultaneas del panel y del formulario no repiten el numero ni el slug", async () => {
-  const antes = await cuantasIdeas();
-  const titulo = "Arbolado de la avenida principal";
-
-  // Cinco del panel y dos del formulario publico, todas a la vez y con el
-  // mismo titulo: el numero y el slug salen de la misma transaccion.
-  const resultados = await Promise.all([
-    ...Array.from({ length: 5 }, () =>
-      operaciones.registrarAlta(formulario({ titulo }), sesion, HOY),
-    ),
-    ...Array.from({ length: 2 }, () =>
-      alta.crearIdea(
-        {
-          edicionId,
-          titulo,
-          categoria: "urbana",
-          problema: "Faltan árboles y en verano no se puede caminar por la avenida.",
-          solucion: "Plantar especies nativas a lo largo de toda la avenida principal.",
-          lat: Number(PUNTO.d2.lat),
-          lon: Number(PUNTO.d2.lon),
-          canal: "web",
-          fecha: HOY,
-        },
-        { etapaPermitida: () => null },
-      ),
-    ),
-  ]);
-
-  const numeros: number[] = [];
-  for (const resultado of resultados) {
-    if (!resultado.ok) assert.fail("error" in resultado ? resultado.error : resultado.mensaje);
-    numeros.push("idea" in resultado ? resultado.idea.numero : resultado.numero);
-  }
-  assert.equal(new Set(numeros).size, 7, `numeros repetidos: ${numeros.join(", ")}`);
-  assert.equal(await cuantasIdeas(), antes + 7);
-
-  const slugs = await base.consultar<{ slug: string }>(base.sql`
-    SELECT slug FROM ideas WHERE titulo = ${titulo} ORDER BY id
-  `);
-  assert.equal(new Set(slugs.map((f) => f.slug)).size, 7, "los siete slugs son distintos");
-  assert.equal(slugs[0].slug, "arbolado-de-la-avenida-principal");
-  assert.equal(slugs[1].slug, "arbolado-de-la-avenida-principal-2");
-});
-
-test("el numero sigue al mas alto de la edicion, aunque haya huecos", async () => {
-  await crearIdea(base, {
-    edicionId,
-    distrito: 1,
-    titulo: "Una idea con un numero alto",
-    slug: "una-idea-con-un-numero-alto",
-    numero: 500,
-    estado: "pendiente",
-  });
-  const idea = await cargar({ titulo: "La que viene despues del quinientos" });
-  assert.equal(idea.numero, 501);
-});
-
-test("el slug no choca aunque la cuenta de siempre diera uno ya tomado", async () => {
-  // "Plaza del sol 2" es un titulo propio: su slug es plaza-del-sol-2. La
-  // cuenta vieja, para una "Plaza del sol" nueva, contaba ese slug como un
-  // "plaza-del-sol-N" y proponia plaza-del-sol-2 otra vez: el indice unico lo
-  // rechazaba y el vecino veia "no se pudo guardar la idea".
-  await crearIdea(base, {
-    edicionId,
-    distrito: 1,
-    titulo: "Plaza del sol 2",
-    slug: "plaza-del-sol-2",
-    estado: "pendiente",
-  });
-  const primera = await cargar({ titulo: "Plaza del sol" });
-  const [fila] = await base.consultar<{ slug: string }>(
-    base.sql`SELECT slug FROM ideas WHERE id = ${primera.id}`,
-  );
-  assert.equal(fila.slug, "plaza-del-sol-3");
-});
-
-test("la carga valida lo mismo que el formulario publico, con mensajes que dicen que falta", async () => {
-  const antes = await cuantasIdeas();
-  const casos: Array<[string, Record<string, string>, RegExp]> = [
-    ["sin punto", { lat: "", lon: "" }, /Marcá en el mapa/],
-    ["fuera del ejido", PUNTO.fuera, /fuera de los 20 distritos/],
-    ["titulo corto", { titulo: "Plaza" }, /El título tiene que tener entre 8/],
-    ["solucion corta", { solucion: "Luces." }, /“Qué les gustaría mejorar o cambiar” tiene que tener entre 30/],
-    ["problema corto", { problema: "Oscuro." }, /“Qué problema comparten en el barrio” tiene que tener entre 30/],
-    ["dni corto", { dni: "12.345" }, /El DNI tiene que tener 7 u 8 números/],
-    ["telefono con letras", { autorTelefono: "llamar a la tarde" }, /Revisá el teléfono/],
-    ["canal web", { canal: "web" }, /Elegí por dónde llegó la idea/],
-    ["sin de donde vino", { canalDetalle: "" }, /Contá de dónde vino/],
-    ["fecha futura", { fecha: "2026-09-26" }, /no puede ser posterior a hoy/],
-    ["fecha inexistente", { fecha: "2026-02-31" }, /no existe/],
-    ["fecha vieja", { fecha: "2024-12-31" }, /anterior a 2025/],
-  ];
-  for (const [nombre, cambios, esperado] of casos) {
-    const resultado = await operaciones.registrarAlta(formulario(cambios), sesion, HOY);
-    assert.equal(resultado.ok, false, nombre);
-    if (!resultado.ok) assert.match(resultado.error, esperado, nombre);
-  }
-  assert.equal(await cuantasIdeas(), antes, "ningun rechazo escribio nada");
-});
-
-test("la carga del panel sigue la politica de etapas: hasta la evaluacion si, desde la votacion no", async () => {
-  try {
-    await etapa("evaluacion");
-    const tardia = await cargar({ titulo: "Idea de una asamblea tardía" });
-    assert.equal((await filaDe(tardia.id)).estado, "pendiente");
-
-    for (const cerrada of ["votacion", "seguimiento", "cerrada"] as const) {
-      await etapa(cerrada);
-      const antes = await cuantasIdeas();
-      const resultado = await operaciones.registrarAlta(formulario(), sesion, HOY);
-      assert.equal(resultado.ok, false, cerrada);
-      if (!resultado.ok) assert.match(resultado.error, /edición siguiente/, cerrada);
-      assert.equal(await cuantasIdeas(), antes, `${cerrada}: no se escribio nada`);
-    }
-  } finally {
-    await etapa("ideas");
-  }
-});
-
-test("la etapa se vuelve a mirar adentro de la transaccion, no solo antes", async () => {
-  // Es el caso de alguien que abre la votacion mientras otra persona carga:
-  // la lectura de afuera vio "ideas", la de adentro ve la etapa nueva.
-  const antes = await cuantasIdeas();
-  const resultado = await alta.crearIdea(
-    {
-      edicionId,
-      titulo: "La que llega con la etapa cambiada",
-      categoria: "urbana",
-      problema: "Un texto de problema con el largo suficiente para pasar.",
-      solucion: "Un texto de solucion con el largo suficiente para pasar.",
-      lat: Number(PUNTO.d1.lat),
-      lon: Number(PUNTO.d1.lon),
-      canal: "asamblea",
-      fecha: HOY,
-    },
-    { etapaPermitida: () => "La etapa cambió." },
-  );
-  assert.deepEqual(resultado, { ok: false, motivo: "etapa", mensaje: "La etapa cambió." });
-  assert.equal(await cuantasIdeas(), antes);
 });
 
 // ---------------------------------------------------------------------------
@@ -614,7 +393,6 @@ test("la integracion apunta a una idea final de la misma edicion", async () => {
     titulo: "Plaza nueva en el barrio norte",
   });
   assert.equal(fichaRepetida?.integradas, 0);
-  assert.equal(fichaRepetida?.canalDetalle, "Asamblea del distrito 1, 12/09/2026");
   const fichaPrincipal = await consultas.getIdeaAdmin(principal.id);
   assert.equal(fichaPrincipal?.integradaEn, null);
   assert.equal(fichaPrincipal?.integradas, 1);
