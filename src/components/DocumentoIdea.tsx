@@ -199,6 +199,7 @@ export default function DocumentoIdea({
         valor={datos.problema}
         idRotulo={`${id}-problema`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.problema.trim() || null}
       </Bloque>
@@ -210,6 +211,7 @@ export default function DocumentoIdea({
         valor={datos.referenciasUbicacion}
         idRotulo={`${id}-referencias`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.referenciasUbicacion.trim() || null}
       </Bloque>
@@ -220,6 +222,7 @@ export default function DocumentoIdea({
         valor={datos.solucion}
         idRotulo={`${id}-solucion`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.solucion.trim() || null}
       </Bloque>
@@ -231,6 +234,7 @@ export default function DocumentoIdea({
         valor={datos.beneficios}
         idRotulo={`${id}-beneficios`}
         edicion={edicion}
+        terminado={comprobante !== null}
       >
         {datos.beneficios.trim() || null}
       </Bloque>
@@ -287,10 +291,16 @@ function Bloque({
   valor,
   idRotulo,
   edicion,
+  terminado = false,
 }: {
   titulo: string;
   activo: boolean;
   vacio?: string;
+  /**
+   * El documento ya enviado (con comprobante): un bloque vacio dice "-" y no
+   * la ayuda de mientras se escribe ("Todavía no lo contaste.").
+   */
+  terminado?: boolean;
   children: ReactNode;
   /** Con `campo` y `edicion`, el cuerpo del bloque se escribe en lugar de leerse. */
   campo?: CampoEditable;
@@ -313,7 +323,7 @@ function Bloque({
           edicion={edicion}
         />
       ) : (
-        <p className={children ? "doc-cuerpo" : "doc-cuerpo doc-vacio"}>{children ?? vacio}</p>
+        <p className={children ? "doc-cuerpo" : "doc-cuerpo doc-vacio"}>{children ?? (terminado ? "-" : vacio)}</p>
       )}
     </section>
   );
