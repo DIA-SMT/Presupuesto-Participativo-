@@ -796,7 +796,64 @@
     0 0 0 3px color-mix(in srgb, var(--color-marca-600) 18%, transparent);
 }
 
+/* ---------------------------------------------------------------------------
+ * Las pantallas de una seccion del panel (src/app/admin/navegacion.tsx): un
+ * selector segmentado, no pastillas sueltas. Un riel gris claro contiene las
+ * opciones; la elegida se levanta como una tarjeta blanca con sombra y el
+ * texto y el icono en el azul de la marca. Pastillas llenas de azul pesaban
+ * como un boton de accion y competian con "Descargar PDF" o "Guardar".
+ *
+ * Nada se marca solo por color: la elegida suma fondo, sombra, peso
+ * tipografico y aria-current. El texto suave sobre el riel da 5.6:1.
+ * --------------------------------------------------------------------------- */
+.selector-pantallas {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 0.875rem;
+  background: var(--fondo-suave);
+  border: 1px solid var(--borde);
+}
+
+.opcion-pantalla {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.95rem;
+  border-radius: 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--texto-suave);
+  transition:
+    background-color 120ms,
+    color 120ms,
+    box-shadow 120ms;
+}
+
+.opcion-pantalla svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.opcion-pantalla:hover {
+  color: var(--texto);
+  background: color-mix(in srgb, var(--fondo-tarjeta) 60%, transparent);
+}
+
+.opcion-pantalla[aria-current] {
+  color: var(--marca-texto);
+  font-weight: 600;
+  background: var(--fondo-tarjeta);
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.08),
+    0 0 0 1px var(--borde);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .opcion-pantalla,
   .tarjeta-filtro,
   .tarjeta-propuesta,
   .chip-orden,
