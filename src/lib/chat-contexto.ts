@@ -13,9 +13,8 @@
  *
  * El chat no tiene ninguna otra fuente, ni texto propio sobre el programa: si
  * algo no esta cargado aca, no lo sabe, y lo dice. Por eso todos los textos que
- * lee estan en este archivo, con su clave literal (asi los encuentra el
- * catalogo del panel, src/app/admin/contenido/catalogo.ts, y el equipo sabe que
- * cambiar uno cambia tambien lo que contesta Migue).
+ * lee estan en este archivo, con su clave literal: cambiar uno en la base
+ * cambia tambien lo que contesta Migue.
  *
  * Lo usan las instrucciones del modelo (src/app/api/chat/route.ts), la
  * herramienta `consultar_reglamento` y el buscador sin IA (chat-sin-ia.ts).

@@ -5,8 +5,7 @@
  * sequence for encoding UTF8: 0x00"), y el INSERT entero falla. En el chat y
  * en el asistente de carga ese INSERT es la fila de `chat_consultas`, y esas
  * filas son lo que suma el tope de gasto del dia (getTokensUsadosHoy): una
- * pregunta con un NUL se cobraba en el proveedor y no contaba para el tope, ni
- * aparecia en /admin/migue. Un NUL no lo escribe nadie con el teclado; llega
+ * pregunta con un NUL se cobraba en el proveedor y no contaba para el tope. Un NUL no lo escribe nadie con el teclado; llega
  * solo en un pedido armado a mano.
  *
  * De paso se van los demas de C0 y DEL, salvo el tabulador y los saltos de

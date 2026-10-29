@@ -93,7 +93,7 @@ test("sin reglamento cargado, la herramienta trae las reglas confirmadas y avisa
   assert.equal(datos.publicado, false);
   assert.ok(datos.reglas_confirmadas.some((r: { titulo: string }) => r.titulo === "Un voto por persona"));
   assert.match(datos.aviso, /no deducirlo/);
-  assert.equal(sinDatos, true, "la regla puntual le falta al sitio: va a /admin/migue");
+  assert.equal(sinDatos, true, "la regla puntual le falta al sitio");
   assert.deepEqual(referencias, [{ titulo: "Reglamento", url: "/reglamento" }]);
 });
 

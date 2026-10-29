@@ -436,8 +436,7 @@ test("una salvedad al pie no hunde una respuesta que si contesto", () => {
 });
 
 test("un pedido fuera del programa, rechazado por la regla de alcance, cuenta como resuelto", () => {
-  // Es lo que dice la seccion "Los numeros" del panel de Migue
-  // (src/app/admin/migue/panel.tsx). Antes decia lo contrario: el rechazo no
+  // Antes decia lo contrario: el rechazo no
   // admite que falte un dato, y no es contenido que le falte al sitio.
   for (const respuesta of [
     "Solo puedo ayudarte con el Presupuesto Participativo.",

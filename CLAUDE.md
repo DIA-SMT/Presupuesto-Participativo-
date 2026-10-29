@@ -52,10 +52,10 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   `src/lib/edicion-en-vista.ts`; sin el parámetro, la activa. Los enlaces
   internos de una página que muestra otra edición se arman con `conEdicion`
   (`src/lib/ediciones.ts`): el slug se repite entre ediciones.
-- Un texto editable del sitio se lee con su clave literal (`textos["clave"]`) y
-  la clave se suma a `src/app/admin/contenido/catalogo.ts`, que es lo que
-  muestra la pantalla de Contenido. Lo exige
-  `scripts/tests/contenido-catalogo.test.ts`.
+- Los textos del sitio, el reglamento, las preguntas frecuentes, las novedades
+  y el aviso urgente viven en la base (`textos`, `faq`, `novedades`) y el
+  panel no los edita: no tiene pantalla de Contenido ni de consultas a Migue.
+  Se cambian en la base.
 - La limpieza de datos migrados es auditable: cualquier transformación nueva en
   el ETL debe registrarse en `notasMigracion` y en el reporte.
 

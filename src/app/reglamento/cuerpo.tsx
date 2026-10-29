@@ -1,15 +1,12 @@
 /**
  * El cuerpo del reglamento tal como se publica en /reglamento.
  *
- * Esta aparte de page.tsx para que la vista previa del panel
- * (src/app/admin/contenido/reglamento.tsx) dibuje EXACTAMENTE lo mismo que la
- * pagina: si cada una tuviera su copia, la vista previa podria mostrar algo que
- * despues el sitio no muestra. No usa hooks ni consulta nada, asi que sirve
- * igual en el servidor (la pagina) y en el cliente (el panel).
+ * Esta aparte de page.tsx porque no usa hooks ni consulta nada: dibuja el
+ * texto que le pasan, en el servidor o en el cliente.
  *
  * El formato es el de siempre: cada renglon con texto es un parrafo. No
  * interpreta HTML ni markdown; lo que se pegue asi se ve tal cual, con los
- * signos, y el panel avisa antes de guardar (`avisosDeFormato`).
+ * signos.
  */
 
 /**

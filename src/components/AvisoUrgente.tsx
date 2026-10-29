@@ -2,9 +2,7 @@
 
 /**
  * Aviso urgente: la banda que aparece arriba de todas las paginas publicas
- * mientras el texto `aviso-urgente` no este vacio. Lo carga un administrador en
- * /admin/contenido (solapa "Aviso urgente"), que usa `BandaAviso` para la vista
- * previa: lo que se ve ahi es este mismo componente.
+ * mientras el texto `aviso-urgente` de la tabla `textos` no este vacio.
  *
  * DONDE VA: en src/app/layout.tsx, justo despues del enlace "Saltar al
  * contenido" y antes del encabezado. El salto sigue siendo lo primero que

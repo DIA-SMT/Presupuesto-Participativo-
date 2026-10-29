@@ -88,9 +88,6 @@ const SECCIONES: Seccion[] = [
       // consulta la etapa. La pantalla deja en solo lectura lo que cada rol no
       // puede tocar.
       { href: "/admin/ediciones", texto: "Etapa y cronograma" },
-      // Solo admin: no son tareas de todos los dias.
-      { href: "/admin/contenido", texto: "Contenido del sitio", soloAdmin: true },
-      { href: "/admin/migue", texto: "Lo que preguntan a Migue" },
     ],
   },
   { href: "/admin/equipo", texto: "Equipo", soloAdmin: true, pantallas: [] },

@@ -91,7 +91,6 @@ import {
   tomarIdeaParaCambiar,
   type Resultado,
 } from "./comun";
-import { fechaValida } from "./contenido/escritura";
 import { cambiarPasswordPropia } from "./equipo/cuentas";
 
 
@@ -1473,6 +1472,20 @@ export async function crearEdicion(
  */
 const fechaOVacio = z.union([z.string().refine(fechaValida), z.literal("")]);
 
+/** "YYYY-MM-DD" que existe en el calendario: el formato solo deja pasar un 31 de febrero. */
+function fechaValida(texto: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) return false;
+  const [anio, mes, dia] = texto.split("-").map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  return (
+    anio >= 2000 &&
+    anio <= 2100 &&
+    fecha.getUTCFullYear() === anio &&
+    fecha.getUTCMonth() === mes - 1 &&
+    fecha.getUTCDate() === dia
+  );
+}
+
 const esquemaEdicion = z.object({
   id: z.coerce.number().int().positive(),
   ideasDesde: fechaOVacio,
@@ -1737,7 +1750,7 @@ export async function guardarHito(
     const hitoId = datos.id;
     try {
       // El ANTES se lee adentro de la transaccion y con FOR UPDATE, como en
-      // contenido/escritura.ts: asi es el que habia al escribir y no el de un
+      // las demas escrituras del panel: asi es el que habia al escribir y no el de un
       // momento antes, si otra persona guardo el mismo hito en el medio.
       const resultado = await db.transaction(async (tx) => {
         const [anterior] = await tx

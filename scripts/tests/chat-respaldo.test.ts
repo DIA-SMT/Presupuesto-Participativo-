@@ -23,11 +23,6 @@ let chat: typeof import("../../src/app/api/chat/route");
 let asistente: typeof import("../../src/app/api/ideas/asistente/route");
 let firmaValida: typeof import("../../src/lib/chat-firma").firmaValida;
 let getTokensUsadosHoy: typeof import("../../src/db/queries").getTokensUsadosHoy;
-/** Las consultas del panel de Migue, para ver como llega cada caso a /admin/migue. */
-let panel: Pick<
-  typeof import("../../src/db/queries"),
-  "getConsultasSinResolver" | "getResumenChat" | "listarConsultasChat"
->;
 
 const MODELO = "proveedor/modelo-de-prueba";
 
@@ -42,7 +37,6 @@ test.before(async () => {
   asistente = await import("../../src/app/api/ideas/asistente/route");
   ({ firmaValida } = await import("../../src/lib/chat-firma"));
   ({ getTokensUsadosHoy } = await import("../../src/db/queries"));
-  panel = await import("../../src/db/queries");
 });
 
 test.after(async () => {
@@ -322,12 +316,6 @@ test("si el proveedor falla a mitad de la respuesta, lo mostrado se descarta", a
   // consumo y va estimada, para que el tope diario la vea.
   assert.ok((fila.tokens_entrada ?? 0) > 0, `tokens_entrada = ${fila.tokens_entrada}`);
   assert.ok((fila.tokens_salida ?? 0) > 0, `tokens_salida = ${fila.tokens_salida}`);
-
-  // En el panel no es "se corto por un error": la persona leyo una respuesta entera.
-  const [enElPanel] = await panel.listarConsultasChat(1);
-  assert.equal(enElPanel.ok, false);
-  assert.equal(enElPanel.fallaConRespuesta, true);
-  assert.equal(enElPanel.cancelada, false);
 });
 
 test("si el modelo agota las vueltas pidiendo herramientas, contesta el buscador", async () => {
@@ -447,8 +435,6 @@ test("sin clave, si el buscador falla la consulta queda registrada como error", 
   // contesto", y la persona no recibio ninguna respuesta.
   assert.deepEqual(fila.herramientas, ["falla:buscador"]);
   assert.equal(fila.ok, false);
-  const [enElPanel] = await panel.listarConsultasChat(1);
-  assert.equal(enElPanel.fallaConRespuesta, false);
 });
 
 test("con clave, si falla armar el prompt no sale un 500: se registra y no se llama al modelo", async () => {
@@ -746,7 +732,6 @@ test("si la persona se va, se corta la llamada al proveedor y queda como cancela
   }) as typeof fetch;
 
   try {
-    const antes = await panel.getResumenChat();
     const respuesta = await preguntar([{ rol: "usuario", texto: "pregunta que se abandona" }]);
     const lector = respuesta.body!.getReader();
     await lector.read();
@@ -767,20 +752,6 @@ test("si la persona se va, se corta la llamada al proveedor y queda como cancela
     // la conexion era gastar sin que el tope lo viera.
     assert.ok((fila.tokens_entrada ?? 0) > 500, `tokens_entrada = ${fila.tokens_entrada}`);
     assert.ok((fila.tokens_salida ?? 0) > 0, "lo que alcanzo a generar tambien cuenta");
-
-    // En el panel no es una pregunta sin contestar ni un error del sitio: no
-    // se sabe si el sitio la podia contestar. Se cuenta aparte.
-    const sinResolver = await panel.getConsultasSinResolver(100);
-    assert.ok(!sinResolver.some((c) => c.pregunta === "pregunta que se abandona"));
-    const [enElPanel] = await panel.listarConsultasChat(1);
-    assert.equal(enElPanel.pregunta, "pregunta que se abandona");
-    assert.equal(enElPanel.cancelada, true);
-    assert.equal(enElPanel.fallaConRespuesta, false);
-    const despues = await panel.getResumenChat();
-    assert.equal(despues.canceladas, antes.canceladas + 1);
-    assert.equal(despues.total, antes.total);
-    assert.equal(despues.sinResolver, antes.sinResolver);
-    assert.equal(despues.conError, antes.conError);
   } finally {
     globalThis.fetch = fetchOriginal;
   }
