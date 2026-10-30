@@ -118,21 +118,29 @@ export function colorCategoria(
   return respaldo ?? null;
 }
 
+/**
+ * La etapa de la obra de un ganador, como la lee el vecino. Las cuatro de
+ * ETAPAS_PRESUPUESTO son las que carga el equipo desde 2026; preparacion y
+ * contratacion siguen aca para nombrar avances viejos.
+ */
 export const ETIQUETA_PRESUPUESTO: Record<string, string> = {
   sin_asignar: "Sin presupuesto asignado",
   preparacion: "En preparación",
   contratacion: "En contratación",
-  ejecucion: "En ejecución",
-  finalizado: "Finalizado",
+  licitacion: "En licitación",
+  adjudicada: "Adjudicada",
+  ejecucion: "En obra",
+  finalizado: "Finalizada",
 };
 
-/** Orden de las etapas del presupuesto, para dibujar la barra de avance. */
-export const ETAPAS_PRESUPUESTO = [
-  "preparacion",
-  "contratacion",
-  "ejecucion",
-  "finalizado",
-] as const;
+/**
+ * Las etapas de una obra, en orden: las que el equipo elige al informar un
+ * avance y las que dibuja la barra de progreso. Son las del municipio: se
+ * licita, se adjudica, se construye y se termina.
+ */
+export const ETAPAS_PRESUPUESTO = ["licitacion", "adjudicada", "ejecucion", "finalizado"] as const;
+
+export type EtapaObra = (typeof ETAPAS_PRESUPUESTO)[number];
 
 export const ETIQUETA_ETAPA: Record<string, string> = {
   ideas: "Presentación de ideas",

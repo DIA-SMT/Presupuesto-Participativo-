@@ -186,6 +186,23 @@ export const PASOS: PasoRecorrido[] = [
     },
   },
 
+  // --- Obras (/admin/obras) ---------------------------------------------------
+  {
+    id: "obras",
+    seccion: "Proceso · Obras",
+    ruta: "/admin/obras",
+    anclas: ["obras"],
+    titulo: "El estado de las obras",
+    texto: {
+      lector:
+        "Una tarjeta por proyecto ganador con la etapa de su obra: en licitación, adjudicada, en obra o finalizada. Es lo mismo que ven los vecinos en Transparencia.",
+      moderador:
+        "Una tarjeta por proyecto ganador con la etapa de su obra. Con “Actualizar estado” cargás la etapa nueva, la fecha, una aclaración y el link que lo respalda (el boletín oficial o la nota de prensa), y se publica en Transparencia.",
+      admin:
+        "Una tarjeta por proyecto ganador con la etapa de su obra. Con “Actualizar estado” cargás la etapa nueva, la fecha, una aclaración y el link que lo respalda (el boletín oficial o la nota de prensa), y se publica en Transparencia.",
+    },
+  },
+
   // --- Equipo: solo administradores --------------------------------------
   {
     id: "equipo-alta",

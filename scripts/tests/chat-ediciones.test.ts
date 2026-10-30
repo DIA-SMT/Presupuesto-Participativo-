@@ -124,7 +124,7 @@ test("detalle_proyecto distingue el slug repetido por edicion", async () => {
   assert.equal(anterior.datos.anio, 2025);
   assert.equal(anterior.datos.es_de_la_edicion_vigente, false);
   assert.equal(anterior.datos.url, "/proyectos/plaza-del-barrio?edicion=2025");
-  assert.equal(anterior.datos.etapa_obra, "En ejecución");
+  assert.equal(anterior.datos.etapa_obra, "En obra");
 });
 
 test("resumen_distrito no dice 'sin ganador' antes de votar, y ofrece el de 2025", async () => {
@@ -294,7 +294,7 @@ test("sin IA: 'ganadores' con la 2026 recien abierta ofrece los de 2025", async 
   assert.match(texto, /2026 todavía no tiene proyectos ganadores/);
   assert.match(texto, /edición 2025/);
   assert.match(texto, /Plaza del barrio/);
-  assert.match(texto, /obra en ejecución/, "el estado de obra, solo el informado");
+  assert.match(texto, /obra: en obra/, "el estado de obra, solo el informado");
   assert.deepEqual(referencias.map((r) => r.url), ["/transparencia?edicion=2025"]);
 });
 

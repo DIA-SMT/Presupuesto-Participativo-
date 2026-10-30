@@ -34,6 +34,7 @@
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import type { RolAdmin } from "@/db/queries";
 import { ETIQUETA_ROL } from "@/lib/formato";
 import { salirAdmin } from "./acciones";
@@ -57,10 +58,10 @@ type Seccion = Enlace & { pantallas: Enlace[] };
  * predictivo": que se sepa donde esta cada cosa sin probar solapa por solapa.
  * Se agruparon por lo que hace el equipo:
  *
- *  - Propuestas: lo de todos los dias. Las tarjetas para evaluar, la carga
- *    del papel y las estadisticas de la edicion (el viejo Tablero).
- *  - Proceso: lo que se toca pocas veces al año. La etapa y el cronograma, el
- *    contenido del sitio y lo que preguntan los vecinos a Migue.
+ *  - Propuestas: lo de todos los dias. Las tarjetas para evaluar y las
+ *    estadisticas de la edicion (el viejo Tablero).
+ *  - Proceso: la etapa y el cronograma, y el estado de las obras de los
+ *    ganadores (lo que publica Transparencia).
  *  - Equipo: las cuentas del panel.
  *
  * Las rutas NO cambiaron (/admin/tablero sigue siendo el Tablero): los enlaces
@@ -87,6 +88,8 @@ const SECCIONES: Seccion[] = [
       // consulta la etapa. La pantalla deja en solo lectura lo que cada rol no
       // puede tocar.
       { href: "/admin/ediciones", texto: "Etapa y cronograma" },
+      // Todos la ven; actualizar una obra es de moderador para arriba.
+      { href: "/admin/obras", texto: "Obras" },
     ],
   },
   { href: "/admin/equipo", texto: "Equipo", soloAdmin: true, pantallas: [] },
@@ -200,19 +203,21 @@ export default function CabeceraPanel({
     </div>
 
       {/*
-        Las pantallas de la seccion actual, en una segunda fila de pastillas.
-        Con una sola pantalla (Equipo) no se dibuja: seria repetir la solapa.
+        Las pantallas de la seccion actual, en un selector segmentado con un
+        icono por pantalla (`.selector-pantallas`, globals.css). Con una sola
+        pantalla no se dibuja: seria repetir la solapa.
       */}
       {pantallas.length > 1 && (
-        <nav aria-label={`Pantallas de ${actual?.texto ?? "la sección"}`} className="mt-3">
-          <ul className="flex flex-wrap gap-1.5">
+        <nav aria-label={`Pantallas de ${actual?.texto ?? "la sección"}`} className="mt-4">
+          <ul className="selector-pantallas">
             {pantallas.map((pantalla) => (
               <li key={pantalla.href}>
                 <Link
                   href={pantalla.href}
                   aria-current={estaActivo(pathname, pantalla.href) ? "page" : undefined}
-                  className="chip-orden"
+                  className="opcion-pantalla"
                 >
+                  <IconoPantalla href={pantalla.href} />
                   {pantalla.texto}
                 </Link>
               </li>
@@ -236,6 +241,61 @@ function iniciales(nombre: string, email: string): string {
     .map((palabra) => palabra[0].toUpperCase())
     .join("");
   return letras || email.slice(0, 1).toUpperCase();
+}
+
+/**
+ * El icono de cada pantalla del selector: una grilla de tarjetas para el
+ * tablero, barras para las estadisticas, un calendario para el cronograma y
+ * un casco para las obras.
+ * Decorativo: el texto va al lado.
+ */
+function IconoPantalla({ href }: { href: string }) {
+  const trazos: Record<string, ReactNode> = {
+    "/admin": (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </>
+    ),
+    "/admin/tablero": (
+      <>
+        <path d="M3 21h18" />
+        <path d="M7 17v-6" />
+        <path d="M12 17V7" />
+        <path d="M17 17v-9" />
+      </>
+    ),
+    "/admin/ediciones": (
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M16 3v4M8 3v4M3 11h18" />
+      </>
+    ),
+    "/admin/obras": (
+      <>
+        <path d="M4 18a8 8 0 0 1 16 0" />
+        <path d="M2 18h20M10 10V6h4v4" />
+      </>
+    ),
+  };
+  const trazo = trazos[href];
+  if (!trazo) return null;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {trazo}
+    </svg>
+  );
 }
 
 /** Una llave, para "Mi contraseña". Decorativa: el texto va al lado. */

@@ -333,7 +333,7 @@ export async function responderSinIA(
       ...anterior.ganadores.map(
         (g) =>
           `- **D${g.distrito}** · ${g.titulo} — ${formatearNumero(g.votos)} votos` +
-          (g.estadoObra ? ` · obra ${(ETIQUETA_PRESUPUESTO[g.estadoObra] ?? g.estadoObra).toLowerCase()}` : ""),
+          (g.estadoObra ? ` · obra: ${(ETIQUETA_PRESUPUESTO[g.estadoObra] ?? g.estadoObra).toLowerCase()}` : ""),
       ),
     );
     return {

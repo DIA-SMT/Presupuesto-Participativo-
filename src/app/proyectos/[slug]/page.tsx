@@ -270,6 +270,17 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
                         {avance.descripcion && (
                           <p className="mt-2 text-sm leading-relaxed">{avance.descripcion}</p>
                         )}
+                        {avance.enlace && (
+                          <a
+                            href={avance.enlace}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-block text-sm font-semibold underline"
+                            style={{ color: "var(--marca-texto)" }}
+                          >
+                            Ver la fuente<span className="sr-only"> (se abre en otra pestaña)</span>
+                          </a>
+                        )}
                       </li>
                     ))}
                   </ol>
@@ -321,7 +332,9 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
               </Fila>
               <Fila etiqueta="Categoría">{idea.categoriaNombre ?? "Sin categoría"}</Fila>
               {idea.barrio && <Fila etiqueta="Barrio">{idea.barrio}</Fila>}
-              {idea.ganador && (
+              {/* Un ganador sin votos registrados (el del distrito 10 de 2025,
+                  que vino de una consulta ciudadana) no muestra "0". */}
+              {idea.ganador && idea.votos > 0 && (
                 <Fila etiqueta="Votos">{formatearNumero(idea.votos)}</Fila>
               )}
               <Fila etiqueta="Presupuesto">

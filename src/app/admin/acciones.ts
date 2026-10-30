@@ -66,7 +66,8 @@ import {
   motivoDeFalla,
   type Consumo,
 } from "@/lib/modelo";
-import { MAXIMO_PRESUPUESTO } from "@/lib/formato";
+import { ETAPAS_PRESUPUESTO, ETIQUETA_PRESUPUESTO, MAXIMO_PRESUPUESTO } from "@/lib/formato";
+import { enlaceValido } from "@/lib/enlace";
 import { hashearPassword, verificarPassword } from "@/lib/password";
 import { MINIMO_PASSWORD } from "@/lib/politica-password";
 import { consumir, ipDeCabeceras } from "@/lib/rate-limit";
@@ -145,6 +146,7 @@ function resumenAvance(avance: {
   descripcion: string | null;
   monto: string | null;
   porcentaje: number | null;
+  enlace?: string | null;
 }): string {
   return [
     `“${avance.titulo}”`,
@@ -153,6 +155,7 @@ function resumenAvance(avance: {
     `monto ${montoEnPesos(avance.monto === null ? null : Number(avance.monto))}`,
     avance.porcentaje === null ? "sin porcentaje" : `${avance.porcentaje}% de avance`,
     avance.descripcion ? `descripción: ${avance.descripcion}` : "sin descripción",
+    avance.enlace ? `enlace: ${avance.enlace}` : "sin enlace",
   ].join(" · ");
 }
 
@@ -1156,16 +1159,26 @@ export async function estimarPresupuesto(
 
 const esquemaAvance = z.object({
   ideaId: z.coerce.number().int().positive(),
-  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  etapa: z.enum(["preparacion", "contratacion", "ejecucion", "finalizado"]),
-  titulo: z.string().trim().min(3).max(200),
+  fecha: z.string().refine(fechaValida),
+  etapa: z.enum(ETAPAS_PRESUPUESTO),
+  // Sin titulo, el avance se llama como su etapa ("En licitación").
+  titulo: z.string().trim().max(200).optional(),
   descripcion: z.string().trim().max(3000).optional(),
+  enlace: z
+    .string()
+    .trim()
+    .optional()
+    .refine((texto) => !texto || enlaceValido(texto)),
   monto: opcional(z.coerce.number().min(0)),
   porcentaje: opcional(z.coerce.number().int().min(0).max(100)),
 });
 
 /**
- * Carga un avance de obra: es lo que el vecino ve como el estado de su proyecto.
+ * Carga un avance de obra: es lo que el vecino ve como el estado de su proyecto
+ * en la tarjeta de /transparencia y en la ficha. Se carga desde /admin/obras.
+ *
+ * Solo para ganadores publicados: sin ese control, el avance de una idea que
+ * no gano se publicaba igual en su ficha, como si fuera una obra.
  *
  * Las tres escrituras (el avance, la etapa del proyecto y la fila de bitacora)
  * van en UNA transaccion. Antes el INSERT y el UPDATE eran dos operaciones
@@ -1185,13 +1198,17 @@ export async function crearAvance(
       ideaId: formulario.get("ideaId"),
       fecha: formulario.get("fecha"),
       etapa: formulario.get("etapa"),
-      titulo: formulario.get("titulo"),
+      titulo: formulario.get("titulo") ?? undefined,
       descripcion: formulario.get("descripcion") ?? undefined,
+      enlace: formulario.get("enlace") ?? undefined,
       monto: formulario.get("monto") ?? "",
       porcentaje: formulario.get("porcentaje") ?? "",
     });
   } catch {
-    return { ok: false, error: "Revisá los campos del avance." };
+    return {
+      ok: false,
+      error: "Revisá los campos: la fecha, la etapa y, si pegaste un link, que empiece con https://.",
+    };
   }
 
   // El proyecto se lee antes de escribir: da la etapa anterior (el ANTES del
@@ -1199,18 +1216,27 @@ export async function crearAvance(
   // y ademas avisa con un mensaje si el id no existe en lugar de dejar explotar
   // la clave foranea.
   const [idea] = await db
-    .select({ titulo: ideas.titulo, estadoPresupuesto: ideas.estadoPresupuesto })
+    .select({
+      titulo: ideas.titulo,
+      estadoPresupuesto: ideas.estadoPresupuesto,
+      ganador: ideas.ganador,
+      publicada: ideas.publicada,
+    })
     .from(ideas)
     .where(eq(ideas.id, datos.ideaId))
     .limit(1);
   if (!idea) return { ok: false, error: "El proyecto no existe." };
+  if (!idea.ganador || !idea.publicada) {
+    return { ok: false, error: "Solo los proyectos ganadores publicados tienen obra." };
+  }
 
   const valores = {
     ideaId: datos.ideaId,
     fecha: datos.fecha,
     etapa: datos.etapa,
-    titulo: datos.titulo,
+    titulo: datos.titulo || ETIQUETA_PRESUPUESTO[datos.etapa],
     descripcion: datos.descripcion || null,
+    enlace: datos.enlace || null,
     monto: datos.monto === null ? null : String(datos.monto),
     porcentaje:
       datos.porcentaje,
@@ -1231,7 +1257,7 @@ export async function crearAvance(
         accion: "avance_creado",
         entidad: "avance",
         entidadId: creado.id,
-        etiqueta: `${datos.titulo} — ${idea.titulo}`,
+        etiqueta: `${valores.titulo} — ${idea.titulo}`,
         antes: `Etapa del proyecto: ${idea.estadoPresupuesto} (sin este avance)`,
         despues: `Etapa del proyecto: ${datos.etapa} · ${resumenAvance(valores)}`,
       }),
@@ -1269,6 +1295,7 @@ export async function borrarAvance(
       descripcion: avances.descripcion,
       monto: avances.monto,
       porcentaje: avances.porcentaje,
+      enlace: avances.enlace,
       ideaTitulo: ideas.titulo,
     })
     .from(avances)
