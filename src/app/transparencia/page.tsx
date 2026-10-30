@@ -152,13 +152,16 @@ export default async function Transparencia({ searchParams }: Props) {
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold sm:text-4xl">Transparencia</h1>
         <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-          Qué proyecto ganó en cada distrito y con cuántos votos. Todos los datos de esta página se
-          pueden descargar.
+          Qué proyecto ganó en cada distrito, con cuántos votos, y cómo avanza su obra.
         </p>
       </header>
 
-      {/* --- Aviso de la edicion sin ganadores ------------------------------ */}
-      {!ganadores.length && (
+      {/* --- Aviso de la edicion sin ganadores ------------------------------
+          Solo si no hay ninguna obra para mostrar. Con la edicion nueva
+          abierta y las obras de la anterior abajo, el aviso ("la edición 2026
+          todavía no tiene ganadores…") se leia antes que las tarjetas y no
+          aportaba: el titulo de la seccion ya dice de que año son. */}
+      {!ganadores.length && !obras.length && (
         <section className="mt-10">
           <Aviso tono={yaVoto && !porProclamar.length ? "atencion" : "info"}>
             {porProclamar.length
@@ -168,9 +171,6 @@ export default async function Transparencia({ searchParams }: Props) {
                 : `La edición ${edicion.anio} todavía no tiene proyectos ganadores: está en la etapa “${
                     ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa
                   }”, y el ganador de cada distrito sale de la votación.`}
-            {edicionDeLasObras && !edicionDeLasObras.propia && (
-              <> Abajo, cómo van las obras de la edición {edicionDeLasObras.anio}.</>
-            )}
           </Aviso>
         </section>
       )}
@@ -284,44 +284,6 @@ export default async function Transparencia({ searchParams }: Props) {
           </div>
         </section>
       )}
-
-      <section className="mt-12">
-        <h2 className="text-xl font-bold">Datos abiertos</h2>
-        <p className="mt-2 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-          Los datos de este sitio se pueden descargar y reutilizar libremente.
-        </p>
-        <ul className="mt-3 space-y-2 text-sm">
-          <li>
-            <a href="/geo/distritos.geojson" className="font-medium underline">
-              distritos.geojson
-            </a>{" "}
-            — geometría de los 20 distritos (EPSG:4326)
-          </li>
-          <li>
-            <a href={conEdicion("/api/proyectos", anioEnEnlaces)} className="font-medium underline">
-              {conEdicion("/api/proyectos", anioEnEnlaces)}
-            </a>{" "}
-            — todas las ideas de la edición {edicion.anio} en JSON
-          </li>
-          <li>
-            <a
-              href={conEdicion("/api/proyectos?formato=csv", anioEnEnlaces)}
-              className="font-medium underline"
-            >
-              {conEdicion("/api/proyectos?formato=csv", anioEnEnlaces)}
-            </a>{" "}
-            — lo mismo en CSV
-          </li>
-        </ul>
-        <p className="mt-3 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-          Para otra edición, sumá <code>?edicion=</code> con el año. Las ediciones anteriores están
-          en el{" "}
-          <Link href="/archivo" className="font-medium underline">
-            archivo
-          </Link>
-          .
-        </p>
-      </section>
     </div>
   );
 }
