@@ -81,7 +81,7 @@ export function AnilloEstados({ porEstado }: { porEstado: Record<string, number>
   if (total === 0) {
     return (
       <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-        Esta edición todavía no tiene ideas cargadas.
+        Todavía no hay propuestas cargadas.
       </p>
     );
   }
@@ -210,7 +210,7 @@ export function SerieDiaria({
           {descripcion}
         </p>
         <p className="mt-6 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Todavía no hay {sustantivo} para graficar en esta edición.
+          Todavía no hay {sustantivo} para graficar.
         </p>
       </section>
     );

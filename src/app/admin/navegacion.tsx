@@ -60,8 +60,8 @@ type Seccion = Enlace & { pantallas: Enlace[] };
  *
  *  - Propuestas: lo de todos los dias. Las tarjetas para evaluar y las
  *    estadisticas de la edicion (el viejo Tablero).
- *  - Proceso: la etapa y el cronograma, y el estado de las obras de los
- *    ganadores (lo que publica Transparencia).
+ *  - Proceso: abrir o cerrar la presentacion de propuestas y la votacion, y
+ *    el estado de las obras de los ganadores (lo que publica Transparencia).
  *  - Equipo: las cuentas del panel.
  *
  * Las rutas NO cambiaron (/admin/tablero sigue siendo el Tablero): los enlaces
@@ -84,10 +84,9 @@ const SECCIONES: Seccion[] = [
     href: "/admin/ediciones",
     texto: "Proceso",
     pantallas: [
-      // Para todos los roles: ahi el moderador carga el cronograma y el lector
-      // consulta la etapa. La pantalla deja en solo lectura lo que cada rol no
-      // puede tocar.
-      { href: "/admin/ediciones", texto: "Etapa y cronograma" },
+      // Para todos los roles: abrir y cerrar es solo del administrador, y la
+      // pantalla lo deja en solo lectura para los demas.
+      { href: "/admin/ediciones", texto: "Presentación y votación" },
       // Todos la ven; actualizar una obra es de moderador para arriba.
       { href: "/admin/obras", texto: "Obras" },
     ],

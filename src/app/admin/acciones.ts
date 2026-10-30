@@ -44,6 +44,8 @@ import { resumenDeError } from "@/lib/errores-base";
 import {
   ETAPAS,
   esEtapa,
+  esInterruptor,
+  planDeInterruptor,
   puedeActivarOtraEdicion,
   puedeCambiarEtapa,
   puedeProclamar,
@@ -1437,6 +1439,117 @@ export async function cambiarEtapa(
       revalidatePath("/", "layout");
       return { ok: true, mensaje: `Edición ${resultado.anio}: etapa “${destino}”.` };
   }
+}
+
+/** Lo que dice el panel despues de cada interruptor. */
+const HECHO_DEL_INTERRUPTOR = {
+  "abrir-presentacion": "Presentación de propuestas abierta: el formulario del sitio ya recibe propuestas.",
+  "cerrar-presentacion": "Presentación de propuestas cerrada: el equipo puede evaluar lo que entró.",
+  "abrir-votacion": "Votación abierta: los vecinos ya pueden votar el proyecto de su distrito.",
+  "cerrar-votacion": "Votación cerrada: ya podés proclamar el ganador de cada distrito desde su ficha.",
+} as const;
+
+/**
+ * Los dos interruptores de Proceso: abrir o cerrar la presentacion de
+ * propuestas y la votacion. Reemplazan al selector de etapa y a la pantalla de
+ * ediciones: el programa ya no se maneja por ediciones anuales.
+ *
+ * Cada interruptor se traduce a un cambio de etapa de la edicion activa
+ * (`planDeInterruptor` en src/lib/etapas.ts) y pasa por las mismas reglas que
+ * el cambio de etapa (`puedeCambiarEtapa`), releyendo la edicion dentro de la
+ * transaccion. Abrir la presentacion despues de una votacion terminada crea y
+ * activa una edicion interna nueva (el año siguiente al mas alto): asi las
+ * propuestas nuevas no se mezclan con las ya votadas, y nadie elige un año.
+ *
+ * Solo administradores, como el cambio de etapa.
+ */
+export async function usarInterruptor(
+  _previo: Resultado | null,
+  formulario: FormData,
+): Promise<Resultado> {
+  const sesion = await exigirAdmin("admin");
+  if (!sesion) return sinPermiso("admin");
+
+  const interruptor = formulario.get("interruptor");
+  if (!esInterruptor(interruptor)) return { ok: false, error: "Acción inválida." };
+
+  let resultado: { ok: true; mensaje: string } | { ok: false; error: string };
+  try {
+    resultado = await db.transaction(async (tx) => {
+      const [activa] = await tx
+        .select({ id: ediciones.id, anio: ediciones.anio, etapa: ediciones.etapa })
+        .from(ediciones)
+        .where(eq(ediciones.activa, true))
+        .limit(1)
+        .for("update");
+      if (!activa) return { ok: false as const, error: "No hay un proceso activo en la base." };
+
+      const plan = planDeInterruptor(activa.etapa, interruptor);
+      if (plan.tipo === "sin-cambio") return { ok: true as const, mensaje: plan.mensaje };
+      if (plan.tipo === "rechazo") return { ok: false as const, error: plan.motivo };
+
+      if (plan.tipo === "nuevo-ciclo") {
+        const [{ maximo }] = await tx
+          .select({ maximo: sql<number>`max(${ediciones.anio})::int` })
+          .from(ediciones);
+        const anio = Number(maximo) + 1;
+        await tx.update(ediciones).set({ activa: false }).where(eq(ediciones.id, activa.id));
+        const [nueva] = await tx
+          .insert(ediciones)
+          .values({ anio, etapa: "ideas", activa: true })
+          .returning({ id: ediciones.id });
+        await tx.insert(bitacoraSistema).values(
+          filaSistema({
+            sesion,
+            accion: "edicion_activada",
+            entidad: "edicion",
+            entidadId: nueva.id,
+            etiqueta: `Proceso nuevo (edición interna ${anio})`,
+            antes: `Proceso activo: edición interna ${activa.anio}, etapa ${activa.etapa}`,
+            despues: `Presentación de propuestas abierta en la edición interna ${anio}`,
+          }),
+        );
+        return { ok: true as const, mensaje: HECHO_DEL_INTERRUPTOR[interruptor] };
+      }
+
+      const [emitidos] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(votos)
+        .where(eq(votos.edicionId, activa.id));
+      const [enIdeas] = await tx
+        .select({
+          votos: sql<number>`coalesce(sum(${ideas.votos}), 0)::int`,
+          ganadores: sql<number>`count(*) FILTER (WHERE ${ideas.ganador})::int`,
+        })
+        .from(ideas)
+        .where(eq(ideas.edicionId, activa.id));
+      const veredicto = puedeCambiarEtapa(activa.etapa, plan.destino, {
+        votos: votosDeLaEdicion(Number(emitidos?.total ?? 0), Number(enIdeas?.votos ?? 0)),
+        ganadores: Number(enIdeas?.ganadores ?? 0),
+      });
+      if (!veredicto.permitido) return { ok: false as const, error: veredicto.motivo };
+
+      await tx.update(ediciones).set({ etapa: plan.destino }).where(eq(ediciones.id, activa.id));
+      await tx.insert(bitacoraSistema).values(
+        filaSistema({
+          sesion,
+          accion: "cambio_etapa",
+          entidad: "edicion",
+          entidadId: activa.id,
+          etiqueta: HECHO_DEL_INTERRUPTOR[interruptor].split(":")[0],
+          antes: `Etapa ${activa.etapa}`,
+          despues: `Etapa ${plan.destino}`,
+        }),
+      );
+      return { ok: true as const, mensaje: HECHO_DEL_INTERRUPTOR[interruptor] };
+    });
+  } catch (causa) {
+    console.error("[admin] usarInterruptor fallo", causa);
+    return { ok: false, error: "No se pudo guardar el cambio. Probá de nuevo en un momento." };
+  }
+
+  if (resultado.ok) revalidatePath("/", "layout");
+  return resultado;
 }
 
 export async function crearEdicion(

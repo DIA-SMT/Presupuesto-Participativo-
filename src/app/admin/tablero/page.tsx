@@ -52,20 +52,15 @@ export default async function AdminTablero({ searchParams }: Props) {
       <div>
         <h1 className="text-2xl font-bold">Estadísticas</h1>
         <p className="mt-2 text-sm" style={{ color: "var(--texto-suave)" }}>
-          No hay ninguna edición cargada. Corré <code>npm run setup</code> o creá una desde la
-          pantalla de ediciones.
+          No hay datos cargados. Corré <code>npm run setup</code>.
         </p>
       </div>
     );
   }
 
-  // La edicion se elige por anio (?edicion=2025). Si el parametro no existe o
-  // no coincide con ninguna edicion, se muestra la activa.
-  const anioPedido = Number(parametros.edicion);
-  const edicion =
-    ediciones.find((fila) => fila.anio === anioPedido) ??
-    ediciones.find((fila) => fila.activa) ??
-    ediciones[0];
+  // Siempre el proceso activo: el panel ya no se mira por ediciones anuales
+  // (octubre de 2026). Las obras de los ganadores estan en /admin/obras.
+  const edicion = ediciones.find((fila) => fila.activa) ?? ediciones[0];
 
   const [
     resumen,
@@ -125,12 +120,6 @@ export default async function AdminTablero({ searchParams }: Props) {
 
   return (
     <PanelTablero
-      ediciones={ediciones.map((fila) => ({
-        id: fila.id,
-        anio: fila.anio,
-        etapa: fila.etapa,
-        activa: fila.activa,
-      }))}
       edicion={{
         id: edicion.id,
         anio: edicion.anio,

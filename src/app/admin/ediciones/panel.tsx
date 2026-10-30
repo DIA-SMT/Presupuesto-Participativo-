@@ -1,941 +1,215 @@
 "use client";
 
 /**
- * Panel de ediciones: alta de un anio nuevo, fechas y presupuesto de cada
- * edicion, activacion (la base solo tolera una activa), etapa del proceso y
- * cronograma de hitos.
+ * Los dos interruptores de Proceso: la presentacion de propuestas y la
+ * votacion, cada uno abierto o cerrado. Solo uno puede estar abierto a la vez
+ * (mientras se vota no entran propuestas), y la accion lo hace cumplir.
  *
- * La etapa se cambia aca, dentro de la edicion activa y con confirmacion
- * explicita (ver ../selector-etapa). Antes estaba en la cabecera de la pantalla
- * de Ideas, al lado de un filtro: era la accion mas peligrosa del panel puesta
- * en el lugar mas cotidiano.
+ * Abrir o cerrar pide una confirmacion antes: cambia lo que el sitio deja hacer
+ * a los vecinos en el momento.
  */
-import { startTransition, useActionState, useEffect, useRef, useState } from "react";
-import SelectorEtapa from "../selector-etapa";
-import { Chevron } from "@/components/ui";
-import {
-  activarEdicion,
-  borrarHito,
-  crearEdicion,
-  guardarEdicion,
-  guardarHito,
-} from "../acciones";
-import {
-  ETAPAS,
-  puedeActivarOtraEdicion,
-  votosDeLaEdicion,
-  type ContextoEdicion,
-  type Etapa,
-} from "@/lib/etapas";
-import {
-  ETIQUETA_ETAPA,
-  formatearNumero,
-  formatearPesos,
-  formatearRango,
-  MAXIMO_PRESUPUESTO,
-} from "@/lib/formato";
+import { useActionState, useState } from "react";
+import type { EtapaEdicion } from "@/db/queries";
+import type { Interruptor } from "@/lib/etapas";
+import { ETIQUETA_ETAPA } from "@/lib/formato";
+import { usarInterruptor } from "../acciones";
 
-type Hito = {
-  id: number;
-  orden: number;
-  titulo: string;
-  detalle: string | null;
-  desde: string | null;
-  hasta: string | null;
-  etapa: string | null;
-};
+type Estado = { presentacionAbierta: boolean; votacionAbierta: boolean };
 
-export type FilaEdicion = {
-  id: number;
-  anio: number;
-  etapa: Etapa;
-  activa: boolean;
-  presupuestoTotal: number | null;
-  ideasDesde: string | null;
-  ideasHasta: string | null;
-  votacionDesde: string | null;
-  votacionHasta: string | null;
-  ideas: number;
-  /** Filas de la tabla `votos`: los emitidos desde esta plataforma. */
-  votos: number;
-  /** Suma del contador `ideas.votos`, con los importados de una edicion migrada. */
-  votosEnIdeas: number;
-  hitos: Hito[];
-};
-
-/**
- * Los votos de una edicion, contados como la politica de etapas
- * (`votosDeLaEdicion`). Las filas de `votos` solas dejaban la 2025 en "0 votos":
- * sus 2.069 votos llegaron con la migracion, solo en el contador de las ideas,
- * y la lista contradecia al sitio publico y al tablero sin decir por que.
- */
-function votosDe(edicion: FilaEdicion): number {
-  return votosDeLaEdicion(edicion.votos, edicion.votosEnIdeas);
-}
-
-type Rol = "admin" | "moderador" | "lector";
-
-/*
- * Un <form action> se resetea solo al terminar cada envio, salga bien o mal
- * (React lo pide antes de correr la accion). Con campos sin controlar eso
- * borraba lo escrito cuando el servidor contestaba un error que el navegador
- * no puede ver ("La votación no puede terminar antes de empezar", "El hito no
- * puede terminar antes de empezar"), y el <select> de etapa del hito volvia a
- * la opcion que tenia al montarse: React no le aplica un defaultValue nuevo,
- * y un segundo guardado le borraba la etapa sin que nadie la eligiera. Es lo
- * mismo que resolvio equipo/panel.tsx: el envio pasa por onSubmit, con
- * preventDefault React no corre la accion del <form> ni lo resetea, y cada
- * formulario se vacia a mano solo cuando corresponde (el del hito nuevo, al
- * agregarlo).
- *
- * La action queda puesta igual: antes de que cargue React es la que evita que
- * el formulario se mande solo, por GET.
- */
-function enviarSinResetear(accion: (datos: FormData) => void) {
-  return (evento: React.SubmitEvent<HTMLFormElement>) => {
-    evento.preventDefault();
-    const datos = new FormData(evento.currentTarget);
-    startTransition(() => accion(datos));
-  };
-}
-
-const anioProximo = new Date().getFullYear() + 1;
-
-export default function PanelEdiciones({
-  ediciones,
-  rol,
-  contextoActiva,
+export default function PanelInterruptores({
+  estado,
+  etapa,
+  puedeCambiar,
 }: {
-  ediciones: FilaEdicion[];
-  rol: Rol;
-  /** Votos y ganadores de la edicion activa: deciden a que etapas se puede volver. */
-  contextoActiva: ContextoEdicion | null;
+  estado: Estado | null;
+  etapa: EtapaEdicion | null;
+  puedeCambiar: boolean;
 }) {
-  const activa = ediciones.find((edicion) => edicion.activa) ?? null;
-  const [abierta, setAbierta] = useState<number | null>(activa?.id ?? ediciones[0]?.id ?? null);
+  const [resultado, accion, pendiente] = useActionState(usarInterruptor, null);
 
-  // guardarEdicion, crearEdicion y activarEdicion piden rol admin; el
-  // cronograma lo puede editar un moderador.
-  const puedeEdiciones = rol === "admin";
-  const puedeCronograma = rol !== "lector";
+  if (!estado || !etapa) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold">Presentación y votación</h1>
+        <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
+          La base no tiene un proceso activo.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[1.6fr_1fr] lg:items-start">
-      <section>
-        <h1 className="text-2xl font-bold">Ediciones del Presupuesto Participativo</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-          {ediciones.length} {ediciones.length === 1 ? "edición" : "ediciones"} ·{" "}
-          {activa ? (
-            <>
-              activa: <strong>{activa.anio}</strong> ({ETIQUETA_ETAPA[activa.etapa] ?? activa.etapa}
-              )
-            </>
-          ) : (
-            <strong>ninguna activa</strong>
-          )}
+    <div>
+      <header className="max-w-3xl">
+        <h1 className="text-2xl font-bold">Presentación y votación</h1>
+        <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+          Lo que el sitio les deja hacer hoy a los vecinos. Hoy el programa está en{" "}
+          <strong>“{ETIQUETA_ETAPA[etapa] ?? etapa}”</strong>.
+          {puedeCambiar
+            ? " Cada cambio se aplica en el momento y queda en la bitácora con tu nombre."
+            : " Solo un administrador puede abrirlas o cerrarlas."}
         </p>
+      </header>
 
-        {!activa && (
-          <p
-            role="alert"
-            className="mt-4 rounded-2xl px-4 py-3 text-sm"
-            style={{
-              background: "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
-              border: "1px solid var(--color-acento-600)",
-            }}
-          >
-            No hay ninguna edición activa: el sitio público no tiene qué mostrar. Activá una desde
-            la lista.
-          </p>
-        )}
+      <div className="mt-6 grid gap-4 md:grid-cols-2" data-recorrido="ediciones-etapa">
+        <Tarjeta
+          titulo="Presentación de propuestas"
+          abierta={estado.presentacionAbierta}
+          textoAbierta="El formulario del sitio recibe propuestas de los vecinos que ingresan con CIDITUC."
+          textoCerrada={
+            estado.votacionAbierta
+              ? "No se reciben propuestas mientras la votación está abierta."
+              : "El formulario no recibe propuestas. Al abrirla, los vecinos pueden presentar las suyas."
+          }
+          abrir="abrir-presentacion"
+          cerrar="cerrar-presentacion"
+          confirmarAbrir={
+            etapa === "seguimiento" || etapa === "cerrada"
+              ? "Empieza una ronda nueva de propuestas. Las de la votación anterior y sus ganadores quedan como están."
+              : "El formulario del sitio vuelve a recibir propuestas."
+          }
+          confirmarCerrar="El formulario deja de recibir propuestas. Lo que ya entró queda para evaluar."
+          bloqueada={estado.votacionAbierta}
+          puedeCambiar={puedeCambiar}
+          accion={accion}
+          pendiente={pendiente}
+        />
+        <Tarjeta
+          titulo="Votación"
+          abierta={estado.votacionAbierta}
+          textoAbierta="Cada vecino con CIDITUC vota un proyecto factible y publicado de su distrito."
+          textoCerrada="No se aceptan votos. Al abrirla, se votan las propuestas factibles y publicadas."
+          abrir="abrir-votacion"
+          cerrar="cerrar-votacion"
+          confirmarAbrir="Se cierra la presentación de propuestas y los vecinos pueden votar desde ya. Revisá antes que las propuestas factibles estén publicadas."
+          confirmarCerrar="No se aceptan más votos. Después proclamás el ganador de cada distrito desde su ficha."
+          bloqueada={false}
+          puedeCambiar={puedeCambiar}
+          accion={accion}
+          pendiente={pendiente}
+        />
+      </div>
 
-        <ul className="mt-6 space-y-2">
-          {ediciones.map((edicion) => (
-            <li key={edicion.id} className="superficie rounded-2xl">
-              {/*
-                Las cuatro cuentas de la derecha van en columnas de ancho fijo y
-                no concatenadas con puntos medios: asi se pueden comparar dos
-                ediciones leyendo para abajo. El presupuesto va apagado cuando
-                falta, la misma distincion que hacen las tarjetas del tablero
-                entre un dato y un dato que todavia no esta.
-              */}
-              <button
-                type="button"
-                onClick={() => setAbierta(abierta === edicion.id ? null : edicion.id)}
-                className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-4 text-left"
-                aria-expanded={abierta === edicion.id}
-              >
-                <Chevron abierto={abierta === edicion.id} />
-                <span className="text-base font-bold">{edicion.anio}</span>
-                {edicion.activa ? (
-                  <span
-                    className="rounded px-1.5 py-0.5 text-xs font-semibold"
-                    style={{
-                      background: "color-mix(in srgb, var(--color-marca-600) 14%, transparent)",
-                      color: "var(--marca-texto)",
-                    }}
-                  >
-                    activa
-                  </span>
-                ) : (
-                  <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                    inactiva
-                  </span>
-                )}
-                <span className="flex-1 text-sm font-medium">
-                  {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
-                </span>
-                <span className="w-20 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
-                  {formatearNumero(edicion.ideas)} ideas
-                </span>
-                <span className="w-24 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
-                  {formatearNumero(votosDe(edicion))} votos
-                </span>
-                <span className="w-16 text-right text-xs" style={{ color: "var(--texto-suave)" }}>
-                  {edicion.hitos.length} {edicion.hitos.length === 1 ? "hito" : "hitos"}
-                </span>
-                <span
-                  className="w-32 text-right text-xs"
-                  style={{
-                    color:
-                      edicion.presupuestoTotal === null ? "var(--texto-suave)" : "var(--texto)",
-                  }}
-                >
-                  {edicion.presupuestoTotal === null
-                    ? "sin presupuesto"
-                    : formatearPesos(edicion.presupuestoTotal)}
-                </span>
-              </button>
-
-              {abierta === edicion.id && (
-                <div
-                  className="space-y-6 px-5 pb-6"
-                  style={{ borderTop: "1px solid var(--borde)" }}
-                >
-                  {/* La etapa solo se ofrece sobre la edicion activa: es la
-                      unica que el sitio publico mira. */}
-                  {edicion.activa ? (
-                    <div data-recorrido="ediciones-etapa" className="mt-5">
-                      <SelectorEtapa
-                        edicionId={edicion.id}
-                        etapa={edicion.etapa}
-                        rol={rol}
-                        // La page lo calcula para la activa, que es esta. El
-                        // respaldo usa los votos del listado, contados igual,
-                        // y ningun ganador: si alguna vez falta, la accion
-                        // decide igual.
-                        contexto={contextoActiva ?? { votos: votosDe(edicion), ganadores: 0 }}
-                      />
-                    </div>
-                  ) : (
-                    <p className="mt-5 text-xs" style={{ color: "var(--texto-suave)" }}>
-                      Etapa guardada: <strong>{ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}</strong>
-                      . Mientras la edición esté inactiva la etapa no cambia nada en el sitio
-                      público: activala primero y ahí se puede mover.
-                    </p>
-                  )}
-
-                  <FormularioEdicion edicion={edicion} soloLectura={!puedeEdiciones} />
-
-                  {!edicion.activa && puedeEdiciones && (
-                    <BloqueActivar
-                      edicion={edicion}
-                      activa={activa ? { anio: activa.anio, etapa: activa.etapa } : null}
-                    />
-                  )}
-
-                  <Cronograma edicion={edicion} soloLectura={!puedeCronograma} />
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <aside className="space-y-6">
-        {puedeEdiciones && <FormularioNuevaEdicion />}
-
-        <div className="superficie rounded-2xl p-6 text-sm">
-          <h2 className="text-lg font-bold">Cómo funciona</h2>
-          <ul className="mt-3 space-y-3" style={{ color: "var(--texto-suave)" }}>
-            <li>
-              <strong style={{ color: "var(--texto)" }}>Una sola edición activa.</strong> Al activar
-              una edición, la que estaba activa se desactiva en el mismo movimiento. Todo el sitio
-              público —portada, mapa, votación, transparencia y el chatbot— pasa a mostrar la
-              edición nueva.
-            </li>
-            <li>
-              <strong style={{ color: "var(--texto)" }}>La etapa se cambia acá.</strong> La etapa
-              del proceso (presentación de ideas, evaluación técnica, votación, seguimiento o
-              cerrada) se elige dentro de la edición activa, en esta misma pantalla. Es lo que abre
-              el formulario de ideas y lo que abre la votación pública, así que antes de guardar el
-              cambio la pantalla te dice, en palabras, qué va a pasar en el sitio.
-            </li>
-            <li>
-              <strong style={{ color: "var(--texto)" }}>Las fechas son informativas.</strong> Se
-              usan para contarle al vecino cuándo presenta y cuándo vota; lo que habilita o cierra
-              cada formulario es la etapa.
-            </li>
-            <li>
-              <strong style={{ color: "var(--texto)" }}>El cronograma es lo que se publica.</strong>{" "}
-              Los hitos de la edición activa se muestran en la portada y en “Cómo participar”, y el
-              chatbot los usa para responder cuándo pasa cada cosa.
-            </li>
-          </ul>
-          {!puedeEdiciones && (
-            <p className="mt-4" style={{ color: "var(--texto-suave)" }}>
-              {puedeCronograma
-                ? `Con tu rol (${rol}) podés editar el cronograma, pero crear, editar y activar ediciones queda para un administrador.`
-                : `Con tu rol (${rol}) esta pantalla es de solo lectura.`}
-            </p>
-          )}
-        </div>
-      </aside>
+      {resultado && (
+        <p
+          role={resultado.ok ? "status" : "alert"}
+          className="mt-4 max-w-3xl rounded-xl px-4 py-3 text-sm"
+          style={{
+            background: resultado.ok
+              ? "color-mix(in srgb, var(--color-marca-600) 8%, transparent)"
+              : "color-mix(in srgb, var(--color-acento-600) 10%, transparent)",
+            color: resultado.ok ? "var(--texto)" : "var(--acento-texto)",
+          }}
+        >
+          {resultado.ok ? resultado.mensaje : resultado.error}
+        </p>
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Fechas y presupuesto
-// ---------------------------------------------------------------------------
-
-function FormularioEdicion({
-  edicion,
-  soloLectura,
+function Tarjeta({
+  titulo,
+  abierta,
+  textoAbierta,
+  textoCerrada,
+  abrir,
+  cerrar,
+  confirmarAbrir,
+  confirmarCerrar,
+  bloqueada,
+  puedeCambiar,
+  accion,
+  pendiente,
 }: {
-  edicion: FilaEdicion;
-  soloLectura: boolean;
+  titulo: string;
+  abierta: boolean;
+  textoAbierta: string;
+  textoCerrada: string;
+  abrir: Interruptor;
+  cerrar: Interruptor;
+  confirmarAbrir: string;
+  confirmarCerrar: string;
+  /** Cerrada y sin poder abrirse ahora (la presentacion, con la votacion abierta). */
+  bloqueada: boolean;
+  puedeCambiar: boolean;
+  accion: (datos: FormData) => void;
+  pendiente: boolean;
 }) {
-  const [estado, accion, pendiente] = useActionState(guardarEdicion, null);
+  const [confirmando, setConfirmando] = useState(false);
+  const interruptor = abierta ? cerrar : abrir;
 
-  // Sin reset (ver enviarSinResetear): tras un error quedan las fechas que hay
-  // que corregir; tras un guardado, lo escrito ya es lo guardado.
   return (
-    <form data-recorrido="ediciones-fechas" action={accion} onSubmit={enviarSinResetear(accion)} className="mt-5">
-      <input type="hidden" name="id" value={edicion.id} />
-      <h3 className="text-sm font-bold">Fechas y presupuesto</h3>
-      <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-        Ideas: {formatearRango(edicion.ideasDesde, edicion.ideasHasta) || "sin fechas cargadas"} ·
-        Votación: {formatearRango(edicion.votacionDesde, edicion.votacionHasta) || "sin fechas cargadas"}
+    <section className="superficie flex flex-col gap-3 rounded-2xl p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">{titulo}</h2>
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
+          style={{
+            color: abierta ? "var(--obra-finalizado)" : "var(--texto-suave)",
+            background: abierta
+              ? "color-mix(in srgb, var(--obra-finalizado) 12%, transparent)"
+              : "var(--fondo-suave)",
+            border: `1px solid ${
+              abierta ? "color-mix(in srgb, var(--obra-finalizado) 30%, transparent)" : "var(--borde)"
+            }`,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            className="h-2 w-2 rounded-full"
+            style={{ background: abierta ? "var(--obra-finalizado)" : "var(--borde-control)" }}
+          />
+          {abierta ? "Abierta" : "Cerrada"}
+        </span>
+      </div>
+      <p className="text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+        {abierta ? textoAbierta : textoCerrada}
       </p>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Ideas desde</span>
-          <input
-            name="ideasDesde"
-            type="date"
-            defaultValue={edicion.ideasDesde ?? ""}
-            disabled={soloLectura}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          />
-        </label>
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Ideas hasta</span>
-          <input
-            name="ideasHasta"
-            type="date"
-            defaultValue={edicion.ideasHasta ?? ""}
-            disabled={soloLectura}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          />
-        </label>
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Presupuesto total ($)</span>
-          <input
-            name="presupuestoTotal"
-            type="number"
-            min={0}
-            max={MAXIMO_PRESUPUESTO}
-            step="0.01"
-            defaultValue={edicion.presupuestoTotal ?? ""}
-            disabled={soloLectura}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          />
-        </label>
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Votación desde</span>
-          <input
-            name="votacionDesde"
-            type="date"
-            defaultValue={edicion.votacionDesde ?? ""}
-            disabled={soloLectura}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          />
-        </label>
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Votación hasta</span>
-          <input
-            name="votacionHasta"
-            type="date"
-            defaultValue={edicion.votacionHasta ?? ""}
-            disabled={soloLectura}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          />
-        </label>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        {!soloLectura && (
-          <button
-            type="submit"
-            disabled={pendiente}
-            className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: "var(--color-marca-700)" }}
-          >
-            {pendiente ? "Guardando…" : "Guardar fechas"}
-          </button>
-        )}
-        {estado && (
-          <span
-            role="status"
-            className="text-sm"
-            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
-          >
-            {estado.ok ? "Guardado." : estado.error}
-          </span>
-        )}
-      </div>
-    </form>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Activacion
-// ---------------------------------------------------------------------------
-
-/**
- * Activacion de una edicion inactiva. Con la activa en votacion el boton queda
- * deshabilitado y dice por que (`puedeActivarOtraEdicion`): activar otra cortaria
- * esa votacion en el acto. La accion lo vuelve a mirar en la base.
- */
-function BloqueActivar({
-  edicion,
-  activa,
-}: {
-  edicion: FilaEdicion;
-  activa: { anio: number; etapa: Etapa } | null;
-}) {
-  const [estado, accion, pendiente] = useActionState(activarEdicion, null);
-  const [confirmando, setConfirmando] = useState(false);
-  const veredicto = puedeActivarOtraEdicion(activa);
-  const anioActiva = activa?.anio ?? null;
-
-  return (
-    <div
-      className="rounded-2xl p-4"
-      style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
-    >
-      <h3 className="text-sm font-bold">Activar la edición {edicion.anio}</h3>
-
-      {!veredicto.permitido ? (
-        <p className="mt-1 text-xs" style={{ color: "var(--acento-texto)" }}>
-          {veredicto.motivo}
-        </p>
-      ) : !confirmando ? (
-        <>
-          <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-            {anioActiva
-              ? `Activar esta edición desactiva la edición ${anioActiva}: solo puede haber una activa.`
-              : "Al activarla, el sitio público empieza a mostrar esta edición."}
-          </p>
-          <button
-            type="button"
-            onClick={() => setConfirmando(true)}
-            className="mt-3 rounded-xl px-4 py-2.5 text-sm font-semibold"
-            style={{
-              background: "var(--fondo-tarjeta)",
-              border: "1px solid var(--color-marca-600)",
-              color: "var(--marca-texto)",
-            }}
-          >
-            Activar esta edición…
-          </button>
-        </>
-      ) : (
-        <form action={accion} className="mt-2">
-          <input type="hidden" name="id" value={edicion.id} />
-          <p className="text-sm">
-            Todo el sitio público va a mostrar la edición <strong>{edicion.anio}</strong>: la
-            portada, el mapa, la votación, transparencia y el chatbot.
-            {activa ? (
-              <>
-                {" "}
-                La edición <strong>{activa.anio}</strong> queda inactiva y pasa al archivo, en la
-                etapa “{ETIQUETA_ETAPA[activa.etapa] ?? activa.etapa}”.
-              </>
-            ) : null}{" "}
-            ¿Confirmás el cambio?
-          </p>
-          {/*
-            La etapa de una edicion inactiva no hace nada en el sitio, y por eso
-            nadie la mira. Pero al activarla vale en el acto: si quedo guardada
-            en "votacion", activar ES abrir la votacion publica, sin pasar por la
-            confirmacion del selector de etapa.
-          */}
-          {edicion.etapa === "votacion" && (
-            <p className="mt-2 text-sm font-semibold" style={{ color: "var(--acento-texto)" }}>
-              Ojo: esta edición está guardada en la etapa “{ETIQUETA_ETAPA.votacion}”. Al
-              activarla, la votación pública se abre en el acto.
-            </p>
-          )}
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={pendiente}
-              className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-              style={{ background: "var(--color-acento-600)" }}
-            >
-              {pendiente ? "Activando…" : `Sí, activar ${edicion.anio}`}
-            </button>
+      {puedeCambiar && !bloqueada && (
+        <div className="mt-auto">
+          {!confirmando ? (
             <button
               type="button"
-              onClick={() => setConfirmando(false)}
-              className="text-sm underline"
+              onClick={() => setConfirmando(true)}
+              className="rounded-xl px-4 py-2 text-sm font-semibold"
+              style={
+                abierta
+                  ? { border: "1px solid var(--borde-control)", color: "var(--texto)" }
+                  : { background: "var(--color-marca-700)", color: "#fff" }
+              }
             >
-              Cancelar
+              {abierta ? "Cerrar" : "Abrir"}
             </button>
-            {estado && (
-              <span
-                role="status"
-                className="text-sm"
-                style={{
-                  color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)",
-                }}
-              >
-                {estado.ok ? (estado.mensaje ?? "Activada.") : estado.error}
-              </span>
-            )}
-          </div>
-        </form>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Cronograma
-// ---------------------------------------------------------------------------
-
-function Cronograma({
-  edicion,
-  soloLectura,
-}: {
-  edicion: FilaEdicion;
-  soloLectura: boolean;
-}) {
-  const [agregando, setAgregando] = useState(false);
-
-  return (
-    <div data-recorrido="ediciones-cronograma">
-      <h3 className="text-sm font-bold">Cronograma público ({edicion.hitos.length})</h3>
-      <p className="mt-1 text-xs" style={{ color: "var(--texto-suave)" }}>
-        Si la edición está activa, se publica en la portada y en “Cómo participar”. El orden más
-        bajo aparece primero.
-      </p>
-
-      {edicion.hitos.length === 0 ? (
-        <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Todavía no hay hitos cargados para esta edición.
-        </p>
-      ) : (
-        <ul className="mt-3 space-y-2">
-          {edicion.hitos.map((hito) => (
-            <li key={hito.id}>
-              <FilaHito
-                hito={hito}
-                edicionId={edicion.id}
-                soloLectura={soloLectura}
-                publicado={edicion.activa}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {!soloLectura && (
-        <div className="mt-3">
-          {agregando ? (
-            <div
-              className="rounded-xl p-4"
+          ) : (
+            <form
+              action={(datos) => {
+                accion(datos);
+                setConfirmando(false);
+              }}
+              className="rounded-xl p-3 text-sm"
               style={{ background: "var(--fondo-suave)", border: "1px solid var(--borde)" }}
             >
-              <div className="flex items-center justify-between gap-3">
-                <h4 className="text-sm font-semibold">Hito nuevo</h4>
+              <input type="hidden" name="interruptor" value={interruptor} />
+              <p>{abierta ? confirmarCerrar : confirmarAbrir}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button
-                  type="button"
-                  onClick={() => setAgregando(false)}
-                  className="text-xs underline"
+                  type="submit"
+                  disabled={pendiente}
+                  className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  style={{ background: "var(--color-marca-700)" }}
                 >
-                  Cerrar
+                  {pendiente ? "Guardando…" : abierta ? `Sí, cerrar` : `Sí, abrir`}
+                </button>
+                <button type="button" onClick={() => setConfirmando(false)} className="underline">
+                  Cancelar
                 </button>
               </div>
-              <FormularioHito
-                edicionId={edicion.id}
-                ordenSugerido={siguienteOrden(edicion.hitos)}
-              />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAgregando(true)}
-              className="rounded-xl px-4 py-2.5 text-sm font-semibold"
-              style={{
-                background: "var(--fondo-tarjeta)",
-                border: "1px solid var(--borde)",
-                color: "var(--texto)",
-              }}
-            >
-              Agregar un hito
-            </button>
+            </form>
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }
-
-/** Deja hueco de 10 en 10 para poder intercalar hitos sin renumerar todo. */
-function siguienteOrden(lista: Hito[]): number {
-  if (lista.length === 0) return 10;
-  const mayor = Math.max(...lista.map((hito) => hito.orden));
-  return Math.min(mayor + 10, 999);
-}
-
-function FilaHito({
-  hito,
-  edicionId,
-  soloLectura,
-  publicado,
-}: {
-  hito: Hito;
-  edicionId: number;
-  soloLectura: boolean;
-  publicado: boolean;
-}) {
-  const [editando, setEditando] = useState(false);
-  const [borrando, setBorrando] = useState(false);
-  const rango = formatearRango(hito.desde, hito.hasta);
-
-  return (
-    <div className="rounded-xl" style={{ background: "var(--fondo-suave)" }}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-sm">
-        <span
-          className="min-w-8 text-xs font-semibold"
-          style={{ color: "var(--texto-suave)" }}
-        >
-          {hito.orden}
-        </span>
-        <span className="font-medium">{hito.titulo}</span>
-        <span className="text-xs" style={{ color: "var(--texto-suave)" }}>
-          {rango || "sin fechas"}
-          {hito.etapa && ` · ${ETIQUETA_ETAPA[hito.etapa] ?? hito.etapa}`}
-        </span>
-        {/*
-          py-1.5 y px-1: con text-xs (12 px de texto y 16 de renglon) el area
-          sensible de estos dos botones quedaba en 16 px de alto, abajo de los
-          24x24 que pide el criterio 2.5.8 de WCAG 2.2 para un control que no
-          esta dentro de una oracion. El -my-1.5 del contenedor se lo come, asi
-          que la fila del hito no crece.
-        */}
-        {!soloLectura && (
-          <div className="-my-1.5 ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setEditando(!editando)}
-              className="px-1 py-1.5 text-xs underline"
-              aria-expanded={editando}
-            >
-              {editando ? "Cerrar" : "Editar"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setBorrando(!borrando)}
-              className="px-1 py-1.5 text-xs underline"
-              style={{ color: "var(--acento-texto)" }}
-              aria-expanded={borrando}
-            >
-              {borrando ? "Cerrar" : "Borrar"}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {borrando && !soloLectura && (
-        <div className="px-4 pb-4" style={{ borderTop: "1px solid var(--borde)" }}>
-          <ConfirmacionBorrarHito
-            hito={hito}
-            publicado={publicado}
-            alCancelar={() => setBorrando(false)}
-          />
-        </div>
-      )}
-
-      {editando && !soloLectura && (
-        <div className="px-4 pb-4" style={{ borderTop: "1px solid var(--borde)" }}>
-          <FormularioHito edicionId={edicionId} hito={hito} ordenSugerido={hito.orden} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FormularioHito({
-  edicionId,
-  hito,
-  ordenSugerido,
-}: {
-  edicionId: number;
-  hito?: Hito;
-  ordenSugerido: number;
-}) {
-  const [estado, accion, pendiente] = useActionState(guardarHito, null);
-
-  // El hito nuevo se vacia a mano solo cuando se agrego, listo para el
-  // siguiente; el de un hito existente se queda con lo guardado. Un error no
-  // toca nada (ver enviarSinResetear).
-  const formulario = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (estado?.ok && !hito) formulario.current?.reset();
-  }, [estado, hito]);
-
-  return (
-    <form
-      ref={formulario}
-      action={accion}
-      onSubmit={enviarSinResetear(accion)}
-      className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-    >
-      <input type="hidden" name="edicionId" value={edicionId} />
-      {hito && <input type="hidden" name="id" value={hito.id} />}
-
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Orden</span>
-        <input
-          name="orden"
-          type="number"
-          min={0}
-          max={999}
-          defaultValue={ordenSugerido}
-          style={estiloCampo}
-          className="rounded-xl px-3 py-2"
-        />
-      </label>
-
-      <label className="grid gap-1 text-sm sm:col-span-2">
-        <span className="font-medium">Título</span>
-        <input
-          name="titulo"
-          required
-          minLength={3}
-          maxLength={200}
-          defaultValue={hito?.titulo ?? ""}
-          placeholder="Asambleas por distrito"
-          style={estiloCampo}
-          className="rounded-xl px-3 py-2"
-        />
-      </label>
-
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Etapa (opcional)</span>
-        {/* La key es la etapa guardada, como el rol en equipo/panel.tsx: si
-            la etapa cambia en la base, el select se vuelve a montar con ella
-            en vez de quedarse con la opcion que tenia al montarse. */}
-        <select
-          key={hito?.etapa ?? ""}
-          name="etapa"
-          defaultValue={hito?.etapa ?? ""}
-          style={estiloCampo}
-          className="rounded-xl px-3 py-2"
-        >
-          <option value="">Sin etapa</option>
-          {ETAPAS.map((valor) => (
-            <option key={valor} value={valor}>
-              {ETIQUETA_ETAPA[valor]}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Desde</span>
-        <input
-          name="desde"
-          type="date"
-          defaultValue={hito?.desde ?? ""}
-          style={estiloCampo}
-          className="rounded-xl px-3 py-2"
-        />
-      </label>
-
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">Hasta</span>
-        <input
-          name="hasta"
-          type="date"
-          defaultValue={hito?.hasta ?? ""}
-          style={estiloCampo}
-          className="rounded-xl px-3 py-2"
-        />
-      </label>
-
-      <label className="grid gap-1 text-sm sm:col-span-2">
-        <span className="font-medium">Detalle (opcional)</span>
-        <textarea
-          name="detalle"
-          rows={2}
-          maxLength={2000}
-          defaultValue={hito?.detalle ?? ""}
-          placeholder="Qué pasa en esta etapa, contado para el vecino."
-          style={estiloCampo}
-          className="resize-y rounded-xl px-3 py-2"
-        />
-      </label>
-
-      <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-4">
-        <button
-          type="submit"
-          disabled={pendiente}
-          className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-          style={{ background: "var(--color-marca-700)" }}
-        >
-          {pendiente ? "Guardando…" : hito ? "Guardar hito" : "Agregar hito"}
-        </button>
-        {estado && (
-          <span
-            role="status"
-            className="text-sm"
-            style={{ color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)" }}
-          >
-            {estado.ok ? "Guardado." : estado.error}
-          </span>
-        )}
-      </div>
-    </form>
-  );
-}
-
-/**
- * Borrado de un hito, con confirmacion. El borrado es definitivo (la fila se
- * va de la tabla `hitos`, no queda marcada) y, si la edicion esta activa, el
- * hito desaparece del cronograma que el vecino ve publicado: eso hay que
- * decirlo antes, no despues.
- */
-function ConfirmacionBorrarHito({
-  hito,
-  publicado,
-  alCancelar,
-}: {
-  hito: Hito;
-  publicado: boolean;
-  alCancelar: () => void;
-}) {
-  const [estado, accion, pendiente] = useActionState(borrarHito, null);
-  const rango = formatearRango(hito.desde, hito.hasta);
-
-  return (
-    <form
-      action={accion}
-      className="mt-3 rounded-xl p-3"
-      style={{
-        background: "color-mix(in srgb, var(--color-acento-600) 8%, transparent)",
-        border: "1px solid color-mix(in srgb, var(--color-acento-600) 40%, transparent)",
-      }}
-    >
-      <input type="hidden" name="id" value={hito.id} />
-      <p className="text-sm font-semibold">Vas a borrar el hito “{hito.titulo}”.</p>
-      <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-        {publicado
-          ? "La edición está activa: el hito desaparece del cronograma de la portada y de “Cómo participar”, y el chatbot deja de contarlo cuando le preguntan cuándo pasa cada cosa."
-          : "La edición está inactiva, así que este hito todavía no se publica en el sitio."}{" "}
-        No se puede deshacer: si lo necesitás de nuevo hay que cargarlo otra vez
-        {rango ? ` con sus fechas (${rango})` : ""}.
-      </p>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          disabled={pendiente}
-          className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          style={{ background: "var(--color-acento-600)" }}
-        >
-          {pendiente ? "Borrando…" : "Sí, borrar el hito"}
-        </button>
-        <button type="button" onClick={alCancelar} className="text-sm underline">
-          Cancelar
-        </button>
-        {estado && !estado.ok && (
-          <span role="alert" className="text-sm" style={{ color: "var(--acento-texto)" }}>
-            {estado.error}
-          </span>
-        )}
-      </div>
-    </form>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Alta de una edicion
-// ---------------------------------------------------------------------------
-
-function FormularioNuevaEdicion() {
-  const [estado, accion, pendiente] = useActionState(crearEdicion, null);
-
-  return (
-    <div data-recorrido="ediciones-nueva" className="superficie rounded-2xl p-6">
-      <h2 className="text-lg font-bold">Nueva edición</h2>
-      <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-        Nace inactiva y en etapa “Presentación de ideas”. Después cargale las fechas, armá el
-        cronograma y recién entonces activala.
-      </p>
-      <form action={accion} className="mt-4 grid gap-3">
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium">Año</span>
-          <input
-            name="anio"
-            type="number"
-            required
-            min={2020}
-            max={2100}
-            step={1}
-            defaultValue={anioProximo}
-            style={estiloCampo}
-            className="rounded-xl px-3 py-2"
-          />
-        </label>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={pendiente}
-            className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: "var(--color-acento-600)" }}
-          >
-            {pendiente ? "Creando…" : "Crear edición"}
-          </button>
-          {estado && (
-            <span
-              role="status"
-              className="text-sm"
-              style={{
-                color: estado.ok ? "var(--color-cat-ambiental)" : "var(--acento-texto)",
-              }}
-            >
-              {estado.ok ? (estado.mensaje ?? "Creada.") : estado.error}
-            </span>
-          )}
-        </div>
-      </form>
-    </div>
-  );
-}
-
-const estiloCampo: React.CSSProperties = {
-  background: "var(--fondo-suave)",
-  border: "1px solid var(--borde)",
-  color: "var(--texto)",
-};

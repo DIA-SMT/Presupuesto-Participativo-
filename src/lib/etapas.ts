@@ -518,3 +518,77 @@ export function puedeActivarOtraEdicion(
     `La edición ${activa.anio} tiene la votación abierta: si activás otra, esa votación se corta en el acto (el sitio solo acepta votos de la edición activa) y sus propuestas dejan de verse en el panel. Cerrá primero la votación de la ${activa.anio} (pasala a “Seguimiento de obras”) y después activá esta.`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Los dos interruptores del panel
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo que el panel ofrece desde octubre de 2026, en lugar de elegir etapa y
+ * edicion: abrir o cerrar la presentacion de propuestas y la votacion. El
+ * programa ya no se presenta por ediciones anuales; por dentro las etapas y la
+ * tabla `ediciones` siguen igual, y cada interruptor se traduce a un cambio de
+ * etapa de la edicion activa (con las mismas reglas de `puedeCambiarEtapa`).
+ */
+export const INTERRUPTORES = [
+  "abrir-presentacion",
+  "cerrar-presentacion",
+  "abrir-votacion",
+  "cerrar-votacion",
+] as const;
+
+export type Interruptor = (typeof INTERRUPTORES)[number];
+
+export function esInterruptor(valor: unknown): valor is Interruptor {
+  return typeof valor === "string" && (INTERRUPTORES as readonly string[]).includes(valor);
+}
+
+/** Lo que muestra cada interruptor, segun la etapa de la edicion activa. */
+export function estadoDeInterruptores(etapa: Etapa): {
+  presentacionAbierta: boolean;
+  votacionAbierta: boolean;
+} {
+  return { presentacionAbierta: etapa === "ideas", votacionAbierta: etapa === "votacion" };
+}
+
+/**
+ * Que hace un interruptor con la edicion activa en `etapa`:
+ *
+ *  - "etapa": pasarla a `destino` (la accion igual consulta `puedeCambiarEtapa`).
+ *  - "nuevo-ciclo": la votacion ya termino y se vuelve a abrir la presentacion:
+ *    se crea una edicion interna nueva, en "ideas", y se activa. Asi las
+ *    propuestas nuevas no se mezclan con las que ya se votaron, sin que nadie
+ *    tenga que crear ni elegir un año.
+ *  - "sin-cambio": ya estaba asi.
+ *  - "rechazo": no se puede, con el motivo para el equipo.
+ */
+export type PlanDeInterruptor =
+  | { tipo: "etapa"; destino: Etapa }
+  | { tipo: "nuevo-ciclo" }
+  | { tipo: "sin-cambio"; mensaje: string }
+  | { tipo: "rechazo"; motivo: string };
+
+export function planDeInterruptor(etapa: Etapa, interruptor: Interruptor): PlanDeInterruptor {
+  switch (interruptor) {
+    case "abrir-presentacion":
+      if (etapa === "ideas") return { tipo: "sin-cambio", mensaje: "La presentación ya estaba abierta." };
+      if (etapa === "evaluacion") return { tipo: "etapa", destino: "ideas" };
+      if (etapa === "votacion") {
+        return {
+          tipo: "rechazo",
+          motivo:
+            "La votación está abierta. Cerrala primero: mientras se vota no se reciben propuestas nuevas.",
+        };
+      }
+      return { tipo: "nuevo-ciclo" };
+    case "cerrar-presentacion":
+      if (etapa === "ideas") return { tipo: "etapa", destino: "evaluacion" };
+      return { tipo: "sin-cambio", mensaje: "La presentación ya estaba cerrada." };
+    case "abrir-votacion":
+      if (etapa === "votacion") return { tipo: "sin-cambio", mensaje: "La votación ya estaba abierta." };
+      return { tipo: "etapa", destino: "votacion" };
+    case "cerrar-votacion":
+      if (etapa === "votacion") return { tipo: "etapa", destino: "seguimiento" };
+      return { tipo: "sin-cambio", mensaje: "La votación ya estaba cerrada." };
+  }
+}

@@ -54,7 +54,7 @@ export const PASOS: PasoRecorrido[] = [
       moderador:
         "Tu cuenta es de moderador: evaluás y publicás las propuestas de los vecinos. Te mostramos cada pantalla en un par de minutos.",
       admin:
-        "Tu cuenta es de administrador: además de evaluar, manejás la etapa del proceso, el contenido del sitio y el equipo. Te mostramos cada pantalla en un par de minutos.",
+        "Tu cuenta es de administrador: además de evaluar, abrís y cerrás la presentación de propuestas y la votación, y manejás el equipo. Te mostramos cada pantalla en un par de minutos.",
     },
   },
 
@@ -131,58 +131,20 @@ export const PASOS: PasoRecorrido[] = [
       "Cuánto del presupuesto de la edición está asignado a los proyectos ganadores, y en qué etapa está cada obra. Si la edición no tiene el presupuesto total cargado, lo avisa.",
   },
 
-  // --- Etapa del proceso (/admin/ediciones) ---------------------------------------
+  // --- Presentación y votación (/admin/ediciones) ------------------------------
   {
     id: "ediciones-etapa",
-    seccion: "Proceso · Etapa",
+    seccion: "Proceso · Presentación y votación",
     ruta: "/admin/ediciones",
     anclas: ["ediciones-etapa"],
-    titulo: "La etapa del proceso",
+    titulo: "Presentación y votación",
     texto: {
       lector:
-        "En qué etapa está la edición activa: presentación de ideas, evaluación técnica, votación, seguimiento de obras o cerrada.",
+        "Si hoy está abierta la presentación de propuestas o la votación. Es lo que el sitio les deja hacer a los vecinos.",
       moderador:
-        "En qué etapa está la edición activa. La etapa define qué pueden hacer los vecinos en el sitio, y la cambia un administrador.",
+        "Si hoy está abierta la presentación de propuestas o la votación. Las abre y las cierra un administrador.",
       admin:
-        "En esta pantalla cambiás la etapa de la edición activa, que define qué ve el sitio y cuándo se abre o se cierra la votación. Antes de confirmar, el panel te dice qué abre y qué cierra el cambio.",
-    },
-  },
-  {
-    id: "ediciones-fechas",
-    seccion: "Proceso · Etapa",
-    ruta: "/admin/ediciones",
-    anclas: ["ediciones-fechas"],
-    titulo: "Fechas y presupuesto",
-    texto: {
-      lector: "Las fechas de la edición y su presupuesto total. Los carga un administrador.",
-      moderador: "Las fechas de la edición y su presupuesto total. Los carga un administrador.",
-      admin:
-        "Las fechas de la edición y su presupuesto total. Es el monto contra el que el Tablero mide la ejecución presupuestaria.",
-    },
-  },
-  {
-    id: "ediciones-cronograma",
-    seccion: "Proceso · Etapa",
-    ruta: "/admin/ediciones",
-    anclas: ["ediciones-cronograma"],
-    titulo: "El cronograma público",
-    texto: {
-      lector: "Los hitos del cronograma que ven los vecinos en el sitio.",
-      moderador:
-        "Los hitos del cronograma que ven los vecinos en el sitio. Los agregás, los corregís o los borrás en esta pantalla.",
-      admin:
-        "Los hitos del cronograma que ven los vecinos en el sitio. Los agregás, los corregís o los borrás en esta pantalla.",
-    },
-  },
-  {
-    id: "ediciones-nueva",
-    seccion: "Proceso · Etapa",
-    ruta: "/admin/ediciones",
-    anclas: ["ediciones-nueva"],
-    titulo: "Una edición nueva",
-    texto: {
-      admin:
-        "Para el año siguiente: creás la edición con su año, le cargás las fechas y el presupuesto, y cuando llegue el momento la activás. Mientras no esté activa, el sitio sigue mostrando la actual.",
+        "Acá abrís o cerrás la presentación de propuestas y la votación. Solo una puede estar abierta a la vez, y antes de aplicar el cambio el panel te dice qué va a pasar.",
     },
   },
 
