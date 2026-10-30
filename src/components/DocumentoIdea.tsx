@@ -97,14 +97,12 @@ export type EdicionDocumento = {
 
 export default function DocumentoIdea({
   datos,
-  anio,
   poligono,
   activo = null,
   comprobante = null,
   edicion = null,
 }: {
   datos: DatosDocumento;
-  anio: number;
   /**
    * Contorno del distrito en coordenadas geograficas, para el mapita. Es el
    * poligono oficial, no una imagen: dibujado como SVG entra en el PDF sin
@@ -123,7 +121,7 @@ export default function DocumentoIdea({
     <article className="documento-idea">
       <header className="doc-cabecera">
         <p className="doc-programa">
-          Presupuesto Participativo · Edición {anio} · San Miguel de Tucumán
+          Presupuesto Participativo · San Miguel de Tucumán
         </p>
         {edicion ? (
           <h2 className="doc-titulo">

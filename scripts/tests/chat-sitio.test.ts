@@ -40,7 +40,7 @@ function edicion(etapa: Etapa, fechas: Partial<Record<"ideasDesde" | "ideasHasta
 function contexto(cambios: Partial<ContextoDelSitio> = {}): ContextoDelSitio {
   return {
     hoy: HOY,
-    momento: "Edición 2026: la presentación de ideas está abierta hasta el 15 de noviembre de 2026.",
+    momento: "La presentación de propuestas está abierta hasta el 15 de noviembre de 2026.",
     acciones: [
       { href: "/ideas/nueva", texto: "Presentá tu idea" },
       { href: "/proyectos", texto: "Ver las ideas presentadas" },

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import AvisoEdicion from "@/components/AvisoEdicion";
 import Mapa from "@/components/Mapa";
 import { Aviso, Chip, ChipEstado, Dato, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
@@ -76,7 +75,6 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
 
   return (
     <div className="contenedor py-10 sm:py-14">
-      <AvisoEdicion vista={vista} hrefActual={`/distritos/${numero}`} />
 
       <nav aria-label="Camino de navegación" className="text-sm" style={{ color: "var(--texto-suave)" }}>
         <Link href={conEdicion("/distritos", anioEnEnlaces)} className="hover:underline">
@@ -192,12 +190,12 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
         <div className="mt-10 space-y-3">
           <Aviso>
             {edicion.etapa === "votacion"
-              ? `La votación de la edición ${edicion.anio} está abierta: el proyecto ganador del distrito se conoce cuando termine. Las ideas de abajo están en orden alfabético.`
-              : `La edición ${edicion.anio} está en la etapa “${ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}”: el proyecto ganador del distrito se elige en la votación.`}
+              ? "La votación está abierta: el proyecto ganador del distrito se conoce cuando termine. Las propuestas de abajo están en orden alfabético."
+              : `Hoy el programa está en “${ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}”: el próximo proyecto ganador del distrito se elige en la votación.`}
           </Aviso>
           {anterior && ganadorAnterior && (
             <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-              En la edición {anterior.anio} ganó en este distrito{" "}
+              En la última votación ganó en este distrito{" "}
               <Link
                 href={conEdicion(
                   `/proyectos/${ganadorAnterior.slug}`,
@@ -215,14 +213,14 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
       ) : porProclamar ? (
         <div className="mt-10">
           <Aviso>
-            La votación de la edición {edicion.anio} terminó y el proyecto ganador de este distrito
+            La votación terminó y el proyecto ganador de este distrito
             todavía no se proclamó. Se publica acá cuando se proclame.
           </Aviso>
         </div>
       ) : (
         <div className="mt-10">
           <Aviso tono="atencion">
-            Este distrito no tiene proyecto ganador en la edición {edicion.anio}.
+            Este distrito no tiene proyecto ganador en la última votación.
             {/* Solo si de verdad fue asi: con una sola idea factible que no se
                 llego a proclamar, la frase era falsa. */}
             {distrito.ideas.length === 1 && distrito.ideas[0].estado === "no_factible"
@@ -238,7 +236,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
         <p className="mt-2 max-w-prose text-sm" style={{ color: "var(--texto-suave)" }}>
           {/* Una edicion recien abierta no tiene ideas: "0 de las 0" no dice nada. */}
           {distrito.ideas.length === 0
-            ? `Todavía no hay ideas publicadas en este distrito en la edición ${edicion.anio}.`
+            ? "Todavía no hay propuestas publicadas en este distrito."
             : `${conPunto.length} de las ${distrito.ideas.length} ideas tienen una ubicación en el mapa. Los puntos con borde punteado son aproximados: no marcan el lugar exacto de la obra.`}
         </p>
         <div className="mt-4">

@@ -292,7 +292,7 @@ export default function AvisoLegal({ textos }: { textos: Record<string, string> 
             interrupción no genera derecho a indemnización.
           </p>
           <p>
-            Los plazos que valen son los del reglamento y los del cronograma de la edición, no la
+            Los plazos que valen son los del reglamento y los del cronograma del programa, no la
             disponibilidad del sitio en un momento dado.{" "}
             <Pendiente>
               qué se hace si el sitio no está disponible durante el cierre de una etapa: prórroga

@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import AvisoEdicion from "@/components/AvisoEdicion";
 import Filtros from "@/components/Filtros";
 import Mapa from "@/components/Mapa";
 import { TarjetaProyecto, Vacio } from "@/components/ui";
@@ -14,7 +13,7 @@ import {
   type EstadoIdea,
 } from "@/db/queries";
 import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
-import { PARAMETRO_EDICION, conEdicion } from "@/lib/ediciones";
+import { PARAMETRO_EDICION } from "@/lib/ediciones";
 import { ETIQUETA_ESTADO, colorCategoria, formatearNumero } from "@/lib/formato";
 
 const DESCRIPCION =
@@ -64,7 +63,7 @@ export default async function Proyectos({ searchParams }: Props) {
   if (!vista) {
     return (
       <div className="contenedor py-20">
-        <Vacio>Todavía no hay una edición cargada.</Vacio>
+        <Vacio>Todavía no hay datos cargados.</Vacio>
       </div>
     );
   }
@@ -104,7 +103,6 @@ export default async function Proyectos({ searchParams }: Props) {
 
   return (
     <div className="contenedor py-10 sm:py-14">
-      <AvisoEdicion vista={vista} hrefActual={enlaceListado(filtros, { vista: filtros.vista })} />
 
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold sm:text-4xl">
@@ -118,16 +116,16 @@ export default async function Proyectos({ searchParams }: Props) {
       {sinIdeas ? (
         <div className="mt-8">
           <Vacio>
-            La edición {edicion.anio} todavía no tiene ideas publicadas.
+            Todavía no hay propuestas publicadas.
             {anterior && anterior.id !== edicion.id && (
               <>
                 {" "}
                 <Link
-                  href={conEdicion("/proyectos", anterior.activa ? null : anterior.anio)}
+                  href="/transparencia"
                   className="font-semibold underline"
                   style={{ color: "var(--marca-texto)" }}
                 >
-                  Ver las ideas de la edición {anterior.anio}
+                  Ver los proyectos ganadores
                 </Link>
               </>
             )}

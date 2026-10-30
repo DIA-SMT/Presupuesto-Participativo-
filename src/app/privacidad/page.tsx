@@ -192,16 +192,16 @@ export default async function Privacidad() {
             <li>
               <strong>El contenido de las ideas y los resultados</strong> se conservan como archivo
               histórico del programa: son información pública de la gestión municipal y quedan
-              publicados en el sitio y en el archivo de ediciones.
+              publicados en el sitio.
             </li>
             <li>
-              <strong>Tu correo y tu teléfono</strong> se guardan mientras dura la edición en la que
-              presentaste la idea y se borran al cerrarla, porque después ya no hay nada que
+              <strong>Tu correo y tu teléfono</strong> se guardan mientras dura el proceso en el que
+              presentaste la idea y se borran al cerrarlo, porque después ya no hay nada que
               consultarte ni avisarte. También los borramos antes si nos lo pedís.
             </li>
             <li>
               <strong>El padrón</strong> (documento hasheado, nombre y distrito de quien ingresó con
-              CIDITUC para presentar una idea o votar) se conserva para poder auditar la edición.
+              CIDITUC para presentar una idea o votar) se conserva para poder auditar la votación.
             </li>
             <li>
               <strong>Los registros técnicos</strong> de límite de uso por conexión se reinician
@@ -327,7 +327,7 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
     caracter: "Facultativo",
     color: "var(--acento-texto)",
     finalidad:
-      "Si lo dejás, lo usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se borra cuando cierra la edición.",
+      "Si lo dejás, lo usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se borra cuando cierra el proceso.",
   },
   {
     dato: "Tu identidad de CIDITUC, al presentar una idea",

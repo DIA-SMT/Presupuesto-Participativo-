@@ -8,7 +8,7 @@ export default function NoEncontrada() {
       </p>
       <h1 className="mt-2 text-3xl font-bold">Esta página no existe</h1>
       <p className="mt-3 max-w-prose text-base" style={{ color: "var(--texto-suave)" }}>
-        Puede que el enlace esté mal escrito o que el proyecto que buscás sea de otra edición.
+        Puede que el enlace esté mal escrito o que el proyecto que buscás ya no esté publicado.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Link

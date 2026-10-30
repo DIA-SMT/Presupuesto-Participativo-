@@ -50,7 +50,6 @@ export default async function DocumentoDeLaPropuesta({
           beneficios: idea.beneficios ?? "",
           organizacion: idea.organizacion ?? "",
         }}
-        anio={idea.anio}
         propuesta={codigoDePropuesta(idea.distrito, idea.numero)}
         fecha={idea.fecha ? formatearFecha(idea.fecha) : "sin fecha"}
       />

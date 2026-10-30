@@ -286,7 +286,6 @@ export default async function RootLayout({
                 {[
                   ...NAVEGACION,
                   { href: "/reglamento", texto: "Reglamento" },
-                  { href: "/archivo", texto: "Archivo de ediciones" },
                   { href: "/ideas/seguimiento", texto: "Seguí tu idea" },
                   { href: "/privacidad", texto: "Política de privacidad" },
                 ].map((item) => (
@@ -332,7 +331,7 @@ export default async function RootLayout({
               </ul>
               {edicion && (
                 <p className="mt-4 text-xs" style={{ color: "var(--texto-suave)" }}>
-                  Edición {edicion.anio} · {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
+                  Hoy: {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
                 </p>
               )}
             </div>

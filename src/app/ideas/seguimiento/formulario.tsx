@@ -180,7 +180,7 @@ function Ficha({ idea }: { idea: IdeaSeguida }) {
   return (
     <article className="superficie rounded-2xl p-6">
       <p className="text-xs font-medium" style={{ color: "var(--texto-suave)" }}>
-        {codigoDePropuesta(idea.distrito, idea.numero)} · Edición {idea.anio}
+        {codigoDePropuesta(idea.distrito, idea.numero)}
         {idea.distrito !== null && <> · Distrito {idea.distrito}</>}
         {idea.fecha && <> · Presentada el {formatearFecha(idea.fecha)}</>}
       </p>

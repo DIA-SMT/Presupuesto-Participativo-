@@ -57,13 +57,14 @@ export default async function Reglamento() {
 
             {edicion && (
               <p className="mt-6 text-sm" style={{ color: "var(--texto-suave)" }}>
-                Edición {edicion.anio}
-                {edicion.ideasDesde && (
-                  <> · Presentación de ideas: {formatearRango(edicion.ideasDesde, edicion.ideasHasta)}</>
-                )}
-                {edicion.votacionDesde && (
-                  <> · Votación: {formatearRango(edicion.votacionDesde, edicion.votacionHasta)}</>
-                )}
+                {[
+                  edicion.ideasDesde &&
+                    `Presentación de propuestas: ${formatearRango(edicion.ideasDesde, edicion.ideasHasta)}`,
+                  edicion.votacionDesde &&
+                    `Votación: ${formatearRango(edicion.votacionDesde, edicion.votacionHasta)}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             )}
 

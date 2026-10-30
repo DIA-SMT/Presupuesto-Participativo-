@@ -14,7 +14,7 @@ import {
   type Estadisticas,
   type IdeaVista,
 } from "@/db/queries";
-import { conEdicion, votacionTerminada } from "@/lib/ediciones";
+import { votacionTerminada } from "@/lib/ediciones";
 import {
   ETIQUETA_ETAPA,
   distritosConVerbo,
@@ -143,7 +143,7 @@ export default async function Home() {
         seria esconder lo unico que dice de que tamano es el programa.
       */}
       <section
-        aria-label={`Números de la edición ${stats.anio}`}
+        aria-label="Números del programa"
         style={{ borderBottom: "1px solid var(--borde)" }}
       >
         <div className="contenedor py-6">
@@ -165,7 +165,7 @@ export default async function Home() {
               </div>
             ))}
             <div className="ml-auto text-sm" style={{ color: "var(--texto-suave)" }}>
-              Edición {stats.anio} · {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
+              Hoy: {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
             </div>
           </dl>
         </div>
@@ -241,20 +241,11 @@ export default async function Home() {
       {/* --- Ganadores ---------------------------------------------------- */}
       {ganadores && ganadores.ideas.length > 0 ? (
         <Seccion
-          titulo={
-            ganadores.anioEnEnlaces === null
-              ? "Los proyectos más votados"
-              : `Los ganadores de ${ganadores.anio}`
-          }
-          bajada={bajadaGanadores(ganadores, edicion.anio, faltaProclamar)}
+          titulo="Proyectos ganadores"
+          bajada={bajadaGanadores(ganadores, faltaProclamar)}
           accion={
-            <Boton
-              href={conEdicion("/proyectos?ganadores=1", ganadores.anioEnEnlaces)}
-              variante="secundario"
-            >
-              {ganadores.anioEnEnlaces === null
-                ? `Ver los ${ganadores.total} ganadores`
-                : `Ver los ${ganadores.total} ganadores de ${ganadores.anio}`}
+            <Boton href="/transparencia" variante="secundario">
+              {`Ver los ${ganadores.total} proyectos ganadores`}
             </Boton>
           }
         >
@@ -276,11 +267,11 @@ export default async function Home() {
           // "seguimiento" sin factibles, la banda ya dice "0 proyectos
           // ganadores" y prometerlos seria prometer algo para siempre. Es el
           // mismo criterio de /transparencia.
-          <Seccion titulo="Los proyectos más votados">
+          <Seccion titulo="Proyectos ganadores">
             <Vacio>
               {faltaProclamar
-                ? `Los proyectos ganadores de la edición ${edicion.anio} se publican acá apenas se proclamen.`
-                : `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`}
+                ? "Los proyectos ganadores se publican acá apenas se proclamen."
+                : "Todavía no hay proyectos ganadores publicados."}
             </Vacio>
           </Seccion>
         )
@@ -289,7 +280,7 @@ export default async function Home() {
       {/* --- Cronograma --------------------------------------------------- */}
       {hitos.length > 0 && (
         <div style={{ background: "var(--fondo-suave)" }}>
-          <Seccion titulo={`Cronograma ${stats.anio}`}>
+          <Seccion titulo="Cronograma">
             <ol className="relative grid gap-4">
               {hitos.map((hito) => (
                 <li key={hito.id} className="superficie rounded-2xl p-5">
@@ -350,7 +341,7 @@ export default async function Home() {
  * que las dos paginas no vuelvan a divergir.
  */
 function fraseSinGanador(distritos: number[]): string {
-  return `En esta edición ${distritosConVerbo(distritos, "quedó", "quedaron")} sin proyecto ganador.`;
+  return `En la última votación ${distritosConVerbo(distritos, "quedó", "quedaron")} sin proyecto ganador.`;
 }
 
 /**
@@ -376,11 +367,7 @@ const EN_LETRAS = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis"];
  * La bajada de la seccion. No dice que los proyectos "estan en obra": el sitio
  * no tiene cargado ningun avance, y la etapa "seguimiento" no lo garantiza.
  */
-function bajadaGanadores(
-  ganadores: Destacados,
-  anioActivo: number,
-  faltaProclamar: boolean,
-): string {
+function bajadaGanadores(ganadores: Destacados, faltaProclamar: boolean): string {
   const mostrados = ganadores.ideas.length;
   const enLetras = (n: number) => EN_LETRAS[n] ?? String(n);
   if (ganadores.anioEnEnlaces === null) {
@@ -392,15 +379,15 @@ function bajadaGanadores(
           : `Estos son los ${enLetras(ganadores.total)} ganadores`;
     // A mitad de la proclamacion, "los tres ganadores" se leia como todos.
     const resto = faltaProclamar ? " Los demás se publican a medida que se proclamen." : "";
-    return `Cada distrito eligió su propio proyecto. ${cuales} de la edición ${ganadores.anio}.${resto}`;
+    return `Cada distrito eligió su propio proyecto. ${cuales}.${resto}`;
   }
   const cuales =
     ganadores.total > mostrados
-      ? `estos son los ${enLetras(mostrados)} más votados de los ${ganadores.total} proyectos que eligieron`
+      ? `Estos son los ${enLetras(mostrados)} más votados de los ${ganadores.total} proyectos que eligieron`
       : ganadores.total === 1
-        ? "este es el proyecto que eligieron"
-        : `estos son los ${enLetras(ganadores.total)} proyectos que eligieron`;
-  return `Mientras avanza la edición ${anioActivo}, ${cuales} los vecinos en ${ganadores.anio}.`;
+        ? "Este es el proyecto que eligieron"
+        : `Estos son los ${enLetras(ganadores.total)} proyectos que eligieron`;
+  return `${cuales} los vecinos en la última votación, y cómo avanza su obra.`;
 }
 
 function SinDatos() {
@@ -408,9 +395,9 @@ function SinDatos() {
     <div className="contenedor py-24">
       <h1 className="text-2xl font-bold">Todavía no hay datos cargados</h1>
       <p className="mt-3 max-w-prose" style={{ color: "var(--texto-suave)" }}>
-        No hay ninguna edición activa en la base. Si estás levantando el proyecto por primera vez,
+        La base no tiene un proceso activo. Si estás levantando el proyecto por primera vez,
         corré <code className="rounded bg-black/10 px-1.5 py-0.5">npm run setup</code> para crear la
-        base y cargar la edición 2025.
+        base y cargar los datos.
       </p>
     </div>
   );

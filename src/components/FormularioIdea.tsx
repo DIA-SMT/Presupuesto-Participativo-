@@ -215,7 +215,6 @@ const CAMPOS_PROPUESTA: Array<{ campo: CampoPropuesta; etiqueta: string }> = [
 export default function FormularioIdea({
   abierta,
   conIA,
-  anio,
   autor,
 }: {
   abierta: boolean;
@@ -225,8 +224,6 @@ export default function FormularioIdea({
    * venga en el formulario), asi que pedirlo seria un campo que no se usa.
    */
   autor: { nombre: string | null } | null;
-  /** Año de la edición activa, para el encabezado del documento. */
-  anio: number;
   /**
    * Si hay clave del modelo. Sin ella los botones de redaccion no se dibujan:
    * la regla del proyecto es que nada se rompe por falta de clave, y el aviso
@@ -1328,7 +1325,7 @@ export default function FormularioIdea({
 
           <Campo
             etiqueta="Teléfono de contacto (opcional)"
-            ayuda="Por si el equipo necesita consultarte algo de la propuesta. Solo lo ve el equipo y se borra cuando cierra la edición."
+            ayuda="Por si el equipo necesita consultarte algo de la propuesta. Solo lo ve el equipo y se borra cuando cierra el proceso."
           >
             <input
               name="autorTelefono"
@@ -1643,7 +1640,6 @@ export default function FormularioIdea({
 
         <div className="mt-3">
           <DocumentoIdea
-            anio={anio}
             poligono={poligono}
             activo={bloqueActivo}
             edicion={edicionDelDocumento}
@@ -1713,7 +1709,6 @@ export default function FormularioIdea({
         </div>
         <div className="ventana-doc-cuerpo">
           <DocumentoIdea
-            anio={anio}
             poligono={poligono}
             activo={bloqueActivo}
             edicion={edicionDelDocumento}

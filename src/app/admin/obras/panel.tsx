@@ -32,14 +32,10 @@ function etapaDe(obra: ObraGanadora): Exclude<Filtro, null> {
 }
 
 export default function PanelObras({
-  anio,
-  anioEnEnlaces,
   obras,
   puedeEscribir,
   hoy,
 }: {
-  anio: number | null;
-  anioEnEnlaces: number | null;
   obras: ObraGanadora[];
   puedeEscribir: boolean;
   /** AAAA-MM-DD en Tucuman: la fecha que propone el formulario. */
@@ -47,13 +43,13 @@ export default function PanelObras({
 }) {
   const [filtro, setFiltro] = useState<Filtro>(null);
 
-  if (anio === null || !obras.length) {
+  if (!obras.length) {
     return (
       <div>
         <h1 className="text-2xl font-bold">Obras</h1>
         <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Todavía no hay una edición que haya terminado de votar con proyectos ganadores
-          publicados. Las obras aparecen acá cuando se proclaman los ganadores.
+          Todavía no hay proyectos ganadores publicados. Las obras aparecen acá cuando se
+          proclaman los ganadores.
         </p>
       </div>
     );
@@ -67,7 +63,7 @@ export default function PanelObras({
   return (
     <div>
       <header className="max-w-3xl" data-recorrido="obras">
-        <h1 className="text-2xl font-bold">Obras de la edición {anio}</h1>
+        <h1 className="text-2xl font-bold">Obras de los proyectos ganadores</h1>
         <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
           En qué etapa está la obra de cada proyecto ganador. Lo que cargues acá se publica en
           Transparencia y en la ficha del proyecto, tal como lo ves en cada tarjeta.
@@ -110,7 +106,7 @@ export default function PanelObras({
           <li key={obra.id}>
             <TarjetaObra
               obra={obra}
-              hrefFicha={conEdicion(`/proyectos/${obra.slug}`, anioEnEnlaces)}
+              hrefFicha={conEdicion(`/proyectos/${obra.slug}`, obra.edicionActiva ? null : obra.anio)}
               pie={
                 <div className="space-y-2 pt-3" style={{ borderTop: "1px dashed var(--borde)" }}>
                   {puedeEscribir && <FormularioAvance obra={obra} hoy={hoy} />}

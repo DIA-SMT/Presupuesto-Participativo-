@@ -18,12 +18,10 @@ import DocumentoIdea, { type DatosDocumento } from "@/components/DocumentoIdea";
 
 export default function DocumentoImprimible({
   datos,
-  anio,
   propuesta,
   fecha,
 }: {
   datos: DatosDocumento;
-  anio: number;
   /** El codigo de la propuesta, D05-P012. */
   propuesta: string;
   fecha: string;
@@ -70,7 +68,6 @@ export default function DocumentoImprimible({
       </p>
       <DocumentoIdea
         datos={datos}
-        anio={anio}
         poligono={poligono}
         comprobante={{ propuesta, codigo: null, fecha }}
       />
