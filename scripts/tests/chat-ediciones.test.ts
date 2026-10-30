@@ -222,10 +222,10 @@ test("en la etapa de ideas el chat cuenta publicadas, no 'presentadas'", async (
   assert.equal(distrito2.datos.ideas_presentadas, undefined);
 
   const sinIATotales = await sinIA.responderSinIA("¿Cuántas ideas se presentaron?", vigente);
-  assert.match(sinIATotales.texto, /2 ideas publicadas/);
+  assert.match(sinIATotales.texto, /2 propuestas publicadas/);
   assert.doesNotMatch(sinIATotales.texto, /presentada/);
   const sinIADistrito = await sinIA.responderSinIA("distrito 2", vigente);
-  assert.match(sinIADistrito.texto, /0 ideas publicadas/);
+  assert.match(sinIADistrito.texto, /0 propuestas publicadas/);
   assert.doesNotMatch(sinIADistrito.texto, /presentada/);
 });
 
@@ -266,14 +266,15 @@ test("el prompt dice como pedir otra edicion, y antes de votar no cuenta distrit
     delete process.env.OPENROUTER_API_KEY;
   }
 
-  assert.match(sistema, /Edición vigente: 2026/);
+  assert.match(sistema, /Etapa actual del programa: /);
+  assert.doesNotMatch(sistema, /Edición vigente/);
   // Lo mismo que la portada: el numero es de publicadas, no de presentadas.
   assert.match(sistema, /Ideas publicadas: 2 /);
   assert.doesNotMatch(sistema, /Ideas presentadas:/);
-  assert.match(sistema, /pasales `edicion` con el año/);
-  assert.match(sistema, /\/archivo/);
+  assert.match(sistema, /no se organiza por ediciones ni por años/);
+  assert.doesNotMatch(sistema, /\/archivo/);
   // Con la 2026 en ideas, los 20 distritos "sin ganador" no son un resultado.
-  assert.doesNotMatch(sistema, /Sin proyecto ganador en esta edición/);
+  assert.doesNotMatch(sistema, /Sin proyecto ganador en la última votación/);
 });
 
 // ---------------------------------------------------------------------------
@@ -291,11 +292,12 @@ function asteriscosSueltos(texto: string) {
 
 test("sin IA: 'ganadores' con la 2026 recien abierta ofrece los de 2025", async () => {
   const { texto, referencias } = await sinIA.responderSinIA("¿Quiénes ganaron?", vigente);
-  assert.match(texto, /2026 todavía no tiene proyectos ganadores/);
-  assert.match(texto, /edición 2025/);
+  assert.match(texto, /los próximos ganadores salen de la votación/);
+  assert.match(texto, /ganadores de la última votación/);
+  assert.doesNotMatch(texto, /edición|ediciones/, "sin ediciones");
   assert.match(texto, /Plaza del barrio/);
   assert.match(texto, /obra: en obra/, "el estado de obra, solo el informado");
-  assert.deepEqual(referencias.map((r) => r.url), ["/transparencia?edicion=2025"]);
+  assert.deepEqual(referencias.map((r) => r.url), ["/transparencia"]);
 });
 
 test("sin IA: un año en la pregunta cambia de edicion", async () => {
@@ -305,8 +307,7 @@ test("sin IA: un año en la pregunta cambia de edicion", async () => {
   // Un año que no esta cargado se dice; no se contesta con la vigente como si
   // fuera ese.
   const inexistente = await sinIA.responderSinIA("ganadores 2019", vigente);
-  assert.match(inexistente.texto, /No hay datos de una edición 2019/);
-  assert.match(inexistente.texto, /2026 y 2025/);
+  assert.match(inexistente.texto, /No tengo datos de 2019/);
 });
 
 test("sin IA: el barrio se ubica con la capa oficial, y el numero del barrio no es un distrito", async () => {
@@ -322,26 +323,26 @@ test("sin IA: las sugerencias del widget siguen contestando lo suyo con dos edic
   // "mi distrito" cuenta como pregunta por un lugar: que ningun barrio de la
   // capa se robe la sugerencia, y que conteste con los ganadores de 2025.
   const ganador = await sinIA.responderSinIA("¿Qué ganó en mi distrito?", vigente);
-  assert.match(ganador.texto, /2026 todavía no tiene proyectos ganadores/);
-  assert.match(ganador.texto, /Los últimos ganadores son los de la edición 2025/);
+  assert.match(ganador.texto, /los próximos ganadores salen de la votación/);
+  assert.match(ganador.texto, /Los proyectos ganadores de la última votación/);
 
   const totales = await sinIA.responderSinIA("¿Cuántas ideas se presentaron?", vigente);
-  assert.match(totales.texto, /\*\*Edición 2026\*\*/);
-  assert.match(totales.texto, /preguntá por «ganadores 2025»/);
+  assert.match(totales.texto, /^2 propuestas publicadas/);
+  assert.match(totales.texto, /preguntá por «ganadores»/);
   assert.ok(!asteriscosSueltos(totales.texto), totales.texto);
   assert.doesNotMatch(totales.texto, /Sin proyecto ganador/, "antes de votar no es un resultado");
-  assert.ok(totales.referencias.some((r) => r.url === "/transparencia?edicion=2025"));
+  assert.ok(totales.referencias.some((r) => r.url === "/transparencia"));
 
   // Con la 2026 en etapa de ideas, dice que la carga esta abierta y adonde ir.
   const participar = await sinIA.responderSinIA("¿Cómo presento una idea?", vigente);
-  assert.match(participar.texto, /presentación de ideas de la edición 2026 está abierta/);
+  assert.match(participar.texto, /La presentación de propuestas está abierta/);
   assert.ok(participar.referencias.some((r) => r.url === "/ideas/nueva"));
 });
 
 test("sin IA: el distrito antes de votar no dice 'sin ganador' y nombra el de 2025", async () => {
   const { texto } = await sinIA.responderSinIA("distrito 1", vigente);
-  assert.match(texto, /Todavía no hay ganador/);
-  assert.match(texto, /En la edición 2025 ganó \*\*Plaza del barrio\*\*/);
+  assert.match(texto, /Todavía no hay un ganador nuevo/);
+  assert.match(texto, /En la última votación ganó \*\*Plaza del barrio\*\*/);
 });
 
 test("sin IA: lo que se encuentra en otra edicion cuenta como consulta resuelta", async () => {
@@ -374,8 +375,8 @@ test("sin IA: lo que se encuentra en otra edicion cuenta como consulta resuelta"
   try {
     const { texto, referencias } = await sinIA.responderSinIA(pregunta, vigente);
     assert.match(texto, /Club de Villa Urquiza/);
-    assert.match(texto, /^Resultados de la edición 2025/, "dice de entrada de que edicion son");
-    assert.match(texto, /en la 2026 todavía no hay ideas publicadas que coincidan/);
+    assert.match(texto, /^Resultados de propuestas anteriores/, "dice de entrada que no son las nuevas");
+    assert.match(texto, /todavía no hay propuestas nuevas que coincidan/);
     assert.deepEqual(
       referencias.map((r) => r.url),
       ["/proyectos/club-villa-urquiza?edicion=2025"],

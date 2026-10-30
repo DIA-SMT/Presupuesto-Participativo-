@@ -110,7 +110,7 @@ test("como votar dice si la votacion esta abierta, hasta cuando, y los pasos", (
 
   const antes = responder("¿Hasta cuándo puedo votar?", "ideas");
   assert.ok(antes);
-  assert.match(antes.texto, /todavía no empezó \(está prevista: 2 de diciembre de 2026/);
+  assert.match(antes.texto, /todavía no está abierta \(está prevista: 2 de diciembre de 2026/);
   assert.ok(!antes.referencias.some((r) => r.url === "/votar"), "sin votacion no se manda a votar");
 
   const despues = responder("¿Cuándo es la votación?", "seguimiento");

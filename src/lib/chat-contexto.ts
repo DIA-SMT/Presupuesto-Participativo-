@@ -215,12 +215,12 @@ export function contextoParaElModelo(contexto: ContextoDelSitio): string {
       // modelo para no dar por vigente un plazo vencido (la portada ya no lo
       // promete, ver `hasta` en src/lib/portada.ts) ni adivinar si un hito del
       // cronograma ya fue.
-      `Hoy es ${formatearFecha(contexto.hoy)} (día de Tucumán). Si una fecha de la edición, del cronograma o de una novedad ya pasó, decilo en pasado y no la presentes como un plazo vigente. Lo que se puede hacer hoy lo dice la portada, no las fechas.`,
+      `Hoy es ${formatearFecha(contexto.hoy)} (día de Tucumán). Si una fecha del programa, del cronograma o de una novedad ya pasó, decilo en pasado y no la presentes como un plazo vigente. Lo que se puede hacer hoy lo dice la portada, no las fechas.`,
       `Lo que dice hoy la portada: "${contexto.momento}"`,
       `Lo que se puede hacer hoy en el sitio: ${contexto.acciones
         .map((a) => `${a.texto} (${a.href})`)
         .join("; ")}.`,
-      `Fechas de la edición: presentación de ideas ${contexto.fechasIdeas ?? "sin fechas cargadas"}; votación ${contexto.fechasVotacion ?? "sin fechas cargadas"}.`,
+      `Fechas del programa: presentación de propuestas ${contexto.fechasIdeas ?? "sin fechas cargadas"}; votación ${contexto.fechasVotacion ?? "sin fechas cargadas"}.`,
       contexto.aviso
         ? `Aviso urgente publicado arriba de todo el sitio: "${contexto.aviso}". Si la consulta tiene que ver, decilo primero.`
         : "",
@@ -266,13 +266,13 @@ export function contextoParaElModelo(contexto: ContextoDelSitio): string {
 
   secciones.push(
     [
-      "# Cronograma de la edición",
+      "# Cronograma",
       "",
       contexto.cronograma.length
         ? contexto.cronograma
             .map((h) => `- ${h.titulo}: ${h.fechas}.${h.detalle ? ` ${h.detalle}` : ""}`)
             .join("\n")
-        : "No hay cronograma cargado para esta edición.",
+        : "No hay cronograma cargado.",
     ].join("\n"),
   );
 

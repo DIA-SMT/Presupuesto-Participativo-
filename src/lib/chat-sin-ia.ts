@@ -119,14 +119,9 @@ export async function responderSinIA(
   if (Number.isInteger(anioPedido) && anioPedido !== vigente.anio) {
     const pedida = await getEdicionParaVer(anioPedido);
     if (!pedida) {
-      const conDatos = (await getArchivoDeEdiciones())
-        .filter((e) => e.activa || e.ideas > 0)
-        .map((e) => e.anio);
       return {
-        texto:
-          `No hay datos de una edición ${anioPedido} en el sitio.` +
-          (conDatos.length ? ` Hay datos de las ediciones ${enumerar(conDatos)}.` : ""),
-        referencias: [{ titulo: "Archivo de ediciones", url: "/archivo" }],
+        texto: `No tengo datos de ${anioPedido} en el sitio.`,
+        referencias: [{ titulo: "Proyectos ganadores", url: "/transparencia" }],
       };
     }
     edicion = pedida;
@@ -171,8 +166,8 @@ export async function responderSinIA(
     // "todavia no hay ideas presentadas" con ideas recibidas era falso.
     const lineas = [
       stats.ideas
-        ? `**Edición ${stats.anio}** — ${cantidad(stats.ideas, "idea publicada", "ideas publicadas")} en los 20 distritos.`
-        : `**Edición ${stats.anio}** — todavía no hay ideas publicadas.`,
+        ? `${cantidad(stats.ideas, "propuesta publicada", "propuestas publicadas")} en los 20 distritos.`
+        : "Todavía no hay propuestas publicadas.",
       ...(items.length ? ["", ...items] : []),
     ];
     const referencias = [
@@ -198,16 +193,16 @@ export async function responderSinIA(
       // leian como un resultado.
       lineas.push(
         "",
-        `La edición está en la etapa **${etiquetaEtapa(edicion)}**: los ganadores salen de la votación.`,
+        `Hoy el programa está en **${etiquetaEtapa(edicion)}**: los próximos ganadores salen de la votación.`,
       );
       const anterior = await getUltimaEdicionTerminadaConGanadores();
       if (anterior && anterior.id !== edicion.id) {
         lineas.push(
-          `Los últimos ganadores son los de la edición ${anterior.anio}: preguntá por «ganadores ${anterior.anio}».`,
+          "Los últimos proyectos ganadores y cómo avanza su obra están en Transparencia: preguntá por «ganadores».",
         );
         referencias.unshift({
-          titulo: `Ganadores de la edición ${anterior.anio}`,
-          url: conEdicion("/transparencia", anterior.activa ? null : anterior.anio),
+          titulo: "Proyectos ganadores",
+          url: "/transparencia",
         });
       }
     }
@@ -219,7 +214,7 @@ export async function responderSinIA(
     const distrito = await getDistrito(numero, edicion.id);
     if (distrito) {
       const lineas = [
-        `**Distrito ${numero}** — ${cantidad(distrito.ideas.length, "idea publicada", "ideas publicadas")} en la edición ${edicion.anio}.`,
+        `**Distrito ${numero}** — ${cantidad(distrito.ideas.length, "propuesta publicada", "propuestas publicadas")}.`,
       ];
       const referencias = [{ titulo: `Distrito ${numero}`, url: enlace(`/distritos/${numero}`) }];
       if (distrito.referencia) {
@@ -245,11 +240,11 @@ export async function responderSinIA(
           "La votación terminó y el ganador de este distrito todavía no se proclamó: se publica cuando se proclame.",
         );
       } else if (votacionTerminada(edicion.etapa)) {
-        lineas.push("", "Este distrito no tiene proyecto ganador en esta edición.");
+        lineas.push("", "Este distrito no tiene proyecto ganador en la última votación.");
       } else {
         lineas.push(
           "",
-          `Todavía no hay ganador: la edición está en la etapa **${etiquetaEtapa(edicion)}** y el ganador sale de la votación.`,
+          `Todavía no hay un ganador nuevo: hoy el programa está en **${etiquetaEtapa(edicion)}** y el ganador sale de la votación.`,
         );
         const anterior = await getUltimaEdicionTerminadaConGanadores();
         const ganadorAnterior =
@@ -258,7 +253,7 @@ export async function responderSinIA(
             : undefined;
         if (anterior && ganadorAnterior) {
           lineas.push(
-            `En la edición ${anterior.anio} ganó **${ganadorAnterior.titulo}** (${formatearNumero(
+            `En la última votación ganó **${ganadorAnterior.titulo}** (${formatearNumero(
               ganadorAnterior.votos,
             )} votos).`,
           );
@@ -309,8 +304,8 @@ export async function responderSinIA(
       const { distritosPorProclamar } = await getEstadisticas(edicion);
       return {
         texto: distritosPorProclamar.length
-          ? `La votación de la edición ${edicion.anio} terminó. Los proyectos ganadores se publican a medida que se proclamen.`
-          : `La edición ${edicion.anio} no tiene proyectos ganadores publicados.`,
+          ? "La votación terminó. Los proyectos ganadores se publican a medida que se proclamen."
+          : "Todavía no hay proyectos ganadores publicados.",
         referencias: [{ titulo: "Transparencia", url: enlace("/transparencia") }],
       };
     }
@@ -318,17 +313,16 @@ export async function responderSinIA(
     // ultima edicion que si voto. Se dice de que edicion son.
     const anterior = await getUltimaEdicionTerminadaConGanadores();
     const lineas = [
-      `La edición ${edicion.anio} todavía no tiene proyectos ganadores: está en la etapa **${etiquetaEtapa(
+      `Hoy el programa está en **${etiquetaEtapa(
         edicion,
-      )}** y el ganador de cada distrito sale de la votación.`,
+      )}**: los próximos ganadores salen de la votación.`,
     ];
     if (!anterior || anterior.id === edicion.id) {
       return { texto: lineas.join("\n"), referencias: [] };
     }
-    const anioAnterior = anterior.activa ? null : anterior.anio;
     lineas.push(
       "",
-      `Los últimos ganadores son los de la edición ${anterior.anio} (${anterior.ganadores.length}), por distrito:`,
+      `Los proyectos ganadores de la última votación (${anterior.ganadores.length}), por distrito:`,
       "",
       ...anterior.ganadores.map(
         (g) =>
@@ -340,8 +334,8 @@ export async function responderSinIA(
       texto: lineas.join("\n"),
       referencias: [
         {
-          titulo: `Ganadores de la edición ${anterior.anio}`,
-          url: conEdicion("/transparencia", anioAnterior),
+          titulo: "Proyectos ganadores",
+          url: "/transparencia",
         },
       ],
     };
@@ -421,7 +415,7 @@ export async function responderSinIA(
         // quedarse sin datos, igual que en las herramientas del modelo.
         ...(deOtra
           ? [
-              `Resultados de la edición ${deOtra.anio} (en la ${edicion.anio} todavía no hay ideas publicadas que coincidan):`,
+              "Resultados de propuestas anteriores (todavía no hay propuestas nuevas que coincidan):",
               "",
             ]
           : []),
@@ -489,10 +483,10 @@ async function responderBarrios(
       lineas.push(`**${barrio.nombre}** queda en el distrito ${numeros[0]}.`);
       lineas.push(
         enElDistrito
-          ? `En la edición ${edicion.anio} hay ${cantidad(enElDistrito, "idea", "ideas")} en el distrito${
+          ? `Hay ${cantidad(enElDistrito, "propuesta", "propuestas")} en el distrito${
               enElBarrio ? `, ${formatearNumero(enElBarrio)} en el barrio` : ""
             }.`
-          : `En la edición ${edicion.anio} todavía no hay ideas publicadas en ese distrito.`,
+          : "Todavía no hay propuestas publicadas en ese distrito.",
       );
     } else {
       lineas.push(
@@ -505,8 +499,8 @@ async function responderBarrios(
       }
       lineas.push(
         enElBarrio
-          ? `En la edición ${edicion.anio} hay ${cantidad(enElBarrio, "idea", "ideas")} en el barrio.`
-          : `En la edición ${edicion.anio} todavía no hay ideas en el barrio.`,
+          ? `Hay ${cantidad(enElBarrio, "propuesta", "propuestas")} en el barrio.`
+          : "Todavía no hay propuestas en el barrio.",
       );
     }
   }

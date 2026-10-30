@@ -120,7 +120,6 @@ export function responderSobreElSitio(
 
   const tema = temaDelSitio(pregunta);
   if (!tema) return null;
-  const { anio } = edicion;
 
   switch (tema) {
     case "reglamento": {
@@ -174,12 +173,12 @@ export function responderSobreElSitio(
     case "votar": {
       const estado =
         edicion.etapa === "votacion"
-          ? `La votación de la edición ${anio} está abierta${hastaEl(edicion.votacionHasta, hoy)}.`
+          ? `La votación está abierta${hastaEl(edicion.votacionHasta, hoy)}.`
           : votacionTerminada(edicion.etapa)
-            ? `La votación de la edición ${anio} ya terminó${
+            ? `La votación ya terminó${
                 contexto.fechasVotacion ? ` (fue ${contexto.fechasVotacion})` : ""
               }. Los resultados están en Transparencia.`
-            : `La votación de la edición ${anio} todavía no empezó${
+            : `La votación todavía no está abierta${
                 contexto.fechasVotacion ? ` (está prevista: ${contexto.fechasVotacion})` : ""
               }.`;
       return {
@@ -202,8 +201,8 @@ export function responderSobreElSitio(
     case "presentar": {
       const abierta = edicion.etapa === "ideas";
       const estado = abierta
-        ? `La presentación de ideas de la edición ${anio} está abierta${hastaEl(edicion.ideasHasta, hoy)}.`
-        : `La etapa de presentación de ideas de la edición ${anio} está cerrada${
+        ? `La presentación de propuestas está abierta${hastaEl(edicion.ideasHasta, hoy)}.`
+        : `La presentación de propuestas está cerrada${
             contexto.fechasIdeas ? ` (fue ${contexto.fechasIdeas})` : ""
           }.`;
       return {
