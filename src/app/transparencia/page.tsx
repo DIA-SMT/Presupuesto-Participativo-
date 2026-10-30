@@ -179,12 +179,10 @@ export default async function Transparencia({ searchParams }: Props) {
       {edicionDeLasObras && obras.length > 0 && (
         <section className="mt-10" aria-labelledby="titulo-obras">
           <h2 id="titulo-obras" className="text-xl font-bold">
-            {obras.length === 1
-              ? `El proyecto ganador de ${edicionDeLasObras.anio}`
-              : `Los ${obras.length} proyectos ganadores de ${edicionDeLasObras.anio}`}
+            Proyectos ganadores
           </h2>
           <p className="mt-2 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
-            En qué etapa está la obra de cada uno: se licita, se adjudica a una empresa, se construye
+            Edición {edicionDeLasObras.anio}. En qué etapa está la obra de cada uno: se licita, se adjudica a una empresa, se construye
             y se termina. Entre todos sumaron {formatearNumero(votosDeLasObras)} votos.
           </p>
 
