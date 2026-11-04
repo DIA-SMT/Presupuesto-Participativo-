@@ -1,5 +1,5 @@
 import HeroInicio from "@/components/HeroInicio";
-import Mapa from "@/components/Mapa";
+import Mapa, { type PuntoMapa } from "@/components/Mapa";
 import { Boton, Seccion, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
   getDistritos,
@@ -10,13 +10,18 @@ import {
   getTextos,
   getUltimaEdicionTerminadaConGanadores,
   listarIdeas,
+  listarObras,
+  type DistritoVista,
   type Edicion,
+  type ObraGanadora,
   type Estadisticas,
   type IdeaVista,
 } from "@/db/queries";
 import { votacionTerminada } from "@/lib/ediciones";
 import {
+  ETAPAS_PRESUPUESTO,
   ETIQUETA_ETAPA,
+  ETIQUETA_PRESUPUESTO,
   distritosConVerbo,
   formatearFecha,
   formatearNumero,
@@ -74,13 +79,14 @@ export default async function Home() {
   if (!edicion) return <SinDatos />;
 
   const pedidoStats = getEstadisticas(edicion);
-  const [textos, stats, distritos, ganadores, hitos, novedades] = await Promise.all([
+  const [textos, stats, distritos, ganadores, hitos, novedades, obras] = await Promise.all([
     getTextos(),
     pedidoStats,
     getDistritos(edicion.id),
     destacados(edicion, votacionTerminada(edicion.etapa), pedidoStats),
     getHitos(edicion.id),
     getNovedades(3),
+    listarObras(),
   ]);
   // Despues de las cuentas: con la votacion terminada, el boton principal
   // depende de si ya hay ganadores proclamados.
@@ -205,6 +211,42 @@ export default async function Home() {
       </Seccion>
 
       {/* --- Mapa --------------------------------------------------------- */}
+      {/* Con ganadores, el mapa muestra sus obras y en que etapa esta cada una;
+          sin ninguno todavia, los 20 distritos para ir a ver sus ideas. */}
+      {obras.length > 0 ? (
+        <div style={{ background: "var(--fondo-suave)" }}>
+          <Seccion
+            titulo="Los proyectos ganadores en el mapa"
+            bajada="Cada punto es el proyecto que eligió su distrito, con el color de la etapa en que está su obra. Tocalo para ver el detalle."
+            accion={<Boton href="/transparencia" variante="secundario">Ver el estado de cada obra</Boton>}
+          >
+            <Mapa
+              distritos={distritos.map((d) => ({
+                numero: d.numero,
+                nombre: d.nombre,
+                ideas: d.ideas,
+                color: null,
+                etiquetaGanador: null,
+              }))}
+              puntos={puntosDeObras(obras, distritos)}
+              mostrarEtiquetas={false}
+              alto="32rem"
+            />
+            <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+              {leyendaDeObras(obras).map((item) => (
+                <li key={item.etiqueta} className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-2.5 w-2.5 rounded-full"
+                    style={{ background: item.color }}
+                  />
+                  {item.etiqueta} ({item.cantidad})
+                </li>
+              ))}
+            </ul>
+          </Seccion>
+        </div>
+      ) : (
       <div style={{ background: "var(--fondo-suave)" }}>
         <Seccion
           titulo={t("home-mapa-titulo", "Los 20 distritos")}
@@ -237,6 +279,7 @@ export default async function Home() {
           </p>
         </Seccion>
       </div>
+      )}
 
       {/* --- Ganadores ---------------------------------------------------- */}
       {ganadores && ganadores.ideas.length > 0 ? (
@@ -340,6 +383,61 @@ export default async function Home() {
  * fueran diez. El armado es el de /transparencia (`distritosConVerbo`), para
  * que las dos paginas no vuelvan a divergir.
  */
+/** Sin avances publicados la obra no tiene etapa: se dice, no se inventa. */
+const SIN_ETAPA = "Sin información todavía";
+
+/** El color de la etapa: los mismos tokens --obra-* que las tarjetas. */
+function colorDeEtapa(etapa: string | null): string {
+  return etapa && (ETAPAS_PRESUPUESTO as readonly string[]).includes(etapa)
+    ? `var(--obra-${etapa})`
+    : "var(--texto-suave)";
+}
+
+/**
+ * Un punto por ganador. El que se cargo sin coordenada va al centro de su
+ * distrito y se marca aproximado (borde punteado y aviso en el popup), como en
+ * el resto de los mapas del sitio.
+ */
+function puntosDeObras(obras: ObraGanadora[], distritos: DistritoVista[]): PuntoMapa[] {
+  return obras.flatMap((obra) => {
+    if (obra.distrito === null) return [];
+    const centro = distritos.find((d) => d.numero === obra.distrito)?.centroide;
+    const conPunto = obra.lat !== null && obra.lon !== null;
+    if (!conPunto && !centro) return [];
+    return [
+      {
+        slug: obra.slug,
+        titulo: obra.titulo,
+        distrito: obra.distrito,
+        lat: conPunto ? obra.lat! : centro!.lat,
+        lon: conPunto ? obra.lon! : centro!.lon,
+        color: colorDeEtapa(obra.etapa),
+        estado: "ganadora",
+        ganador: true,
+        aproximada: !conPunto || obra.ubicacionAproximada,
+        obra: obra.etapa ? (ETIQUETA_PRESUPUESTO[obra.etapa] ?? obra.etapa) : SIN_ETAPA,
+        edicion: obra.edicionActiva ? null : obra.anio,
+      },
+    ];
+  });
+}
+
+/** Las etapas que aparecen en el mapa, en el orden de la obra, con su cuenta. */
+function leyendaDeObras(obras: ObraGanadora[]) {
+  const items = ETAPAS_PRESUPUESTO.map((etapa) => ({
+    etiqueta: ETIQUETA_PRESUPUESTO[etapa] ?? etapa,
+    color: colorDeEtapa(etapa),
+    cantidad: obras.filter((o) => o.etapa === etapa).length,
+  }));
+  const sinEtapa = obras.filter(
+    (o) => !o.etapa || !(ETAPAS_PRESUPUESTO as readonly string[]).includes(o.etapa),
+  ).length;
+  return [
+    ...items,
+    { etiqueta: SIN_ETAPA, color: colorDeEtapa(null), cantidad: sinEtapa },
+  ].filter((item) => item.cantidad > 0);
+}
+
 function fraseSinGanador(distritos: number[]): string {
   return `En la última votación ${distritosConVerbo(distritos, "quedó", "quedaron")} sin proyecto ganador.`;
 }

@@ -704,6 +704,10 @@ export type ObraGanadora = {
   distrito: number | null;
   barrio: string | null;
   votos: number;
+  /** El punto de la idea, para el mapa de la portada. Puede faltar. */
+  lat: number | null;
+  lon: number | null;
+  ubicacionAproximada: boolean;
   etapa: string | null;
   /** Fecha (AAAA-MM-DD) del ultimo avance. */
   fecha: string | null;
@@ -731,6 +735,9 @@ export async function listarObras(edicionId?: number): Promise<ObraGanadora[]> {
       distrito: distritos.numero,
       barrio: ideas.barrio,
       votos: ideas.votos,
+      lat: ideas.lat,
+      lon: ideas.lon,
+      ubicacionAproximada: ideas.ubicacionAproximada,
     })
     .from(ideas)
     .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
@@ -789,6 +796,9 @@ export async function listarObras(edicionId?: number): Promise<ObraGanadora[]> {
       distrito: g.distrito === null ? null : Number(g.distrito),
       barrio: g.barrio,
       votos: Number(g.votos ?? 0),
+      lat: g.lat === null ? null : Number(g.lat),
+      lon: g.lon === null ? null : Number(g.lon),
+      ubicacionAproximada: Boolean(g.ubicacionAproximada),
       etapa: ultimo?.etapa ?? null,
       fecha: ultimo?.fecha ?? null,
       aclaracion: ultimo?.descripcion ?? null,
