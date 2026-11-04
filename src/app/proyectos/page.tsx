@@ -14,6 +14,7 @@ import {
 } from "@/db/queries";
 import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
 import { PARAMETRO_EDICION } from "@/lib/ediciones";
+import { estadoDeInterruptores } from "@/lib/etapas";
 import { ETIQUETA_ESTADO, colorCategoria, formatearNumero } from "@/lib/formato";
 
 const DESCRIPCION =
@@ -116,7 +117,11 @@ export default async function Proyectos({ searchParams }: Props) {
       {sinIdeas ? (
         <div className="mt-8">
           <Vacio>
-            Todavía no hay propuestas publicadas.
+            {/* Con la presentacion cerrada, "todavia no hay" sonaba a que algo
+                fallo: lo que pasa es que la proxima convocatoria no abrio. */}
+            {estadoDeInterruptores(edicion.etapa).presentacionAbierta
+              ? "Todavía no hay propuestas publicadas."
+              : "Próximamente se podrán presentar nuevas ideas."}
             {anterior && anterior.id !== edicion.id && (
               <>
                 {" "}
