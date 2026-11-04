@@ -6,10 +6,12 @@ import { Aviso, Chip, ChipEstado, Dato, TarjetaProyecto, Vacio } from "@/compone
 import {
   getDistrito,
   getUltimaEdicionTerminadaConGanadores,
+  listarObras,
   ordenDeIdeasPara,
 } from "@/db/queries";
 import { edicionDeLaPagina, resolverEdicion, tituloConEdicion } from "@/lib/edicion-en-vista";
 import { conEdicion, ganadorPorProclamar, votacionTerminada } from "@/lib/ediciones";
+import { SIN_ETAPA_OBRA, puntoDeObra } from "@/lib/obras-en-mapa";
 import {
   ETIQUETA_ESTADO,
   ETIQUETA_ETAPA,
@@ -67,6 +69,13 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
     anterior && anterior.id !== edicion.id
       ? (anterior.ganadores.find((g) => g.distrito === numero) ?? null)
       : null;
+  // Y esa obra va en el mapa, con su etapa: sin ella, el mapa de un distrito
+  // sin ideas nuevas quedaba vacio aunque abajo se nombrara al ganador.
+  const obraAnterior =
+    anterior && ganadorAnterior
+      ? ((await listarObras(anterior.id)).find((o) => o.distrito === numero) ?? null)
+      : null;
+  const puntoAnterior = obraAnterior ? puntoDeObra(obraAnterior, distrito.centroide) : null;
 
   const porEstado = new Map<string, number>();
   for (const idea of distrito.ideas) {
@@ -238,6 +247,12 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
           {distrito.ideas.length === 0
             ? "Todavía no hay propuestas publicadas en este distrito."
             : `${conPunto.length} de las ${distrito.ideas.length} ideas tienen una ubicación en el mapa. Los puntos con borde punteado son aproximados: no marcan el lugar exacto de la obra.`}
+          {puntoAnterior &&
+            ` El punto destacado es el proyecto que ganó en la última votación. ${
+              puntoAnterior.obra && puntoAnterior.obra !== SIN_ETAPA_OBRA
+                ? `Etapa de la obra: ${puntoAnterior.obra}.`
+                : "Todavía no hay información de su obra."
+            }`}
         </p>
         <div className="mt-4">
           <Mapa
@@ -251,7 +266,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
                 etiquetaGanador: ganador?.titulo ?? null,
               },
             ]}
-            puntos={conPunto.map((idea) => ({
+            puntos={[...(puntoAnterior ? [puntoAnterior] : []), ...conPunto.map((idea) => ({
               slug: idea.slug,
               titulo: idea.titulo,
               distrito: idea.distrito,
@@ -261,7 +276,7 @@ export default async function PaginaDistrito({ params, searchParams }: Props) {
               estado: idea.estado,
               ganador: idea.ganador,
               aproximada: idea.ubicacionAproximada,
-            }))}
+            }))]}
             mostrarEtiquetas={false}
             alto="26rem"
             edicionEnEnlaces={anioEnEnlaces}

@@ -66,6 +66,12 @@ type Props = {
   alto?: string;
   mostrarEtiquetas?: boolean;
   /**
+   * Si un clic en un distrito lleva a su pagina. En el mapa de obras de la
+   * portada no: lo que se toca son los puntos, y un clic que erraba el punto
+   * por poco mandaba al distrito, donde el proyecto no aparecia.
+   */
+  clicEnDistritos?: boolean;
+  /**
    * El año que llevan los enlaces del mapa (el distrito y "Ver el proyecto")
    * mientras se recorre una edicion que no es la activa. Sin el, un clic en el
    * mapa de la 2025 llevaba a la 2026.
@@ -132,6 +138,7 @@ export default function Mapa({
   puntoElegido,
   alto = "30rem",
   mostrarEtiquetas = true,
+  clicEnDistritos = true,
   edicionEnEnlaces = null,
 }: Props) {
   const contenedor = useRef<HTMLDivElement>(null);
@@ -279,7 +286,8 @@ export default function Mapa({
       }
       sobre = id;
       instancia.setFeatureState({ source: "distritos", id }, { hover: true });
-      instancia.getCanvas().style.cursor = modo === "navegar" ? "pointer" : "crosshair";
+      instancia.getCanvas().style.cursor =
+        modo === "seleccionar" ? "crosshair" : clicEnDistritos ? "pointer" : "";
     };
 
     const alSalir = () => {
@@ -291,7 +299,7 @@ export default function Mapa({
     };
 
     const alClic = (evento: maplibregl.MapLayerMouseEvent) => {
-      if (modo === "seleccionar") return;
+      if (modo === "seleccionar" || !clicEnDistritos) return;
       // Los marcadores HTML (puntos y etiquetas) viven dentro del contenedor del
       // lienzo, y MapLibre convierte cualquier clic ahi en un 'click' del mapa:
       // tocar un punto tambien caia sobre su poligono y se iba al distrito antes
@@ -314,7 +322,7 @@ export default function Mapa({
       instancia.off("mouseleave", "distritos-relleno", alSalir);
       instancia.off("click", "distritos-relleno", alClic);
     };
-  }, [listo, distritos, distritoActivo, modo, edicionEnEnlaces]);
+  }, [listo, distritos, distritoActivo, modo, clicEnDistritos, edicionEnEnlaces]);
 
   // --- Modo seleccionar: un clic en cualquier parte elige el punto ---------
   useEffect(() => {
