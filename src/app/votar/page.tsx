@@ -26,7 +26,7 @@ export default async function Votar() {
   if (!edicion) {
     return (
       <div className="contenedor py-20">
-        <Aviso tono="atencion">Todavía no hay una edición activa.</Aviso>
+        <Aviso tono="atencion">Todavía no hay datos cargados.</Aviso>
       </div>
     );
   }
@@ -128,7 +128,7 @@ export default async function Votar() {
             */}
             {edicion.votacionDesde && (
               <>
-                En la edición {edicion.anio} la votación{" "}
+                La votación{" "}
                 {votacionTerminada(edicion.etapa) ? "fue" : "será"}{" "}
                 {formatearRango(edicion.votacionDesde, edicion.votacionHasta)}.
               </>

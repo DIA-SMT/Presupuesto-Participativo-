@@ -44,8 +44,7 @@ export default async function AcercaDe() {
             <>
               {" "}
               Hoy el programa está en la etapa{" "}
-              <strong>{(ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa).toLowerCase()}</strong> de la
-              edición {edicion.anio}.
+              <strong>{(ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa).toLowerCase()}</strong>.
             </>
           )}
         </p>
@@ -122,7 +121,7 @@ export default async function AcercaDe() {
                   bajarla en PDF, y eso es lo que se dice. */}
               {edicion?.etapa === "ideas"
                 ? "La etapa de ideas está abierta. Contanos qué problema querés resolver en tu barrio."
-                : "La etapa de ideas de esta edición está cerrada. Mientras tanto podés armar tu propuesta y descargarla en PDF; la vas a poder enviar cuando se abra la próxima."}
+                : "La presentación de propuestas está cerrada. Mientras tanto podés armar tu propuesta y descargarla en PDF; la vas a poder enviar cuando se vuelva a abrir."}
             </p>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
               {REQUISITO_PARA_PRESENTAR}

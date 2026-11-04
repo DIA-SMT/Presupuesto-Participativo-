@@ -304,7 +304,7 @@ function TarjetasEstado({
           color="var(--marca-texto)"
           href={enlace({ estado: "" })}
           activo={!vista.estado}
-          detalle={acotado ? `de ${formatearNumero(resumen.total)} en la edición` : undefined}
+          detalle={acotado ? `de ${formatearNumero(resumen.total)} en total` : undefined}
         />
       </li>
       {estados.map((estado) => {
@@ -322,7 +322,7 @@ function TarjetasEstado({
               activo={activo}
               detalle={
                 acotado
-                  ? `de ${formatearNumero(resumen.porEstado[estado])} en la edición`
+                  ? `de ${formatearNumero(resumen.porEstado[estado])} en total`
                   : undefined
               }
             />
@@ -762,7 +762,7 @@ export function FiltrosActivos({
   if (chips.length === 0) {
     return (
       <p className="text-sm" style={suave}>
-        Toda la edición, sin filtros.
+        Todas las propuestas, sin filtros.
       </p>
     );
   }

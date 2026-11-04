@@ -195,14 +195,14 @@ export default async function IngresarVecino({ searchParams }: Props) {
                   */}
                   {destino === "ideas" && edicion?.ideasDesde && (
                     <>
-                      En la edición {edicion.anio} la presentación de ideas{" "}
+                      La presentación de propuestas{" "}
                       {edicion.etapa !== "ideas" ? "fue" : "será"}{" "}
                       {formatearRango(edicion.ideasDesde, edicion.ideasHasta)}.
                     </>
                   )}
                   {destino === "votar" && edicion?.votacionDesde && (
                     <>
-                      En la edición {edicion.anio} la votación{" "}
+                      La votación{" "}
                       {votacionTerminada(edicion.etapa) ? "fue" : "será"}{" "}
                       {formatearRango(edicion.votacionDesde, edicion.votacionHasta)}.
                     </>

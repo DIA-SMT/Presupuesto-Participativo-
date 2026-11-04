@@ -83,7 +83,7 @@ export default async function NuevaIdea() {
         <div className="mt-6 max-w-3xl">
           <Aviso tono="atencion">
             <strong>
-              La etapa de presentación de ideas de la edición {edicion.anio} está cerrada.
+              La presentación de propuestas está cerrada.
             </strong>{" "}
             Hoy el programa está en {(ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa).toLowerCase()}.
             {edicion.ideasDesde && (
@@ -93,10 +93,10 @@ export default async function NuevaIdea() {
               <>
                 El formulario está habilitado en <strong>modo prueba</strong> para poder recorrer el
                 circuito completo: la idea que cargues queda registrada sin publicar y el equipo la
-                puede borrar. No es una presentación válida para la edición.
+                puede borrar. No es una presentación válida.
               </>
             ) : (
-              <>Cuando se abra la próxima edición vas a poder cargar tu propuesta desde acá.</>
+              <>Cuando se vuelva a abrir vas a poder cargar tu propuesta desde acá.</>
             )}
           </Aviso>
         </div>
@@ -115,7 +115,6 @@ export default async function NuevaIdea() {
       <FormularioIdea
         abierta={abierta}
         conIA={hayClave() && !(await gastoDelDiaAgotado(getTokensUsadosHoy))}
-        anio={edicion?.anio ?? new Date().getFullYear()}
         autor={sesion ? { nombre: sesion.nombre } : null}
       />
     </div>

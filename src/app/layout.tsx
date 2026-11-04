@@ -260,7 +260,7 @@ export default async function RootLayout({
           className="mt-16 py-12"
           style={{ background: "var(--fondo-suave)", borderTop: "1px solid var(--borde)" }}
         >
-          <div className="contenedor grid gap-8 md:grid-cols-3">
+          <div className="contenedor grid gap-8 md:grid-cols-2">
             <div>
               <div className="mb-3 flex items-center gap-2.5">
                 <LogoFlor tamano={30} />
@@ -286,7 +286,6 @@ export default async function RootLayout({
                 {[
                   ...NAVEGACION,
                   { href: "/reglamento", texto: "Reglamento" },
-                  { href: "/archivo", texto: "Archivo de ediciones" },
                   { href: "/ideas/seguimiento", texto: "Seguí tu idea" },
                   { href: "/privacidad", texto: "Política de privacidad" },
                 ].map((item) => (
@@ -306,33 +305,9 @@ export default async function RootLayout({
                   </VentanaAvisoLegal>
                 </li>
               </ul>
-            </div>
-
-            <div>
-              <p className="text-sm font-bold">Datos abiertos</p>
-              <ul className="mt-2 space-y-1.5 text-sm">
-                <li>
-                  <a
-                    href="/geo/distritos.geojson"
-                    className="hover:underline"
-                    style={{ color: "var(--texto-suave)" }}
-                  >
-                    Distritos en GeoJSON
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="/api/proyectos"
-                    className="hover:underline"
-                    style={{ color: "var(--texto-suave)" }}
-                  >
-                    Proyectos en JSON
-                  </a>
-                </li>
-              </ul>
               {edicion && (
                 <p className="mt-4 text-xs" style={{ color: "var(--texto-suave)" }}>
-                  Edición {edicion.anio} · {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
+                  Hoy: {ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}
                 </p>
               )}
             </div>

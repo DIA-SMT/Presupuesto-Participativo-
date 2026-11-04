@@ -2,7 +2,6 @@ import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import AvisoEdicion from "@/components/AvisoEdicion";
 import Mapa from "@/components/Mapa";
 import { Chip, ChipEstado, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
@@ -67,7 +66,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   if (!ficha) return { title: "Proyecto no encontrado" };
   const { idea, vista } = ficha;
   return {
-    title: vista.edicion.activa ? idea.titulo : `${idea.titulo} · Edición ${idea.anio}`,
+    title: idea.titulo,
     description: recortar(
       idea.problema ?? idea.solucion ?? `Proyecto del Distrito ${idea.distrito}.`,
       160,
@@ -114,7 +113,6 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
 
   return (
     <div className="contenedor py-10 sm:py-14">
-      <AvisoEdicion vista={vista} hrefActual="/proyectos" />
 
       <nav aria-label="Camino de navegación" className="text-sm" style={{ color: "var(--texto-suave)" }}>
         <Link href={conEdicion("/proyectos", anioEnEnlaces)} className="hover:underline">
@@ -138,7 +136,6 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
               {formatearNumero(idea.votos)} votos
             </Chip>
           )}
-          <Chip>Edición {idea.anio}</Chip>
         </div>
 
         <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-4xl">{idea.titulo}</h1>
@@ -304,7 +301,7 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
                 Notas sobre el dato original ({idea.notasMigracion.length})
               </summary>
               <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
-                Esta idea viene de la edición {idea.anio}, cargada en el sitio anterior. Estas son
+                Esta idea viene del sitio anterior del programa. Estas son
                 las correcciones aplicadas al migrarla:
               </p>
               <ul className="mt-3 space-y-1.5 pl-4 text-sm" style={{ color: "var(--texto-suave)" }}>

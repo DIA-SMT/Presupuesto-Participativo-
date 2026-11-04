@@ -211,7 +211,7 @@ test("sin clave responde el buscador, sin llamar a nadie", async () => {
   assert.equal(llamadas.length, 0);
   assert.equal(eventos.at(-1)?.tipo, "fin");
   assert.equal(eventos.at(-1)?.modo, "buscador");
-  assert.ok(textoMostrado(eventos).includes("ideas publicadas"));
+  assert.ok(textoMostrado(eventos).includes("propuestas publicadas"));
   assert.deepEqual((await ultimaConsulta()).herramientas, ["buscador-local"]);
 });
 
@@ -220,8 +220,8 @@ test("el buscador contesta lo que corresponde a las sugerencias del widget", asy
   // "presentaron" caia en "como participar" y "presento" no encontraba nada.
   // La edicion de esta base esta en seguimiento: la carga de ideas esta cerrada.
   const casos = [
-    ["¿Cuántas ideas se presentaron?", "ideas publicadas"],
-    ["¿Cómo presento una idea?", "presentación de ideas"],
+    ["¿Cuántas ideas se presentaron?", "propuestas publicadas"],
+    ["¿Cómo presento una idea?", "presentación de propuestas"],
   ] as const;
   for (const [pregunta, esperado] of casos) {
     const { resultado } = await conProveedor(sinLlamadas, () =>
@@ -266,7 +266,7 @@ for (const [status, motivo] of [
     assert.ok(!eventos.some((e) => e.tipo === "error"), "no tiene que ver un aviso de error");
     assert.equal(eventos.at(-1)?.tipo, "fin");
     assert.equal(eventos.at(-1)?.modo, "buscador");
-    assert.ok(textoMostrado(eventos).includes("ideas publicadas"));
+    assert.ok(textoMostrado(eventos).includes("propuestas publicadas"));
 
     const fila = await ultimaConsulta();
     assert.deepEqual(fila.herramientas, ["buscador-local", `falla:${motivo}`]);
@@ -308,7 +308,7 @@ test("si el proveedor falla a mitad de la respuesta, lo mostrado se descarta", a
   const tipos = eventos.map((e) => e.tipo);
   assert.ok(tipos.indexOf("descartar") > tipos.indexOf("texto"), "primero llego texto del modelo");
   assert.ok(!textoMostrado(eventos).includes("Se presentaron "), "lo del modelo no queda");
-  assert.ok(textoMostrado(eventos).includes("ideas publicadas"));
+  assert.ok(textoMostrado(eventos).includes("propuestas publicadas"));
   assert.equal(eventos.at(-1)?.modo, "buscador");
   const fila = await ultimaConsulta();
   assert.deepEqual(fila.herramientas, ["buscador-local", "falla:proveedor-402"]);
@@ -356,7 +356,7 @@ test("si el modelo agota las vueltas pidiendo herramientas, contesta el buscador
   assert.match(repetidas[1].content, /misma consulta/);
   assert.ok(!eventos.some((e) => e.tipo === "error"), "no tiene que ver un aviso de error");
   assert.ok(!textoMostrado(eventos).includes("Vuelta"), "lo del modelo no queda");
-  assert.ok(textoMostrado(eventos).includes("ideas publicadas"));
+  assert.ok(textoMostrado(eventos).includes("propuestas publicadas"));
   assert.equal(eventos.at(-1)?.modo, "buscador");
   const fila = await ultimaConsulta();
   assert.deepEqual(fila.herramientas, ["buscador-local", "falla:vueltas"]);
@@ -374,7 +374,7 @@ test("si el modelo cierra con una respuesta vacia, contesta el buscador", async 
 
   assert.equal(llamadas.length, 1);
   assert.ok(!eventos.some((e) => e.tipo === "error"), "no tiene que ver un aviso de error");
-  assert.ok(textoMostrado(eventos).includes("ideas publicadas"));
+  assert.ok(textoMostrado(eventos).includes("propuestas publicadas"));
   assert.equal(eventos.at(-1)?.modo, "buscador");
   const fila = await ultimaConsulta();
   assert.deepEqual(fila.herramientas, ["buscador-local", "falla:vacia"]);
@@ -405,7 +405,7 @@ test("un preambulo seguido de una vuelta vacia no queda como la respuesta", asyn
 
   assert.equal(llamadas.length, 2);
   assert.ok(!textoMostrado(eventos).includes("Voy a revisar"), "el preambulo se descarta");
-  assert.ok(textoMostrado(eventos).includes("ideas publicadas"));
+  assert.ok(textoMostrado(eventos).includes("propuestas publicadas"));
   assert.equal(eventos.at(-1)?.modo, "buscador");
   assert.deepEqual((await ultimaConsulta()).herramientas, ["buscador-local", "falla:vacia"]);
 });

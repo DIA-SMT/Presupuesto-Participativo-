@@ -243,8 +243,8 @@ const FRASES_DEL_PROMPT: { archivo: string; frase: string; respuesta: string }[]
   },
   {
     archivo: "src/lib/chat-sin-ia.ts",
-    frase: "No hay datos de una edición ${anioPedido} en el sitio.",
-    respuesta: "No hay datos de una edición 2019 en el sitio. Hay datos de las ediciones 2025 y 2026.",
+    frase: "No tengo datos de ${anioPedido} en el sitio.",
+    respuesta: "No tengo datos de 2019 en el sitio.",
   },
 ];
 

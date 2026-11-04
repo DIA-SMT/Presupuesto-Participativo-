@@ -336,7 +336,6 @@ export type ExtrasFicha = {
 };
 
 export default function PanelBandeja({
-  anio,
   etapa,
   resumen,
   filas,
@@ -352,7 +351,6 @@ export default function PanelBandeja({
   rol,
   ahora,
 }: {
-  anio: number;
   /** Etapa de la edicion activa, que es la de todas las ideas de la bandeja. */
   etapa: Etapa;
   resumen: ResumenBandeja;
@@ -397,7 +395,7 @@ export default function PanelBandeja({
     <div>
       <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-          <h1 className="text-2xl font-bold">Propuestas · Edición {anio}</h1>
+          <h1 className="text-2xl font-bold">Propuestas</h1>
         </div>
         {/*
           "emitidos desde esta plataforma" y no "registrados por este sitio":

@@ -76,6 +76,8 @@ export function tituloConEdicion(
   titulo: string,
   resuelta: EdicionResuelta | null | undefined,
 ): string {
-  if (resuelta?.tipo !== "vista" || resuelta.vista.edicion.activa) return titulo;
-  return `${titulo} · Edición ${resuelta.vista.edicion.anio}`;
+  // Desde octubre de 2026 el sitio no habla de ediciones por año: el titulo
+  // es el mismo para cualquiera. La firma queda para no tocar cada pagina.
+  void resuelta;
+  return titulo;
 }

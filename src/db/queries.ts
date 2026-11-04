@@ -692,6 +692,14 @@ export type AvanceDeObra = {
 export type ObraGanadora = {
   id: number;
   slug: string;
+  /**
+   * El año interno de la votacion que la eligio. No se muestra (el sitio no
+   * habla de ediciones): sirve para armar el enlace a la ficha, porque el slug
+   * se repite entre votaciones.
+   */
+  anio: number;
+  /** Si es de la edicion activa: entonces el enlace no lleva `?edicion`. */
+  edicionActiva: boolean;
   titulo: string;
   distrito: number | null;
   barrio: string | null;
@@ -707,30 +715,35 @@ export type ObraGanadora = {
 };
 
 /**
- * Las obras de los ganadores publicados de una edicion, por distrito. Excluye
- * las descartadas (`NO_DESCARTADA`), como toda consulta sobre ideas.
+ * Las obras de los ganadores publicados, por distrito: de una edicion, o de
+ * todas si no se pasa ninguna (lo que muestran /transparencia y /admin/obras,
+ * que no hablan de ediciones: los ganadores mas nuevos primero). Excluye las
+ * descartadas (`NO_DESCARTADA`), como toda consulta sobre ideas.
  */
-export async function listarObras(edicionId: number): Promise<ObraGanadora[]> {
+export async function listarObras(edicionId?: number): Promise<ObraGanadora[]> {
   const ganadores = await db
     .select({
       id: ideas.id,
       slug: ideas.slug,
+      anio: ediciones.anio,
+      edicionActiva: ediciones.activa,
       titulo: ideas.titulo,
       distrito: distritos.numero,
       barrio: ideas.barrio,
       votos: ideas.votos,
     })
     .from(ideas)
+    .innerJoin(ediciones, eq(ediciones.id, ideas.edicionId))
     .leftJoin(distritos, eq(distritos.id, ideas.distritoId))
     .where(
       and(
-        eq(ideas.edicionId, edicionId),
+        edicionId === undefined ? undefined : eq(ideas.edicionId, edicionId),
         eq(ideas.ganador, true),
         eq(ideas.publicada, true),
         NO_DESCARTADA,
       ),
     )
-    .orderBy(sql`${distritos.numero} NULLS LAST`, asc(ideas.id));
+    .orderBy(desc(ediciones.anio), sql`${distritos.numero} NULLS LAST`, asc(ideas.id));
   if (!ganadores.length) return [];
 
   const filas = await db
@@ -770,6 +783,8 @@ export async function listarObras(edicionId: number): Promise<ObraGanadora[]> {
     return {
       id: g.id,
       slug: g.slug,
+      anio: Number(g.anio),
+      edicionActiva: Boolean(g.edicionActiva),
       titulo: g.titulo,
       distrito: g.distrito === null ? null : Number(g.distrito),
       barrio: g.barrio,

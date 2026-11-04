@@ -63,7 +63,7 @@ function principalConLaVotacionTerminada(resultado: ResultadoDeLaVotacion): Acci
   if (resultado.distritosPorProclamar.length > 0) {
     return { href: "/transparencia", texto: "Seguí la proclamación" };
   }
-  return { href: "/proyectos", texto: "Ver las ideas de la edición" };
+  return { href: "/proyectos", texto: "Ver las propuestas" };
 }
 
 /**
@@ -81,14 +81,14 @@ function hasta(fecha: string | null, hoy: string): string {
  * los hubiera, el sitio no tiene cargado ningun avance de obra (el mismo
  * criterio que `bajadaGanadores` en src/app/page.tsx).
  */
-function momentoDeSeguimiento(anio: number, resultado: ResultadoDeLaVotacion): string {
+function momentoDeSeguimiento(resultado: ResultadoDeLaVotacion): string {
   if (resultado.distritosPorProclamar.length > 0) {
-    return `Edición ${anio}: la votación terminó y los proyectos ganadores se publican a medida que se proclaman.`;
+    return "La votación terminó y los proyectos ganadores se publican a medida que se proclaman.";
   }
   if (resultado.ganadores > 0) {
-    return `Edición ${anio}: la votación terminó y los proyectos ganadores ya están publicados.`;
+    return "La votación terminó y los proyectos ganadores ya están publicados.";
   }
-  return `Edición ${anio}: la votación terminó y la edición no tiene proyectos ganadores publicados.`;
+  return "La votación terminó y no hay proyectos ganadores publicados.";
 }
 
 /**
@@ -106,7 +106,7 @@ export function portadaSegunEtapa(
   switch (edicion.etapa) {
     case "ideas":
       return {
-        momento: `Edición ${edicion.anio}: la presentación de ideas está abierta${hasta(edicion.ideasHasta, hoy)}.`,
+        momento: `La presentación de propuestas está abierta${hasta(edicion.ideasHasta, hoy)}.`,
         principal: { href: "/ideas/nueva", texto: "Presentá tu idea" },
         secundaria: { href: "/proyectos", texto: "Ver las ideas presentadas" },
         yaVoto,
@@ -117,7 +117,7 @@ export function portadaSegunEtapa(
           ? `, y la votación empieza el ${formatearFecha(edicion.votacionDesde)}`
           : "";
       return {
-        momento: `Edición ${edicion.anio}: el equipo técnico está evaluando las ideas presentadas${votacion}.`,
+        momento: `El equipo técnico está evaluando las propuestas presentadas${votacion}.`,
         principal: { href: "/proyectos", texto: "Ver las ideas presentadas" },
         secundaria: { href: "/ideas/seguimiento", texto: "Seguí tu idea" },
         yaVoto,
@@ -125,23 +125,23 @@ export function portadaSegunEtapa(
     }
     case "votacion":
       return {
-        momento: `Edición ${edicion.anio}: la votación está abierta${hasta(edicion.votacionHasta, hoy)}. Cada vecino vota un proyecto de su distrito.`,
+        momento: `La votación está abierta${hasta(edicion.votacionHasta, hoy)}. Cada vecino vota un proyecto de su distrito.`,
         principal: { href: "/votar", texto: "Votá en tu distrito" },
         secundaria: { href: "/proyectos", texto: "Ver los proyectos en votación" },
         yaVoto,
       };
     case "seguimiento":
       return {
-        momento: momentoDeSeguimiento(edicion.anio, resultado),
+        momento: momentoDeSeguimiento(resultado),
         principal: principalConLaVotacionTerminada(resultado),
         secundaria: { href: "/distritos", texto: "Recorrer los distritos" },
         yaVoto,
       };
     case "cerrada":
       return {
-        momento: `La edición ${edicion.anio} terminó. Sus proyectos y los de las ediciones anteriores siguen a la vista.`,
+        momento: "La votación terminó. Los proyectos ganadores y el avance de sus obras siguen a la vista.",
         principal: principalConLaVotacionTerminada(resultado),
-        secundaria: { href: "/archivo", texto: "Ediciones anteriores" },
+        secundaria: { href: "/transparencia", texto: "Ver cómo avanzan las obras" },
         yaVoto,
       };
   }

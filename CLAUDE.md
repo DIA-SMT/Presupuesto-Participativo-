@@ -48,6 +48,13 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   descartadas con `NO_DESCARTADA` (`src/db/queries.ts`), también las públicas:
   una descartada no cuenta en ningún número. Solo la solapa "Descartadas" de la
   bandeja las muestra.
+- El programa **no se presenta por ediciones anuales** (decisión de octubre de
+  2026): ningún texto del sitio, del panel ni de Migue nombra una edición ni su
+  año. Se habla de "las propuestas" (las de ahora) y de "los proyectos
+  ganadores" (de cualquier votación, con su obra). Por dentro la tabla
+  `ediciones` sigue: el panel abre y cierra la presentación y la votación con
+  `usarInterruptor` (`planDeInterruptor` en `src/lib/etapas.ts`), y abrir la
+  presentación después de una votación crea sola la edición interna siguiente.
 - La edición que muestra una página pública sale de `?edicion=AAAA`, leído con
   `src/lib/edicion-en-vista.ts`; sin el parámetro, la activa. Los enlaces
   internos de una página que muestra otra edición se arman con `conEdicion`

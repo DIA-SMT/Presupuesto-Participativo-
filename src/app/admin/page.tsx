@@ -84,7 +84,7 @@ export default async function AdminIdeas({ searchParams }: Props) {
   const parametros = await searchParams;
   const edicion = await getEdicionActiva();
   if (!edicion) {
-    return <p>No hay una edición activa. Activá una edición antes de revisar ideas.</p>;
+    return <p>La base no tiene un proceso activo.</p>;
   }
 
   const estado = ESTADOS.includes(parametros.estado as EstadoIdea)
@@ -187,7 +187,6 @@ export default async function AdminIdeas({ searchParams }: Props) {
 
   return (
     <PanelBandeja
-      anio={edicion.anio}
       etapa={edicion.etapa}
       resumen={resumen}
       panorama={panorama}

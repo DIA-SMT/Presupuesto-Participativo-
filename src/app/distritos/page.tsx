@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import AvisoEdicion from "@/components/AvisoEdicion";
 import Mapa from "@/components/Mapa";
 import { Chip, Vacio } from "@/components/ui";
 import { getDistritos, getTextos } from "@/db/queries";
@@ -24,7 +23,7 @@ export default async function Distritos({ searchParams }: Props) {
   if (!vista) {
     return (
       <div className="contenedor py-20">
-        <Vacio>Todavía no hay una edición cargada.</Vacio>
+        <Vacio>Todavía no hay datos cargados.</Vacio>
       </div>
     );
   }
@@ -38,7 +37,6 @@ export default async function Distritos({ searchParams }: Props) {
 
   return (
     <div className="contenedor py-10 sm:py-14">
-      <AvisoEdicion vista={vista} hrefActual="/distritos" />
 
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold sm:text-4xl">
@@ -124,7 +122,7 @@ export default async function Distritos({ searchParams }: Props) {
                       ? "El proyecto ganador se elige en la votación."
                       : ganadorPorProclamar(edicion.etapa, distrito.conFactibles)
                         ? "El proyecto ganador se publica cuando se proclame."
-                        : "Sin proyecto ganador en esta edición."}
+                        : "Sin proyecto ganador."}
                   </p>
                 )}
               </div>

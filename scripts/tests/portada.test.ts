@@ -33,7 +33,7 @@ function portada(
 test("en la etapa de ideas se ofrece presentar una, con la fecha de cierre", () => {
   const p = portada("ideas");
   assert.equal(p.principal.href, "/ideas/nueva");
-  assert.match(p.momento, /presentación de ideas está abierta hasta el 15 de noviembre de 2026/);
+  assert.match(p.momento, /presentación de propuestas está abierta hasta el 15 de noviembre de 2026/);
   assert.equal(p.yaVoto, false);
 });
 
@@ -66,7 +66,7 @@ test("hay ganadores propios recien cuando la votacion termino", () => {
 
 test("una fecha de cierre que ya paso no se promete", () => {
   const vencidas = { ideasHasta: "2026-10-01", votacionDesde: "2026-10-05", votacionHasta: "2026-10-10" };
-  assert.equal(portada("ideas", vencidas).momento, "Edición 2026: la presentación de ideas está abierta.");
+  assert.equal(portada("ideas", vencidas).momento, "La presentación de propuestas está abierta.");
   assert.doesNotMatch(portada("evaluacion", vencidas).momento, /empieza/);
   assert.doesNotMatch(portada("votacion", vencidas).momento, /hasta el/);
 });
@@ -78,12 +78,12 @@ test("el dia del cierre todavia cuenta", () => {
 
 test("sin fechas cargadas, el momento se dice sin fecha", () => {
   const sinFechas = { ideasHasta: null, votacionDesde: null, votacionHasta: null };
-  assert.equal(portada("ideas", sinFechas).momento, "Edición 2026: la presentación de ideas está abierta.");
+  assert.equal(portada("ideas", sinFechas).momento, "La presentación de propuestas está abierta.");
   assert.equal(
     portada("evaluacion", sinFechas).momento,
-    "Edición 2026: el equipo técnico está evaluando las ideas presentadas.",
+    "El equipo técnico está evaluando las propuestas presentadas.",
   );
-  assert.match(portada("votacion", sinFechas).momento, /^Edición 2026: la votación está abierta\. /);
+  assert.match(portada("votacion", sinFechas).momento, /^La votación está abierta\. /);
 });
 
 // Se proclama de a un distrito y despues del escrutinio: toda edicion pasa un

@@ -10,8 +10,6 @@
  * enlaces comunes y la pantalla funciona igual sin JavaScript.
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useTransition } from "react";
 import type {
   EstadisticaDistrito,
   EtapaEdicion,
@@ -65,7 +63,6 @@ const COLUMNAS: { clave: ClaveOrden; etiqueta: string; alDerecha: boolean }[] = 
 type EdicionOpcion = { id: number; anio: number; etapa: EtapaEdicion; activa: boolean };
 
 type Props = {
-  ediciones: EdicionOpcion[];
   edicion: EdicionOpcion;
   resumen: ResumenAdmin;
   distritos: EstadisticaDistrito[];
@@ -81,7 +78,6 @@ type Props = {
 };
 
 export default function PanelTablero({
-  ediciones,
   edicion,
   resumen,
   distritos,
@@ -95,8 +91,6 @@ export default function PanelTablero({
   direccion,
   umbral,
 }: Props) {
-  const router = useRouter();
-  const [pendiente, iniciar] = useTransition();
   // Los enlaces al sitio publico (distritos y fichas) van a la edicion que se
   // esta mirando: con la 2025 elegida y la 2026 activa, sin el parametro abrian
   // la 2026, y una ficha con el slug repetido era la idea de la otra edicion.
@@ -145,11 +139,11 @@ export default function PanelTablero({
       : Math.max(0, resumen.presupuestoEdicion - resumen.presupuestoAsignado);
 
   return (
-    <div aria-busy={pendiente} style={{ opacity: pendiente ? 0.72 : 1, transition: "opacity 120ms" }}>
+    <div>
       {/* --- Cabecera y selector de edicion ------------------------------- */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Estadísticas · Edición {edicion.anio}</h1>
+          <h1 className="text-2xl font-bold">Estadísticas</h1>
           {/*
             Solo la etapa. Antes esta linea decia tambien "edición activa en el
             sitio", que ya lo dice el "(activa)" del selector de al lado, y
@@ -157,29 +151,10 @@ export default function PanelTablero({
             el mismo dato en la misma pantalla.
           */}
           <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-            Etapa: <strong>{ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}</strong>
-            {!edicion.activa && " · no es la edición activa del sitio"}
+            Del proceso actual. Hoy: <strong>{ETIQUETA_ETAPA[edicion.etapa] ?? edicion.etapa}</strong>
           </p>
         </div>
 
-        <label className="flex items-center gap-2 text-sm">
-          <span className="font-medium">Edición</span>
-          <select
-            value={edicion.anio}
-            onChange={(evento) =>
-              iniciar(() => router.push(`/admin/tablero?edicion=${evento.target.value}`))
-            }
-            className="rounded-xl px-3 py-2 text-sm outline-none"
-            style={estiloCampo}
-          >
-            {ediciones.map((opcion) => (
-              <option key={opcion.id} value={opcion.anio}>
-                {opcion.anio}
-                {opcion.activa ? " (activa)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
 
       <AvisoContexto resumen={resumen} />
@@ -219,7 +194,7 @@ export default function PanelTablero({
           color="var(--ganador-texto)"
         />
         <Tarjeta
-          titulo="Presupuesto de la edición"
+          titulo="Presupuesto total"
           valor={formatearPesos(resumen.presupuestoEdicion)}
           detalle={`Asignado a los ganadores: ${formatearPesos(resumen.presupuestoAsignado)}`}
         />
@@ -234,7 +209,7 @@ export default function PanelTablero({
         <Tarjeta
           titulo="Vecinos empadronados"
           valor={formatearNumero(resumen.votantesEmpadronados)}
-          detalle="Padrón completo: no se divide por edición."
+          detalle="Padrón completo."
           enCero={ceros.padron}
         />
       </div>
@@ -250,7 +225,7 @@ export default function PanelTablero({
       <section className="mt-10">
         <h2 className="text-xl font-bold">Composición de las ideas por estado</h2>
         <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Cada idea tiene un solo estado, así que las porciones suman el total de la edición.
+          Cada idea tiene un solo estado, así que las porciones suman el total.
         </p>
         <div className="superficie mt-4 rounded-2xl p-5">
           <AnilloEstados porEstado={resumen.porEstado} />
@@ -276,7 +251,7 @@ export default function PanelTablero({
           <div className="superficie mt-4 overflow-x-auto rounded-2xl">
             <table className="w-full min-w-[52rem] border-collapse text-sm">
               <caption className="sr-only">
-                Ideas, evaluaciones y votos de cada distrito en la edición {edicion.anio}
+                Ideas, evaluaciones y votos de cada distrito en el proceso actual
               </caption>
               <thead>
                 <tr style={{ borderBottom: "2px solid var(--borde)" }}>
@@ -403,8 +378,8 @@ export default function PanelTablero({
           </div>
         )}
         <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
-          La columna de votos suma el contador de cada idea, que incluye los votos importados de
-          ediciones anteriores: por eso puede no coincidir con los votos registrados por este sitio.
+          La columna de votos suma el contador de cada idea, que incluye los votos importados del
+          sitio anterior: por eso puede no coincidir con los votos registrados por este sitio.
         </p>
       </section>
 
@@ -447,7 +422,7 @@ export default function PanelTablero({
         <h2 className="text-xl font-bold">Actividad día por día</h2>
         <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
           Las ideas se cuentan por su fecha de presentación y los votos por el momento en que se
-          registraron. En las ediciones migradas la fecha puede ser la del dataset original.
+          registraron. En las ideas migradas del sitio anterior la fecha puede ser la del dataset original.
         </p>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           {/*
@@ -483,13 +458,12 @@ export default function PanelTablero({
         <div className="superficie mt-4 rounded-2xl p-5">
           {resumen.presupuestoEdicion === null ? (
             <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-              La edición no tiene presupuesto total cargado: se puede completar en la pantalla de
-              ediciones. Asignado hasta ahora a los ganadores:{" "}
+              No hay presupuesto total cargado. Asignado hasta ahora a los ganadores:{" "}
               <strong>{formatearPesos(resumen.presupuestoAsignado)}</strong>.
             </p>
           ) : (
             <BarraApilada
-              etiquetaTotal={`Presupuesto de la edición ${edicion.anio}`}
+              etiquetaTotal="Presupuesto total"
               formatear={(valor) => formatearPesos(valor)}
               segmentos={[
                 {
@@ -509,14 +483,14 @@ export default function PanelTablero({
           {resumen.presupuestoEdicion !== null &&
             resumen.presupuestoAsignado > resumen.presupuestoEdicion && (
               <p className="mt-3 text-sm font-semibold" style={{ color: "var(--acento-texto)" }}>
-                Atención: lo asignado a los ganadores supera el presupuesto cargado para la edición.
+                Atención: lo asignado a los ganadores supera el presupuesto total cargado.
               </p>
             )}
         </div>
 
         {ejecucion.length === 0 ? (
           <p className="mt-4 text-sm" style={{ color: "var(--texto-suave)" }}>
-            Todavía no hay proyectos ganadores en esta edición: la ejecución se completa después de
+            Todavía no hay proyectos ganadores en el proceso actual: la ejecución se completa después de
             la proclamación.
           </p>
         ) : (
@@ -614,7 +588,7 @@ export default function PanelTablero({
       <section className="mt-10">
         <h2 className="text-xl font-bold">Participación por distrito</h2>
         <p className="mt-1 text-sm" style={{ color: "var(--texto-suave)" }}>
-          Empadronados de cada distrito y cuántos de ellos votaron en esta edición.
+          Empadronados de cada distrito y cuántos de ellos votaron.
         </p>
 
         {sinPadron ? (
@@ -757,7 +731,7 @@ function cerosPorDefinicion(resumen: ResumenAdmin): { votos: boolean; padron: bo
 function AvisoContexto({ resumen }: { resumen: ResumenAdmin }) {
   if (resumen.ideas === 0) {
     return (
-      <Aviso titulo="Todavía no entró ninguna idea en esta edición.">
+      <Aviso titulo="Todavía no entró ninguna propuesta.">
         Por eso todo lo que sigue está en cero. Los indicadores se van a ir llenando solos cuando
         abra la presentación de ideas.
       </Aviso>
@@ -796,9 +770,9 @@ function AvisoContexto({ resumen }: { resumen: ResumenAdmin }) {
   if (aclaraciones.length === 0) return null; // Edicion enteramente en el sitio.
 
   const titulo = votacionDeAfuera
-    ? "La votación de esta edición no pasó por el sitio."
+    ? "La votación no pasó por el sitio."
     : ideasDeAfuera > 0
-      ? "Parte de esta edición se cargó por fuera del sitio."
+      ? "Parte de las propuestas se cargó por fuera del sitio."
       : "Todavía no hay nadie empadronado en el sitio.";
 
   return (
@@ -895,8 +869,3 @@ function Celda({ valor, umbral }: { valor: number | null; umbral: number }) {
   return <>{formatearNumero(valor)}</>;
 }
 
-const estiloCampo: React.CSSProperties = {
-  background: "var(--fondo-suave)",
-  border: "1px solid var(--borde)",
-  color: "var(--texto)",
-};

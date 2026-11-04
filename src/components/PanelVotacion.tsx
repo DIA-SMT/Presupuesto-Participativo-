@@ -149,7 +149,7 @@ export default function PanelVotacion({
         <p className="mt-3 text-[0.9375rem] leading-relaxed">
           {estado.proyecto
             ? `Tu voto para “${estado.proyecto}” quedó registrado.`
-            : "Ya usaste tu voto en esta edición."}{" "}
+            : "Ya usaste tu voto en esta votación."}{" "}
           Es un voto por persona: no se puede votar de nuevo.
         </p>
         {estado.sesionCerrada && (
@@ -217,7 +217,7 @@ export default function PanelVotacion({
       {proyectos.length === 0 ? (
         <div className="superficie mt-5 max-w-xl rounded-2xl p-8">
           <p className="text-sm">
-            Tu distrito no tiene proyectos factibles para votar en esta edición.
+            Tu distrito no tiene proyectos factibles para votar.
           </p>
         </div>
       ) : (

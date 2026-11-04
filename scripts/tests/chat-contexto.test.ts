@@ -55,7 +55,7 @@ async function reglamento(consulta: string) {
 
 test("el contexto dice el momento y las fechas de la edicion, como la portada", async () => {
   const ctx = await contexto.contextoDelSitio(await vigente());
-  assert.match(ctx.momento, /la votación está abierta hasta el 4 de diciembre de 2030/);
+  assert.match(ctx.momento, /La votación está abierta hasta el 4 de diciembre de 2030/);
   assert.equal(ctx.acciones[0].href, "/votar");
   assert.match(ctx.fechasVotacion ?? "", /2 de diciembre de 2030/);
   assert.equal(ctx.fechasIdeas, null, "sin fechas de ideas cargadas");
