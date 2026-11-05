@@ -62,7 +62,7 @@ async function conBaseCaida<T>(fn: () => Promise<T>): Promise<T> {
 test("con la base en pie, la salida va a CIDITUC y deja el estado y el destino", async () => {
   const respuesta = await conInterruptor(true, () => GET(pedido("ideas")));
   assert.equal(respuesta.status, 307);
-  assert.match(respuesta.headers.get("location") ?? "", /^https:\/\/cidituc\.smt\.gob\.ar\//);
+  assert.match(respuesta.headers.get("location") ?? "", /^https:\/\/ciudaddigital\.smt\.gob\.ar\//);
   const cookies = respuesta.headers.getSetCookie().join("\n");
   assert.match(cookies, /pp_cidituc_estado=/);
   assert.match(cookies, /pp_cidituc_destino=ideas/);

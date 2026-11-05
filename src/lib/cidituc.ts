@@ -5,8 +5,8 @@
  * client_secret, ni intercambio de un code por un token. El flujo real, tal como
  * lo sirve el municipio, son tres pasos:
  *
- *   1. mandamos a la persona a cidituc.smt.gob.ar/#/login?next=<clave de la app>
- *   2. el Derivador la autentica y la devuelve a NUESTRO callback con ?auth=<token>
+ *   1. mandamos a la persona a ciudaddigital.smt.gob.ar/#/login?next=<clave de la app>
+ *   2. CIDITUC la autentica y la devuelve a NUESTRO callback con ?auth=<token>
  *   3. consultamos su perfil con ese token: esa consulta ES la validacion,
  *      porque el backend verifica la firma antes de responder. Con un token
  *      falso contesta 401.
@@ -22,20 +22,26 @@ import { rootCertificates } from "node:tls";
 import { nombreCookie } from "@/lib/cookies";
 
 /**
- * El Derivador (la pantalla de login) y el backend que valida el token.
+ * La pantalla de login y el backend que valida el token.
+ *
+ * El login es el del repo `cidituc` de DITEC, servido en
+ * ciudaddigital.smt.gob.ar. Hasta noviembre de 2026 era el Derivador, en
+ * cidituc.smt.gob.ar; el 5/11/2026 ese dominio ya no reconocia apps externas
+ * (sin `next`, la persona caia en el inicio de CIDITUC) y la entrada de esta
+ * app, con la vuelta a /auth/cidituc/callback y el `state`, estaba desplegada
+ * en ciudaddigital. Si DITEC vuelve a mover el login, se cambia aca.
  *
  * Van en el codigo y NO en el entorno a proposito: la URL de ingreso lleva un
  * `#` y en un archivo .env el `#` abre un comentario, asi que puesta ahi se
  * pierde `#/login` y la redireccion muere en silencio. Y el `#` no es
- * decorativo: el Derivador usa HashRouter, y sin el su router cae en la ruta
- * comodin y expulsa a la persona a ciudaddigital.smt.gob.ar.
+ * decorativo: el login usa HashRouter, y sin el su router no llega a /login.
  *
  * PERFIL es el endpoint de CIUDADANOS. Existe tambien /usuarios/authStatusIA,
  * que consulta la tabla de EMPLEADOS municipales y le devuelve 401 a cualquier
  * vecino: aca vota el vecino, asi que no se cambia por el otro "para que
  * funcione".
  */
-const DERIVADOR = "https://cidituc.smt.gob.ar";
+const DERIVADOR = "https://ciudaddigital.smt.gob.ar";
 const PERFIL = "https://estadisticas.smt.gob.ar:5000/usuarios/authStatus";
 
 /**
