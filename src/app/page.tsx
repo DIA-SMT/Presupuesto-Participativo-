@@ -1,5 +1,5 @@
 import HeroInicio from "@/components/HeroInicio";
-import Mapa from "@/components/Mapa";
+import Mapa, { type PuntoMapa } from "@/components/Mapa";
 import { Boton, Seccion, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
   getDistritos,
@@ -10,11 +10,15 @@ import {
   getTextos,
   getUltimaEdicionTerminadaConGanadores,
   listarIdeas,
+  listarObras,
+  type DistritoVista,
   type Edicion,
+  type ObraGanadora,
   type Estadisticas,
   type IdeaVista,
 } from "@/db/queries";
 import { votacionTerminada } from "@/lib/ediciones";
+import { leyendaDeObras, puntoDeObra } from "@/lib/obras-en-mapa";
 import {
   ETIQUETA_ETAPA,
   distritosConVerbo,
@@ -74,13 +78,14 @@ export default async function Home() {
   if (!edicion) return <SinDatos />;
 
   const pedidoStats = getEstadisticas(edicion);
-  const [textos, stats, distritos, ganadores, hitos, novedades] = await Promise.all([
+  const [textos, stats, distritos, ganadores, hitos, novedades, obras] = await Promise.all([
     getTextos(),
     pedidoStats,
     getDistritos(edicion.id),
     destacados(edicion, votacionTerminada(edicion.etapa), pedidoStats),
     getHitos(edicion.id),
     getNovedades(3),
+    listarObras(),
   ]);
   // Despues de las cuentas: con la votacion terminada, el boton principal
   // depende de si ya hay ganadores proclamados.
@@ -205,6 +210,43 @@ export default async function Home() {
       </Seccion>
 
       {/* --- Mapa --------------------------------------------------------- */}
+      {/* Con ganadores, el mapa muestra sus obras y en que etapa esta cada una;
+          sin ninguno todavia, los 20 distritos para ir a ver sus ideas. */}
+      {obras.length > 0 ? (
+        <div style={{ background: "var(--fondo-suave)" }}>
+          <Seccion
+            titulo="Los proyectos ganadores en el mapa"
+            bajada="Cada punto es el proyecto que eligió su distrito, con el color de la etapa en que está su obra. Tocalo para ver el detalle."
+            accion={<Boton href="/transparencia" variante="secundario">Ver el estado de cada obra</Boton>}
+          >
+            <Mapa
+              distritos={distritos.map((d) => ({
+                numero: d.numero,
+                nombre: d.nombre,
+                ideas: d.ideas,
+                color: null,
+                etiquetaGanador: null,
+              }))}
+              puntos={puntosDeObras(obras, distritos)}
+              mostrarEtiquetas={false}
+              clicEnDistritos={false}
+              alto="32rem"
+            />
+            <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs" style={{ color: "var(--texto-suave)" }}>
+              {leyendaDeObras(obras).map((item) => (
+                <li key={item.etiqueta} className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-2.5 w-2.5 rounded-full"
+                    style={{ background: item.color }}
+                  />
+                  {item.etiqueta} ({item.cantidad})
+                </li>
+              ))}
+            </ul>
+          </Seccion>
+        </div>
+      ) : (
       <div style={{ background: "var(--fondo-suave)" }}>
         <Seccion
           titulo={t("home-mapa-titulo", "Los 20 distritos")}
@@ -237,6 +279,7 @@ export default async function Home() {
           </p>
         </Seccion>
       </div>
+      )}
 
       {/* --- Ganadores ---------------------------------------------------- */}
       {ganadores && ganadores.ideas.length > 0 ? (
@@ -340,6 +383,15 @@ export default async function Home() {
  * fueran diez. El armado es el de /transparencia (`distritosConVerbo`), para
  * que las dos paginas no vuelvan a divergir.
  */
+/** Un punto por ganador, con la etapa de su obra. */
+function puntosDeObras(obras: ObraGanadora[], distritos: DistritoVista[]): PuntoMapa[] {
+  return obras.flatMap((obra) => {
+    const centro = distritos.find((d) => d.numero === obra.distrito)?.centroide;
+    const punto = puntoDeObra(obra, centro);
+    return punto ? [punto] : [];
+  });
+}
+
 function fraseSinGanador(distritos: number[]): string {
   return `En la última votación ${distritosConVerbo(distritos, "quedó", "quedaron")} sin proyecto ganador.`;
 }

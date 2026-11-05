@@ -39,6 +39,18 @@ export type PuntoMapa = {
   estado: string;
   ganador: boolean;
   aproximada: boolean;
+  /**
+   * La etapa de la obra, ya como texto ("En obra", "Sin información
+   * todavía"), para el mapa de ganadores de la portada. Sin ella el popup no
+   * habla de obra.
+   */
+  obra?: string;
+  /**
+   * El año interno para el enlace de ESTE punto, cuando no es de la edicion
+   * activa. Le gana a `edicionEnEnlaces`: los ganadores de la portada pueden
+   * venir de votaciones distintas.
+   */
+  edicion?: number | null;
 };
 
 type Props = {
@@ -53,6 +65,12 @@ type Props = {
   puntoElegido?: { lat: number; lon: number } | null;
   alto?: string;
   mostrarEtiquetas?: boolean;
+  /**
+   * Si un clic en un distrito lleva a su pagina. En el mapa de obras de la
+   * portada no: lo que se toca son los puntos, y un clic que erraba el punto
+   * por poco mandaba al distrito, donde el proyecto no aparecia.
+   */
+  clicEnDistritos?: boolean;
   /**
    * El año que llevan los enlaces del mapa (el distrito y "Ver el proyecto")
    * mientras se recorre una edicion que no es la activa. Sin el, un clic en el
@@ -120,6 +138,7 @@ export default function Mapa({
   puntoElegido,
   alto = "30rem",
   mostrarEtiquetas = true,
+  clicEnDistritos = true,
   edicionEnEnlaces = null,
 }: Props) {
   const contenedor = useRef<HTMLDivElement>(null);
@@ -267,7 +286,8 @@ export default function Mapa({
       }
       sobre = id;
       instancia.setFeatureState({ source: "distritos", id }, { hover: true });
-      instancia.getCanvas().style.cursor = modo === "navegar" ? "pointer" : "crosshair";
+      instancia.getCanvas().style.cursor =
+        modo === "seleccionar" ? "crosshair" : clicEnDistritos ? "pointer" : "";
     };
 
     const alSalir = () => {
@@ -279,7 +299,7 @@ export default function Mapa({
     };
 
     const alClic = (evento: maplibregl.MapLayerMouseEvent) => {
-      if (modo === "seleccionar") return;
+      if (modo === "seleccionar" || !clicEnDistritos) return;
       // Los marcadores HTML (puntos y etiquetas) viven dentro del contenedor del
       // lienzo, y MapLibre convierte cualquier clic ahi en un 'click' del mapa:
       // tocar un punto tambien caia sobre su poligono y se iba al distrito antes
@@ -302,7 +322,7 @@ export default function Mapa({
       instancia.off("mouseleave", "distritos-relleno", alSalir);
       instancia.off("click", "distritos-relleno", alClic);
     };
-  }, [listo, distritos, distritoActivo, modo, edicionEnEnlaces]);
+  }, [listo, distritos, distritoActivo, modo, clicEnDistritos, edicionEnEnlaces]);
 
   // --- Modo seleccionar: un clic en cualquier parte elige el punto ---------
   useEffect(() => {
@@ -387,12 +407,20 @@ export default function Mapa({
            }</p>
            <p class="pp-popup-titulo">${escapar(punto.titulo)}</p>
            ${
+             punto.obra
+               ? `<p class="pp-popup-obra"><span style="background:${escapar(punto.color)}"></span>${escapar(punto.obra)}</p>`
+               : ""
+           }
+           ${
              punto.aproximada
                ? '<p class="pp-popup-aviso">Ubicación aproximada: el punto no marca el lugar exacto de la obra.</p>'
                : ""
            }
            <a class="pp-popup-link" href="${escapar(
-             conEdicion(`/proyectos/${punto.slug}`, edicionEnEnlaces),
+             conEdicion(
+               `/proyectos/${punto.slug}`,
+               punto.edicion !== undefined ? punto.edicion : edicionEnEnlaces,
+             ),
            )}">Ver el proyecto</a>
          </div>`,
       );
@@ -552,6 +580,15 @@ const estilosMarcadores = `
   margin: 0;
 }
 .pp-popup-titulo { font-weight: 600; font-size: 0.9375rem; margin: 0; line-height: 1.35; }
+.pp-popup-obra {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0;
+}
+.pp-popup-obra span { width: 0.6rem; height: 0.6rem; border-radius: 999px; flex: none; }
 .pp-popup-aviso { font-size: 0.75rem; color: var(--texto-suave); margin: 0.15rem 0 0; }
 .pp-popup-link {
   margin-top: 0.35rem;

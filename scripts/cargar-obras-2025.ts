@@ -41,6 +41,9 @@ const URQUIZA = {
   slug: "revalorizacion-y-renovacion-de-la-plaza-urquiza",
   titulo: "Revalorización y renovación de la Plaza Urquiza",
   distrito: 10,
+  // El centro de la plaza, pasado por el equipo en noviembre de 2026.
+  lat: "-26.8199000",
+  lon: "-65.2066000",
   categoriaSlug: "socio-ambiental",
   solucion:
     "Renovación integral de la Plaza Urquiza: nuevas caminerías, pérgolas, sistemas de riego, drenaje e iluminación, un sector canil, un espacio para skate, juegos infantiles y la restauración de sus esculturas.",
@@ -169,7 +172,7 @@ async function main() {
     if (!distrito) throw new Error("No existe el distrito 10.");
 
     const [ganadorDel10] = await tx
-      .select({ id: ideas.id, slug: ideas.slug })
+      .select({ id: ideas.id, slug: ideas.slug, lat: ideas.lat })
       .from(ideas)
       .where(
         and(eq(ideas.edicionId, edicion.id), eq(ideas.distritoId, distrito.id), eq(ideas.ganador, true)),
@@ -183,6 +186,16 @@ async function main() {
     }
     if (ganadorDel10) {
       console.log(`Distrito 10: ya está cargado (${URQUIZA.titulo}).`);
+      // La primera carga fue sin punto: se completa, sin pisar uno que ya este.
+      if (ganadorDel10.lat === null) {
+        console.log(`  se le carga la ubicación de la plaza (${URQUIZA.lat}, ${URQUIZA.lon}).`);
+        if (confirmar) {
+          await tx
+            .update(ideas)
+            .set({ lat: URQUIZA.lat, lon: URQUIZA.lon, ubicacionAproximada: false })
+            .where(eq(ideas.id, ganadorDel10.id));
+        }
+      }
     } else {
       console.log(`Distrito 10: se crea "${URQUIZA.titulo}", ganador, publicado, sin votos.`);
       if (confirmar) {
@@ -203,6 +216,9 @@ async function main() {
           titulo: URQUIZA.titulo,
           slug: URQUIZA.slug,
           solucion: URQUIZA.solucion,
+          lat: URQUIZA.lat,
+          lon: URQUIZA.lon,
+          ubicacionAproximada: false,
           estado: "ganador",
           ganador: true,
           votos: 0,
