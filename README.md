@@ -259,36 +259,24 @@ sitio valida ese token consultando el perfil en
 validación, porque el backend verifica la firma antes de responder. Todo eso
 vive en `src/lib/cidituc.ts`.
 
-Lo que falta hacer una sola vez es de DITEC, no de este repo: registrar la app
-en el repo **`derivador`** (ojo, los nombres están cruzados: `cidituc.smt.gob.ar`
-lo sirve el repo `derivador`, y el repo `cidituc` sirve otro dominio). En
-`src/components/Login/Login.jsx`, una entrada en **cada** uno de los dos mapas:
+El login es el del repo **`cidituc`** de DITEC, servido en
+`ciudaddigital.smt.gob.ar`. Hasta noviembre de 2026 era el repo `derivador`, en
+`cidituc.smt.gob.ar`; ese dominio ya no reconoce apps externas y manda a la
+persona al inicio de CIDITUC. La entrada de esta app vive en
+`src/routes/PrivateRoute.jsx` del repo `cidituc`: vuelve a
+`https://presupuestoparticipativo.smt.gob.ar/auth/cidituc/callback` con `auth` y
+`state`, pide la contraseña en cada ingreso y no deja el token guardado.
 
-```js
-const APPS_EXTERNAS = new Map([
-  ["presupuesto-participativo", {
-    nombre: "Presupuesto Participativo",
-    callbackUrl: import.meta.env.VITE_APP_PRESUPUESTO_CALLBACK_URL,
-  }],
-]);
+La vuelta es siempre la de producción: en local, el login real termina en el
+sitio publicado, no en `localhost`. Para el formulario en local se usa
+`AUTH_PROVIDER=dev`.
 
-const RESPALDO_CALLBACK = new Map([
-  ["presupuesto-participativo",
-   "https://presupuestoparticipativo.smt.gob.ar/auth/cidituc/callback"],
-]);
-```
-
-El respaldo hardcodeado **no es opcional**: Vite hornea las `VITE_*` al compilar
-y el build de producción no las tiene, así que sin él el bundle sale con
-`callbackUrl: undefined` y la persona se autentica para chocar con "Falta
-configurar el regreso".
-
-Mergear a `dev` no alcanza: hay que **desplegar** y verificarlo en el bundle
-servido, no en el repo.
+Un cambio en ese repo no alcanza: hay que **desplegarlo** y verificarlo en el
+bundle servido.
 
 ```bash
-curl -s https://cidituc.smt.gob.ar/ | grep -oE '/assets/index-[^"]+.js'
-curl -s https://cidituc.smt.gob.ar/assets/index-XXXX.js | grep -c "presupuesto-participativo"
+curl -s https://ciudaddigital.smt.gob.ar/ | grep -oE '/assets/index-[^"]+.js'
+curl -s https://ciudaddigital.smt.gob.ar/assets/index-XXXX.js | grep -o 'presupuesto-participativo"&&.\{0,200\}'
 ```
 
 Recién cuando eso devuelve algo distinto de cero se pone

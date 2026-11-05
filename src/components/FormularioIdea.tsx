@@ -63,7 +63,7 @@
  * guardaba solo el largo del texto, que alcanzaba para habilitar los botones de
  * IA; ahora guarda el texto entero, porque hay que mostrarlo.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import DocumentoIdea, {
   type BloqueActivo,
   type CampoEditable,
@@ -260,6 +260,10 @@ export default function FormularioIdea({
 
   /** Ultima respuesta del asistente, o null si todavia no se pidio ninguna. */
   const [revision, setRevision] = useState<RespuestaAsistente | null>(null);
+  /** La revision que la persona plegó en la pestaña del costado. */
+  const [asistentePlegado, setAsistentePlegado] = useState<RespuestaAsistente | null>(null);
+  /** Si hay lugar para el asistente al costado del documento. */
+  const alCostado = useSyncExternalStore(suscribirAncho, leerAncho, () => false);
   /**
    * Que campos aplico la persona de la ultima propuesta.
    *
@@ -1002,11 +1006,33 @@ export default function FormularioIdea({
     organizacion: valores.conOrganizacion === "si" ? valores.organizacion : "",
   };
 
+  const panelRevision = revision ? (
+    <PanelRevision
+      revision={revision}
+      aplicados={aplicados}
+      elegidos={elegidos}
+      onTildar={(nombre) =>
+        setElegidos((previo) =>
+          previo.includes(nombre) ? previo.filter((d) => d !== nombre) : [...previo, nombre],
+        )
+      }
+      onAgregar={() => void pedirAyuda(elegidos)}
+      onAplicar={aplicarPropuesta}
+      onDescartar={() => setRevision({ ...revision, propuesta: null })}
+      ocupado={ocupado}
+    />
+  ) : null;
+  // Plegado vale para ESTA revision: una nueva se abre desplegada sola.
+  const plegado = revision !== null && asistentePlegado === revision;
+  const conColumnaAsistente = alCostado && revision !== null;
+
   return (
     <form
       onSubmit={alEnviarFormulario}
       onKeyDown={cortarEnterQueEnvia}
-      className="mt-8 grid gap-8 lg:grid-cols-[1fr_1fr] lg:items-start"
+      className={`mt-8 grid gap-8 lg:grid-cols-[1fr_1fr] lg:items-start${
+        conColumnaAsistente ? ` con-asistente${plegado ? " asistente-plegado" : ""}` : ""
+      }`}
     >
       {/*
         La izquierda es TODO el formulario y la derecha es el documento. Antes la
@@ -1447,25 +1473,9 @@ export default function FormularioIdea({
 
         {/* El resultado del asistente. Sin condicionar al paso: el boton esta
             en el panel del documento y se puede apretar en cualquier momento, y
-            en el telefono ese panel no se dibuja. */}
-        {revision && (
-          <PanelRevision
-            revision={revision}
-            aplicados={aplicados}
-            elegidos={elegidos}
-            onTildar={(nombre) =>
-              setElegidos((previo) =>
-                previo.includes(nombre)
-                  ? previo.filter((d) => d !== nombre)
-                  : [...previo, nombre],
-              )
-            }
-            onAgregar={() => void pedirAyuda(elegidos)}
-            onAplicar={aplicarPropuesta}
-            onDescartar={() => setRevision({ ...revision, propuesta: null })}
-            ocupado={ocupado}
-          />
-        )}
+            en el telefono ese panel no se dibuja. En una pantalla ancha va en
+            su propia columna, a la derecha del documento (ver abajo). */}
+        {!alCostado && panelRevision}
 
         {/* --- Navegación entre pasos ---------------------------------------- */}
         {paso < ULTIMO && (
@@ -1653,6 +1663,45 @@ export default function FormularioIdea({
         </p>
       </aside>
 
+      {/* --- El asistente, al costado del documento -------------------------
+          Solo en pantallas anchas. Tiene su propio scroll, pegado como el
+          documento, para que las sugerencias no estiren la pagina hacia
+          abajo; y se pliega en una pestaña para devolverle el lugar. */}
+      {conColumnaAsistente && (
+        <aside className="panel-asistente" aria-label="Lo que encontró el asistente">
+          {plegado ? (
+            <button
+              type="button"
+              onClick={() => setAsistentePlegado(null)}
+              className="pestana-asistente"
+              aria-expanded="false"
+            >
+              <IconoChispa />
+              <span>Asistente</span>
+            </button>
+          ) : (
+            <>
+              <div className="mb-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setAsistentePlegado(revision)}
+                  aria-expanded="true"
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  style={{
+                    background: "var(--fondo-tarjeta)",
+                    border: "1px solid var(--borde-control)",
+                    color: "var(--texto-suave)",
+                  }}
+                >
+                  Plegar ›
+                </button>
+              </div>
+              {panelRevision}
+            </>
+          )}
+        </aside>
+      )}
+
       {/* --- El documento en el teléfono ------------------------------------ */}
       <div className="barra-doc">
         <button
@@ -1723,6 +1772,23 @@ export default function FormularioIdea({
 }
 
 /**
+ * El ancho desde el que el asistente va en su propia columna. Es el mismo
+ * corte que la regla .con-asistente de abajo; por debajo, el panel queda en
+ * la columna del formulario como siempre.
+ */
+const CONSULTA_COSTADO = "(min-width: 80rem)";
+
+function suscribirAncho(aviso: () => void) {
+  const consulta = window.matchMedia(CONSULTA_COSTADO);
+  consulta.addEventListener("change", aviso);
+  return () => consulta.removeEventListener("change", aviso);
+}
+
+function leerAncho() {
+  return window.matchMedia(CONSULTA_COSTADO).matches;
+}
+
+/**
  * Lo poco que no se puede escribir con utilidades: la barra fija del telefono y
  * la ventana del documento. Mismo patron que Mapa, HeroInicio y DocumentoIdea.
  *
@@ -1789,6 +1855,50 @@ const estilosPasos = `
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1rem;
+}
+
+/*
+ * Con el asistente abierto en pantalla ancha, el formulario suma una tercera
+ * columna y se sale del ancho de lectura (76rem) hasta 110rem, centrado: en
+ * 76rem las tres columnas dejaban el documento demasiado angosto. El margen
+ * negativo es lo que lo centra; 100% es el ancho del contenedor.
+ */
+@media (min-width: 80rem) {
+  .con-asistente {
+    --ancho-con-asistente: min(110rem, calc(100vw - 3rem));
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 24rem;
+    width: var(--ancho-con-asistente);
+    margin-inline: calc((100% - var(--ancho-con-asistente)) / 2);
+  }
+  .con-asistente.asistente-plegado {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 3rem;
+  }
+}
+.panel-asistente {
+  position: sticky;
+  top: 6rem;
+  max-height: calc(100dvh - 7rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.pestana-asistente {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 3rem;
+  padding: 1rem 0;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-marca-600);
+  background: var(--fondo-suave);
+  color: var(--marca-texto);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.pestana-asistente span { writing-mode: vertical-rl; }
+@media print {
+  .panel-asistente { display: none !important; }
 }
 
 /* Con la ventana abierta la pagina de atras no scrollea. */

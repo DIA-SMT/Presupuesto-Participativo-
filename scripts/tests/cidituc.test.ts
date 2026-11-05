@@ -21,10 +21,9 @@ import {
 // --- La URL de ingreso -------------------------------------------------------
 
 test("la URL de ingreso lleva el # del HashRouter", () => {
-  // Sin el `#` el Derivador cae en su ruta comodin y expulsa a la persona a
-  // ciudaddigital.smt.gob.ar.
+  // El login de CIDITUC usa HashRouter: sin el `#` no llega a /login.
   const url = urlDeIngreso("abc123");
-  assert.ok(url.startsWith("https://cidituc.smt.gob.ar/#/login?next="), url);
+  assert.ok(url.startsWith("https://ciudaddigital.smt.gob.ar/#/login?next="), url);
 });
 
 test("el estado viaja DENTRO del fragmento, donde el Derivador lo lee", () => {
@@ -42,10 +41,10 @@ test("la clave de la app se puede cambiar por entorno", () => {
     delete process.env.CIDITUC_APP;
     assert.equal(
       urlDeIngreso("x"),
-      "https://cidituc.smt.gob.ar/#/login?next=presupuesto-participativo&state=x",
+      "https://ciudaddigital.smt.gob.ar/#/login?next=presupuesto-participativo&state=x",
     );
     process.env.CIDITUC_APP = "otra-clave";
-    assert.equal(urlDeIngreso("x"), "https://cidituc.smt.gob.ar/#/login?next=otra-clave&state=x");
+    assert.equal(urlDeIngreso("x"), "https://ciudaddigital.smt.gob.ar/#/login?next=otra-clave&state=x");
   } finally {
     if (antes === undefined) delete process.env.CIDITUC_APP;
     else process.env.CIDITUC_APP = antes;
