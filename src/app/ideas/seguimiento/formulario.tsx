@@ -12,7 +12,7 @@
  */
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { ChipEstado } from "@/components/ui";
+import { Cartel, ChipEstado } from "@/components/ui";
 import { codigoDePropuesta, descripcionEstado, formatearFecha } from "@/lib/formato";
 
 /**
@@ -154,22 +154,12 @@ export default function FormularioSeguimiento({ accion }: { accion: AccionSeguim
         {resultado?.ok ? (
           <Ficha idea={resultado.idea} />
         ) : (
-          <div
-            className="rounded-2xl px-6 py-8 text-sm"
-            style={{
-              background: "var(--fondo-suave)",
-              border: "1px dashed var(--borde)",
-              color: "var(--texto-suave)",
-            }}
-          >
-            <p className="font-medium" style={{ color: "var(--texto)" }}>
-              Acá va a aparecer el estado de tu idea.
-            </p>
-            <p className="mt-2 leading-relaxed">
+          <Cartel tono="destacado" icono="documento" titulo="Acá va a aparecer el estado de tu idea.">
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
               Vas a ver en qué etapa está, y la devolución del equipo técnico cuando la haya. No
               mostramos ningún dato de contacto, ni acá ni en el resto del sitio.
             </p>
-          </div>
+          </Cartel>
         )}
       </div>
     </div>

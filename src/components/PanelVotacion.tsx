@@ -24,6 +24,7 @@ import { useState } from "react";
 import type { BarrioDelIndice } from "@/lib/barrios";
 import { colorCategoria } from "@/lib/formato";
 import ElegirDistrito from "./ElegirDistrito";
+import { Aviso, IconoCartel } from "./ui";
 
 /** La ruta que cierra la sesion (src/app/api/auth/salir/route.ts). */
 const RUTA_SALIR = "/api/auth/salir";
@@ -141,8 +142,11 @@ export default function PanelVotacion({
   // --- Ya voto ---------------------------------------------------------------
   if (estado.tipo === "votado") {
     return (
-      <div className="superficie mt-8 max-w-xl rounded-2xl p-8">
-        <p className="text-sm font-semibold" style={{ color: "var(--color-cat-ambiental)" }}>
+      <div className="cartel mt-8 max-w-xl flex-col gap-0 p-8" data-tono="consejo">
+        <p className="cartel-titulo flex items-center gap-2.5 text-sm font-semibold">
+          <span className="cartel-icono">
+            <IconoCartel icono="voto" />
+          </span>
           Voto registrado
         </p>
         <h2 className="mt-2 text-2xl font-bold">Gracias por participar</h2>
@@ -215,10 +219,8 @@ export default function PanelVotacion({
       </div>
 
       {proyectos.length === 0 ? (
-        <div className="superficie mt-5 max-w-xl rounded-2xl p-8">
-          <p className="text-sm">
-            Tu distrito no tiene proyectos factibles para votar.
-          </p>
+        <div className="mt-5 max-w-xl">
+          <Aviso tono="atencion">Tu distrito no tiene proyectos factibles para votar.</Aviso>
         </div>
       ) : (
         <>

@@ -209,12 +209,14 @@ export default async function Transparencia({ searchParams }: Props) {
               ))}
             </ul>
           ) : (
-            <p className="mt-5 text-sm" style={{ color: "var(--texto-suave)" }}>
-              Ninguna obra está en esa etapa.{" "}
-              <Link href={hrefFiltro(null)} className="font-semibold underline" scroll={false}>
-                Ver todas
-              </Link>
-            </p>
+            <div className="mt-5 max-w-xl">
+              <Aviso>
+                Ninguna obra está en esa etapa.{" "}
+                <Link href={hrefFiltro(null)} className="font-semibold underline" scroll={false}>
+                  Ver todas
+                </Link>
+              </Aviso>
+            </div>
           )}
         </section>
       )}
@@ -234,7 +236,8 @@ export default async function Transparencia({ searchParams }: Props) {
               <Link
                 key={numero}
                 href={conEdicion(`/distritos/${numero}`, anioEnEnlaces)}
-                className="superficie rounded-xl px-3.5 py-2 text-sm font-medium"
+                className="cartel px-3.5 py-2 text-sm font-medium"
+                data-tono="atencion"
               >
                 Distrito {numero}
               </Link>
@@ -255,7 +258,8 @@ export default async function Transparencia({ searchParams }: Props) {
               <Link
                 key={numero}
                 href={conEdicion(`/distritos/${numero}`, anioEnEnlaces)}
-                className="superficie rounded-xl px-3.5 py-2 text-sm font-medium"
+                className="cartel px-3.5 py-2 text-sm font-medium"
+                data-tono="destacado"
               >
                 Distrito {numero}
               </Link>

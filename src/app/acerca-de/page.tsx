@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Boton } from "@/components/ui";
+import { Boton, Cartel } from "@/components/ui";
 import { getEdicionActiva, getFaq, getHitos, getTextos } from "@/db/queries";
 import {
   PASOS_PARA_VOTAR,
@@ -113,8 +113,7 @@ export default async function AcercaDe() {
         </section>
 
         <aside className="space-y-4">
-          <div className="superficie rounded-2xl p-6">
-            <h2 className="text-lg font-bold">Presentá tu idea</h2>
+          <Cartel tono="destacado" icono="lapiz" titulo="Presentá tu idea">
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
               {/* Decia "podés dejar tu propuesta para la próxima", pero con la
                   etapa cerrada el formulario no envia nada: deja armarla y
@@ -131,13 +130,12 @@ export default async function AcercaDe() {
                 {edicion?.etapa === "ideas" ? "Cargar una idea" : "Armar mi propuesta"}
               </Boton>
             </div>
-          </div>
+          </Cartel>
 
           {/* Decia solo "Empadronate para votar": el sitio no explicaba en
               ningun lado como se vota. Los pasos son los mismos que dice
               Migue (src/lib/contenido-del-programa.ts). */}
-          <div className="superficie rounded-2xl p-6">
-            <h2 className="text-lg font-bold">Cómo se vota</h2>
+          <Cartel tono="info" icono="voto" titulo="Cómo se vota">
             <ol className="mt-3 space-y-3">
               {PASOS_PARA_VOTAR.map((paso, indice) => (
                 <li key={paso.titulo} className="flex gap-3">
@@ -159,10 +157,9 @@ export default async function AcercaDe() {
                 <Boton href="/votar">Votar</Boton>
               </div>
             )}
-          </div>
+          </Cartel>
 
-          <div className="superficie rounded-2xl p-6">
-            <h2 className="text-lg font-bold">Consultas</h2>
+          <Cartel tono="consejo" icono="telefono" titulo="Consultas">
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
               {textos["contacto-organismo"] ?? "Municipalidad de San Miguel de Tucumán"}
               <br />
@@ -173,17 +170,16 @@ export default async function AcercaDe() {
             <p className="mt-3 text-sm" style={{ color: "var(--texto-suave)" }}>
               También le podés preguntar a Migue, el chat de consultas de abajo a la derecha.
             </p>
-          </div>
+          </Cartel>
 
-          <div className="superficie rounded-2xl p-6">
-            <h2 className="text-lg font-bold">Reglamento</h2>
+          <Cartel tono="info" icono="documento" titulo="Reglamento">
             <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
               Las reglas completas del programa.
             </p>
             <Link href="/reglamento" className="mt-3 inline-block text-sm font-semibold underline">
               Ver el reglamento
             </Link>
-          </div>
+          </Cartel>
         </aside>
       </div>
     </div>

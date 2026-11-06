@@ -1,4 +1,5 @@
 import HeroInicio from "@/components/HeroInicio";
+import CintaNovedades, { type ItemNovedad } from "@/components/CintaNovedades";
 import Mapa, { type PuntoMapa } from "@/components/Mapa";
 import { Boton, Seccion, TarjetaProyecto, Vacio } from "@/components/ui";
 import {
@@ -17,9 +18,10 @@ import {
   type Estadisticas,
   type IdeaVista,
 } from "@/db/queries";
-import { votacionTerminada } from "@/lib/ediciones";
-import { leyendaDeObras, puntoDeObra } from "@/lib/obras-en-mapa";
+import { conEdicion, votacionTerminada } from "@/lib/ediciones";
+import { colorDeEtapaObra, leyendaDeObras, puntoDeObra } from "@/lib/obras-en-mapa";
 import {
+  ETIQUETA_PRESUPUESTO,
   ETIQUETA_ETAPA,
   distritosConVerbo,
   formatearFecha,
@@ -84,7 +86,7 @@ export default async function Home() {
     getDistritos(edicion.id),
     destacados(edicion, votacionTerminada(edicion.etapa), pedidoStats),
     getHitos(edicion.id),
-    getNovedades(3),
+    getNovedades(MAXIMO_EN_CINTA),
     listarObras(),
   ]);
   // Despues de las cuentas: con la votacion terminada, el boton principal
@@ -92,6 +94,7 @@ export default async function Home() {
   const portada = portadaSegunEtapa(edicion, hoyEnTucuman(), stats);
 
   const t = (clave: string, defecto = "") => textos[clave] ?? defecto;
+  const noticias = noticiasDeLaPortada(novedades, obras);
 
   // Los numeros de la banda, segun lo que ya paso. Antes de votar no hay
   // ganadores ni votos que contar, y "0 proyectos ganadores" se leia como un
@@ -180,27 +183,25 @@ export default async function Home() {
       <Seccion titulo="Cómo funciona" bajada={undefined}>
         <div className="grid gap-5 md:grid-cols-3">
           {[
-            { n: "1", titulo: t("home-bloque1-titulo", "¿Qué es?"), texto: t("home-bloque1-texto") },
+            { n: "1", tono: "info", titulo: t("home-bloque1-titulo", "¿Qué es?"), texto: t("home-bloque1-texto") },
             {
               n: "2",
+              tono: "consejo",
               titulo: t("home-bloque2-titulo", "¿Cómo puedo participar?"),
               texto: t("home-bloque2-texto"),
             },
             {
               n: "3",
+              tono: "destacado",
               titulo: t("home-bloque3-titulo", "¿Y después qué pasa?"),
               texto: t("home-bloque3-texto"),
             },
           ].map((bloque) => (
-            <article key={bloque.n} className="superficie rounded-2xl p-6">
-              <span
-                className="grid h-9 w-9 place-items-center rounded-xl text-sm font-bold text-white"
-                style={{ background: "var(--color-marca-700)" }}
-                aria-hidden="true"
-              >
+            <article key={bloque.n} className="cartel flex-col p-6" data-tono={bloque.tono}>
+              <span className="cartel-icono text-sm font-bold" aria-hidden="true">
                 {bloque.n}
               </span>
-              <h3 className="mt-4 text-lg font-semibold">{bloque.titulo}</h3>
+              <h3 className="mt-1 text-lg font-semibold">{bloque.titulo}</h3>
               <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
                 {bloque.texto}
               </p>
@@ -346,43 +347,39 @@ export default async function Home() {
       )}
 
       {/* --- Novedades ---------------------------------------------------- */}
+      {/* Las novedades cargadas en la base y los avances de obra de los
+          ganadores (con su nota de prensa), lo mas nuevo primero. Con pocas,
+          una grilla quieta: una cinta de dos tarjetas que corre deja huecos. */}
       <Seccion
-        titulo={t("home-novedades-titulo", "Novedades y próximos encuentros")}
-        bajada={t("home-novedades-texto")}
+        titulo="Novedades"
+        bajada="Lo último del programa y de las obras de los proyectos ganadores."
       >
-        {novedades.length ? (
+        {noticias.length >= MINIMO_PARA_CINTA ? (
+          <CintaNovedades items={noticias} />
+        ) : noticias.length ? (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {novedades.map((novedad) => (
-              <article key={novedad.id} className="superficie rounded-2xl p-5">
+            {noticias.map((item) => (
+              <article key={item.clave} className="superficie rounded-2xl p-5">
                 <p className="text-xs" style={{ color: "var(--texto-suave)" }}>
-                  {formatearFecha(novedad.fecha)}
+                  {item.etiqueta} · {formatearFecha(item.fecha)}
                 </p>
-                <h3 className="mt-1.5 text-lg font-semibold leading-snug">{novedad.titulo}</h3>
-                {novedad.copete && (
+                <h3 className="mt-1.5 text-lg font-semibold leading-snug">{item.titulo}</h3>
+                {item.texto && (
                   <p className="mt-2 text-sm" style={{ color: "var(--texto-suave)" }}>
-                    {novedad.copete}
+                    {item.texto}
                   </p>
                 )}
               </article>
             ))}
           </div>
         ) : (
-          <Vacio>
-            Todavía no hay novedades publicadas. Las reuniones de cada barrio se cargan desde el
-            panel de administración y aparecen acá.
-          </Vacio>
+          <Vacio>Todavía no hay novedades publicadas.</Vacio>
         )}
       </Seccion>
     </>
   );
 }
 
-/**
- * "el distrito 7 quedó sin proyecto ganador", o "los distritos 2, 10 y 13
- * quedaron…". Decia siempre "el distrito 2, 10, 13 quedó", en singular aunque
- * fueran diez. El armado es el de /transparencia (`distritosConVerbo`), para
- * que las dos paginas no vuelvan a divergir.
- */
 /** Un punto por ganador, con la etapa de su obra. */
 function puntosDeObras(obras: ObraGanadora[], distritos: DistritoVista[]): PuntoMapa[] {
   return obras.flatMap((obra) => {
@@ -392,6 +389,55 @@ function puntosDeObras(obras: ObraGanadora[], distritos: DistritoVista[]): Punto
   });
 }
 
+/** Desde cuantas tarjetas la cinta corre; con menos va una grilla quieta. */
+const MINIMO_PARA_CINTA = 4;
+/** Cuantas pasan por la cinta, las mas nuevas. */
+const MAXIMO_EN_CINTA = 12;
+
+/**
+ * Las tarjetas de la cinta: las novedades de la base y cada avance de obra
+ * publicado, con la etapa que informo y su nota. Todo dato sale de la base:
+ * un avance sin descripcion va sin texto, no se le inventa uno.
+ */
+function noticiasDeLaPortada(
+  novedades: Awaited<ReturnType<typeof getNovedades>>,
+  obras: ObraGanadora[],
+): ItemNovedad[] {
+  const deNovedades: ItemNovedad[] = novedades.map((novedad) => ({
+    clave: `novedad-${novedad.id}`,
+    fecha: String(novedad.fecha),
+    etiqueta: "Novedad",
+    tono: "var(--marca-texto)",
+    titulo: novedad.titulo,
+    distrito: null,
+    texto: novedad.copete,
+    href: null,
+    enlace: null,
+  }));
+  const deObras: ItemNovedad[] = obras.flatMap((obra) =>
+    obra.avances.map((avance) => ({
+      clave: `avance-${avance.id}`,
+      fecha: avance.fecha,
+      etiqueta: ETIQUETA_PRESUPUESTO[avance.etapa] ?? avance.etapa,
+      tono: colorDeEtapaObra(avance.etapa),
+      titulo: obra.titulo,
+      distrito: obra.distrito,
+      texto: avance.descripcion,
+      href: conEdicion(`/proyectos/${obra.slug}`, obra.edicionActiva ? null : obra.anio),
+      enlace: avance.enlace,
+    })),
+  );
+  return [...deNovedades, ...deObras]
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+    .slice(0, MAXIMO_EN_CINTA);
+}
+
+/**
+ * "el distrito 7 quedó sin proyecto ganador", o "los distritos 2, 10 y 13
+ * quedaron…". Decia siempre "el distrito 2, 10, 13 quedó", en singular aunque
+ * fueran diez. El armado es el de /transparencia (`distritosConVerbo`), para
+ * que las dos paginas no vuelvan a divergir.
+ */
 function fraseSinGanador(distritos: number[]): string {
   return `En la última votación ${distritosConVerbo(distritos, "quedó", "quedaron")} sin proyecto ganador.`;
 }

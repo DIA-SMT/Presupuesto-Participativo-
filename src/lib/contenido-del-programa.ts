@@ -130,7 +130,7 @@ export const PASOS_PARA_VOTAR: Explicacion[] = [
   {
     titulo: "Elegí un proyecto y confirmá",
     texto:
-      "La boleta muestra, en orden alfabético, los proyectos factibles de tu distrito. Tenés un solo voto: una vez confirmado queda registrado y no se puede votar otra vez en la misma edición.",
+      "La boleta muestra, en orden alfabético, los proyectos factibles de tu distrito. Tenés un solo voto: una vez confirmado queda registrado y no se puede votar otra vez en esta votación.",
   },
 ];
 
