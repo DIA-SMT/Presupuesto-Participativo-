@@ -1099,3 +1099,55 @@
 :root[data-theme="dark"] .icono-tema-oscuro {
   display: inline;
 }
+
+/* ---------------------------------------------------------------------------
+ * Carteles: las cajas que dan informacion (un consejo, un aviso, que hacer si
+ * algo falla). Antes eran todas tarjetas blancas iguales y la pagina se leia
+ * plana: ahora cada una lleva el color de lo que dice y un icono, con el fondo
+ * apenas tenido para que el texto se siga leyendo con el contraste de siempre.
+ *
+ * El color sale de `data-tono`, con tokens que ya cambian en modo oscuro.
+ * --------------------------------------------------------------------------- */
+.cartel {
+  --tono: var(--marca-texto);
+  display: flex;
+  gap: 0.875rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--tono) 7%, var(--fondo-tarjeta));
+  border: 1px solid color-mix(in srgb, var(--tono) 26%, var(--borde));
+}
+.cartel[data-tono="consejo"] { --tono: var(--obra-finalizado); }
+.cartel[data-tono="atencion"] { --tono: var(--acento-texto); }
+.cartel[data-tono="destacado"] { --tono: var(--obra-ejecucion); }
+
+.cartel-icono {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  color: var(--tono);
+  background: color-mix(in srgb, var(--tono) 15%, transparent);
+}
+.cartel-icono svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+.cartel-titulo {
+  color: var(--tono);
+}
+/* El aviso corto (una linea dentro de una pagina): icono mas chico. */
+.cartel[data-compacto] {
+  gap: 0.625rem;
+  border-radius: 0.75rem;
+}
+.cartel[data-compacto] .cartel-icono {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+}
+.cartel[data-compacto] .cartel-icono svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}

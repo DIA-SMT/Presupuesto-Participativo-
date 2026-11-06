@@ -183,27 +183,25 @@ export default async function Home() {
       <Seccion titulo="Cómo funciona" bajada={undefined}>
         <div className="grid gap-5 md:grid-cols-3">
           {[
-            { n: "1", titulo: t("home-bloque1-titulo", "¿Qué es?"), texto: t("home-bloque1-texto") },
+            { n: "1", tono: "info", titulo: t("home-bloque1-titulo", "¿Qué es?"), texto: t("home-bloque1-texto") },
             {
               n: "2",
+              tono: "consejo",
               titulo: t("home-bloque2-titulo", "¿Cómo puedo participar?"),
               texto: t("home-bloque2-texto"),
             },
             {
               n: "3",
+              tono: "destacado",
               titulo: t("home-bloque3-titulo", "¿Y después qué pasa?"),
               texto: t("home-bloque3-texto"),
             },
           ].map((bloque) => (
-            <article key={bloque.n} className="superficie rounded-2xl p-6">
-              <span
-                className="grid h-9 w-9 place-items-center rounded-xl text-sm font-bold text-white"
-                style={{ background: "var(--color-marca-700)" }}
-                aria-hidden="true"
-              >
+            <article key={bloque.n} className="cartel flex-col p-6" data-tono={bloque.tono}>
+              <span className="cartel-icono text-sm font-bold" aria-hidden="true">
                 {bloque.n}
               </span>
-              <h3 className="mt-4 text-lg font-semibold">{bloque.titulo}</h3>
+              <h3 className="mt-1 text-lg font-semibold">{bloque.titulo}</h3>
               <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
                 {bloque.texto}
               </p>

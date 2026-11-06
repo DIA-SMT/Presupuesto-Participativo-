@@ -205,30 +205,176 @@ export function TarjetaProyecto({
 export function Vacio({ children }: { children: ReactNode }) {
   return (
     <div
-      className="rounded-2xl px-6 py-10 text-center text-sm"
+      className="flex flex-col items-center gap-3 rounded-2xl px-6 py-10 text-center text-sm"
       style={{
-        background: "var(--fondo-suave)",
-        border: "1px dashed var(--borde)",
+        background: "color-mix(in srgb, var(--marca-texto) 5%, var(--fondo-suave))",
+        border: "1px dashed color-mix(in srgb, var(--marca-texto) 30%, var(--borde))",
         color: "var(--texto-suave)",
       }}
     >
-      {children}
+      <span
+        className="grid h-10 w-10 place-items-center rounded-full"
+        style={{
+          color: "var(--marca-texto)",
+          background: "color-mix(in srgb, var(--marca-texto) 12%, transparent)",
+        }}
+      >
+        <IconoCartel icono="vacio" />
+      </span>
+      <div>{children}</div>
     </div>
   );
 }
 
-export function Aviso({ children, tono = "info" }: { children: ReactNode; tono?: "info" | "atencion" }) {
-  const color = tono === "atencion" ? "var(--color-acento-600)" : "var(--color-marca-600)";
+export type TonoCartel = "info" | "consejo" | "atencion" | "destacado";
+export type NombreIcono =
+  | "info"
+  | "consejo"
+  | "atencion"
+  | "destacado"
+  | "candado"
+  | "telefono"
+  | "documento"
+  | "llave"
+  | "voto"
+  | "lapiz"
+  | "vacio";
+
+/** El icono por defecto de cada tono. */
+const ICONO_DEL_TONO: Record<TonoCartel, NombreIcono> = {
+  info: "info",
+  consejo: "consejo",
+  atencion: "atencion",
+  destacado: "destacado",
+};
+
+/**
+ * Los iconos de los carteles: trazos simples de 24x24 que toman el color del
+ * texto. Decorativos: lo que dice el cartel ya lo dice su texto.
+ */
+export function IconoCartel({ icono }: { icono: NombreIcono }) {
+  const trazos: Record<NombreIcono, ReactNode> = {
+    info: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5M12 7.5v.5" />
+      </>
+    ),
+    consejo: (
+      <>
+        <path d="M9 18h6M10 21h4" />
+        <path d="M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3Z" />
+      </>
+    ),
+    atencion: (
+      <>
+        <path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+        <path d="M12 9.5v4M12 16.5v.5" />
+      </>
+    ),
+    destacado: <path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z" />,
+    candado: (
+      <>
+        <rect x="5" y="11" width="14" height="10" rx="2" />
+        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      </>
+    ),
+    telefono: (
+      <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z" />
+    ),
+    documento: (
+      <>
+        <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+        <path d="M14 3v5h5M9 13h6M9 17h4" />
+      </>
+    ),
+    llave: (
+      <>
+        <circle cx="8" cy="15" r="4" />
+        <path d="m11 12 9-9M17 6l3 3M14 9l2 2" />
+      </>
+    ),
+    voto: (
+      <>
+        <path d="M4 13h16v7H4z" />
+        <path d="m8 9 3 3 5-6" />
+      </>
+    ),
+    lapiz: (
+      <>
+        <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+        <path d="m13.5 6.5 4 4" />
+      </>
+    ),
+    vacio: (
+      <>
+        <path d="M3 13h5l1.5 3h5L16 13h5" />
+        <path d="M5.5 6h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6l2.5-7Z" />
+      </>
+    ),
+  };
   return (
-    <p
-      className="rounded-xl px-4 py-3 text-sm"
-      style={{
-        background: `color-mix(in srgb, ${color} 8%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
-      }}
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      {children}
-    </p>
+      {trazos[icono]}
+    </svg>
+  );
+}
+
+/**
+ * Un cartel de informacion: una caja tenida del color de lo que dice, con un
+ * icono y, si lo tiene, un titulo. Los tonos:
+ *  - info: como funciona algo, donde encontrar un dato.
+ *  - consejo: lo que conviene hacer (anotar el codigo, revisar los datos).
+ *  - atencion: algo que no se puede hacer todavia, o que salio mal.
+ *  - destacado: lo que se quiere que se vea primero (un llamado a participar).
+ * El estilo vive en globals.css (`.cartel`).
+ */
+export function Cartel({
+  tono = "info",
+  icono,
+  titulo,
+  nivelTitulo = "h2",
+  children,
+  className = "",
+}: {
+  tono?: TonoCartel;
+  icono?: NombreIcono;
+  titulo?: ReactNode;
+  nivelTitulo?: "h2" | "h3";
+  children?: ReactNode;
+  className?: string;
+}) {
+  const Titulo = nivelTitulo;
+  return (
+    <div className={`cartel p-5 sm:p-6 ${className}`} data-tono={tono}>
+      <span className="cartel-icono">
+        <IconoCartel icono={icono ?? ICONO_DEL_TONO[tono]} />
+      </span>
+      <div className="min-w-0 flex-1">
+        {titulo && <Titulo className="cartel-titulo text-base font-semibold">{titulo}</Titulo>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** El aviso corto, de una o dos lineas, dentro de una pagina. */
+export function Aviso({ children, tono = "info" }: { children: ReactNode; tono?: "info" | "atencion" }) {
+  return (
+    <div className="cartel items-center px-4 py-3 text-sm" data-tono={tono} data-compacto="">
+      <span className="cartel-icono">
+        <IconoCartel icono={tono} />
+      </span>
+      <div className="min-w-0 flex-1 leading-relaxed">{children}</div>
+    </div>
   );
 }
 

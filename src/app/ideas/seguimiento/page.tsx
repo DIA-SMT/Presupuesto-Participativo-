@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { getEdiciones, getSeguimientoIdea, getTextos } from "@/db/queries";
 import { codigoValido } from "@/lib/avisos";
 import { conEdicion } from "@/lib/ediciones";
+import { Cartel } from "@/components/ui";
 import { consumir, hashearIp, ipDeCabeceras } from "@/lib/rate-limit";
 import FormularioSeguimiento, { type ResultadoSeguimiento } from "./formulario";
 
@@ -114,8 +115,7 @@ export default async function Seguimiento() {
       <FormularioSeguimiento accion={consultarSeguimiento} />
 
       <section className="mt-14 grid max-w-4xl gap-5 sm:grid-cols-2">
-        <div className="superficie rounded-2xl p-6">
-          <h2 className="text-base font-semibold">¿Dónde están el número y el código?</h2>
+        <Cartel tono="info" icono="llave" titulo="¿Dónde están el número y el código?">
           <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
             Los dos aparecen en la pantalla de confirmación, justo después de enviar la idea. El
             código se muestra una sola vez, por eso pedimos anotarlo o sacarle una foto.
@@ -125,10 +125,9 @@ export default async function Seguimiento() {
               Presentá una idea nueva
             </Link>
           </p>
-        </div>
+        </Cartel>
 
-        <div className="superficie rounded-2xl p-6">
-          <h2 className="text-base font-semibold">Si perdiste el código</h2>
+        <Cartel tono="atencion" icono="telefono" titulo="Si perdiste el código">
           <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
             No se puede recuperar desde el sitio. Preguntá por tu idea en la oficina del programa, con
             el número y tu nombre.
@@ -147,18 +146,20 @@ export default async function Seguimiento() {
             </Link>
             .
           </p>
-        </div>
+        </Cartel>
       </section>
 
-      <p className="mt-8 max-w-3xl text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+      <Cartel tono="consejo" icono="candado" className="mt-8 max-w-4xl">
+        <p className="text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
         Esta consulta no muestra datos de contacto de ninguna persona. Limitamos la cantidad de
         intentos por conexión para que nadie pueda probar códigos al azar. Cómo tratamos tus datos
         está explicado en la{" "}
         <Link href="/privacidad" className="underline">
-          política de privacidad
-        </Link>
-        .
-      </p>
+            política de privacidad
+          </Link>
+          .
+        </p>
+      </Cartel>
     </div>
   );
 }
