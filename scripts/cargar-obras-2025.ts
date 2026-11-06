@@ -18,13 +18,14 @@
  *    Si aparece el numero, se corrige en la base. Lleva una nota en
  *    `notas_migracion` que dice de donde salio.
  *  - Un avance por obra informada, con la nota de prensa del municipio como
- *    link: nueve en licitacion (con la fecha de la nota, el presupuesto
- *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras diez quedan sin
- *    avances, y su tarjeta dice "Sin información todavía".
+ *    link: doce en licitacion (con la fecha de la nota, el presupuesto
+ *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras siete quedan
+ *    sin avances, y su tarjeta dice "Sin información todavía".
  *
  * Es idempotente: el ganador del distrito 10 se crea solo si el distrito no
  * tiene uno, y un avance no se carga dos veces (mismo proyecto y mismo link).
- * Los datos salen de las notas que paso el equipo el 29/10/2026; ninguna
+ * Los datos salen de las notas que paso el equipo el 29/10/2026 y el
+ * 06/11/2026 (distritos 5, 12 y 19); ninguna
  * confirma una adjudicacion, asi que ninguna obra se carga como adjudicada.
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
@@ -131,6 +132,31 @@ const AVANCES: AvanceACargar[] = [
     descripcion:
       "Se abrieron los sobres de la licitación. Presupuesto oficial: $103.467.181,61. Plazo de obra: dos meses.",
     enlace: `${NOTAS}/17532/presupuesto-participativo-licitan-la-creacion-de-un-espacio-deportivo-comunitari`,
+  },
+  // Las tres que paso el equipo el 06/11/2026.
+  {
+    slug: "el-arte-popular-en-la-plaza-los-platanos",
+    etapa: "licitacion",
+    fecha: "2026-10-30",
+    descripcion:
+      "Se abrieron los sobres de la licitación. Presupuesto oficial: $241.103.553,22. Plazo de obra: tres meses.",
+    enlace: `${NOTAS}/17644/presupuesto-participativo-licitan-la-obra-de-construccion-de-un-anfiteatro-de-us`,
+  },
+  {
+    slug: "espacio-deportivo-cultural-club-sargento-cabral-villa-urquiza",
+    etapa: "licitacion",
+    fecha: "2026-11-04",
+    descripcion:
+      "Se abrieron los sobres de la licitación. Presupuesto oficial: $183.896.152,54. Plazo de obra: tres meses.",
+    enlace: `${NOTAS}/17775/presupuesto-participativo-licitan-obras-de-construccion-de-un-espacio-deportivo-`,
+  },
+  {
+    slug: "playon-deportivo-vestuarios-para-el-club-san-alberto",
+    etapa: "licitacion",
+    fecha: "2026-11-04",
+    descripcion:
+      "Se abrieron los sobres de la licitación. Presupuesto oficial: $198.816.773,08. Plazo de obra: tres meses.",
+    enlace: `${NOTAS}/17769/presupuesto-participativo-licitan-el-proyecto-de-construccion-de-un-playon-depor`,
   },
   {
     slug: URQUIZA.slug,
