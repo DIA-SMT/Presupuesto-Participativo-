@@ -104,15 +104,17 @@ export default async function Privacidad() {
         </Bloque>
 
         {/* --- Caracter facultativo del contacto --------------------------- */}
-        <Bloque titulo="3. El correo es facultativo: qué pasa si no lo dejás">
+        <Bloque titulo="3. El teléfono y el correo son facultativos: qué pasa si no los dejás">
           <p>
-            Dejar tu correo es <strong>opcional</strong>. La casilla viene desmarcada y el dato no se
-            guarda si no la marcás. <strong>No dejarlo no afecta en nada la evaluación</strong> de tu
-            propuesta: tu idea se evalúa con los mismos criterios que todas las demás y puede ser
-            votada y ganar igual.
+            Dejar tu teléfono y tu correo es <strong>opcional</strong>. Si ingresaste con CIDITUC,
+            el formulario los muestra completos con los datos de tu cuenta: los podés corregir o
+            borrar, y guardamos solo lo que quede escrito al enviar la idea.{" "}
+            <strong>No dejarlos no afecta en nada la evaluación</strong> de tu propuesta: tu idea se
+            evalúa con los mismos criterios que todas las demás y puede ser votada y ganar igual.
           </p>
           <p>
-            Si no dejás el correo, no vas a recibir avisos nuestros. Para eso está el{" "}
+            Si no los dejás, el equipo no te va a poder consultar nada de tu propuesta. Para saber
+            cómo sigue está el{" "}
             <strong>código de seguimiento</strong> que te damos al enviar la idea: con ese código y
             el número de tu idea entrás a{" "}
             <Link href="/ideas/seguimiento" className="font-semibold underline">
@@ -121,12 +123,12 @@ export default async function Privacidad() {
             y ves en qué etapa está y la devolución del equipo, cuantas veces quieras.
           </p>
           <p>
-            Si dejás el correo y después cambiás de idea, podés pedir que lo borremos y lo borramos:
-            la idea sigue su curso sin ningún cambio.
+            Si los dejás y después cambiás de idea, podés pedir que los borremos y los borramos: la
+            idea sigue su curso sin ningún cambio.
           </p>
           <p>
             Un dato inexacto (por ejemplo un correo mal escrito) solo tiene una consecuencia: no
-            podríamos avisarte. Nunca es motivo para descartar una idea.
+            podríamos consultarte. Nunca es motivo para descartar una idea.
           </p>
         </Bloque>
 
@@ -176,7 +178,8 @@ export default async function Privacidad() {
             <li>
               <strong>Ciudadanía digital de Tucumán (CIDITUC)</strong>, para verificar la identidad
               de quien presenta una idea o vota. La verificación la hace ese sistema; el sitio solo
-              recibe la confirmación y los datos mínimos del padrón.
+              recibe la confirmación, los datos mínimos del padrón y el teléfono y el correo de tu
+              cuenta, que se usan únicamente para completar el formulario de ideas (ver el punto 3).
             </li>
           </ul>
           <p>
@@ -323,11 +326,11 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
       "Si presentás la propuesta en nombre de una organización (un centro vecinal, un club, una cooperadora), guardamos su nombre para que el equipo sepa quién la impulsa. No se publica en el sitio.",
   },
   {
-    dato: "Un teléfono de contacto",
+    dato: "Tu teléfono y tu correo de contacto",
     caracter: "Facultativo",
     color: "var(--acento-texto)",
     finalidad:
-      "Si lo dejás, lo usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se borra cuando cierra el proceso.",
+      "El formulario los trae completos desde tu cuenta de CIDITUC y los podés corregir o borrar. Si los dejás, los usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publican, no se comparten y no se usan para ninguna otra comunicación. Se borran cuando cierra el proceso.",
   },
   {
     dato: "Tu identidad de CIDITUC, al presentar una idea",
@@ -335,13 +338,6 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
     color: "var(--color-cat-ambiental)",
     finalidad:
       "Para presentar una idea ingresás con CIDITUC. La idea queda asociada a tu registro del padrón (el documento se guarda hasheado, no en claro) y el equipo ve el nombre de tu cuenta, para saber quién la presentó si necesita entenderla mejor. Tu nombre no se publica en el sitio.",
-  },
-  {
-    dato: "Tu correo electrónico",
-    caracter: "Facultativo, con tu consentimiento",
-    color: "var(--acento-texto)",
-    finalidad:
-      "Lo usamos solo para contarte cómo sigue tu idea. No se publica, no se comparte y no se usa para ninguna otra comunicación. Se guarda únicamente si marcás la casilla del formulario.",
   },
   {
     dato: "Tu documento, nombre y distrito, al ingresar con CIDITUC",

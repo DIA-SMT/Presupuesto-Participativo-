@@ -94,6 +94,7 @@ export async function POST(request: Request) {
     distrito: resultado.distrito,
     nombre: sesion.nombre,
     sugerido: null,
+    contacto: sesion.contacto ?? null,
   });
   return Response.json({ ok: true, distrito: resultado.distrito });
 }

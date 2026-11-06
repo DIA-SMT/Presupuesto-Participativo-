@@ -9,7 +9,7 @@
  * con la que se recogieron. La misma pagina promete atender un pedido de
  * supresion (art. 16) en 5 dias habiles: eso es --idea, que toca una sola fila.
  *
- * Que borra: `autor_email` y `autor_nombre`. Deja `autor_avisos` en false y
+ * Que borra: `autor_email`, `autor_telefono` y `autor_nombre`. Deja `autor_avisos` en false y
  * escribe `contacto_purgado_en`, que es la constancia de que la purga se hizo
  * (la fila de la idea no se toca en nada mas: el contenido de la propuesta es
  * publico y se conserva).

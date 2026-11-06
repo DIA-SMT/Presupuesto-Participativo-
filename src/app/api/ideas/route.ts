@@ -59,15 +59,14 @@ function votanteInexistente(causa: unknown): boolean {
 }
 
 /**
- * Con los avisos por correo apagados (src/lib/aviso-por-mail.ts), el contacto
- * se saca del cuerpo ANTES de validar. Despues seria tarde en los dos sentidos:
- * un correo mal escrito haria rechazar una idea por un campo que no se usa, y
- * un correo con la casilla marcada pasaria el zod y llegaria al insert.
+ * Con los avisos por correo apagados (src/lib/aviso-por-mail.ts), la casilla se
+ * saca del cuerpo ANTES de validar: una pestaña vieja o un script no pueden
+ * dejar un consentimiento de avisos que nadie va a cumplir. El correo queda:
+ * es el contacto para el equipo, como el telefono.
  */
 function sinContacto(cuerpo: unknown): unknown {
   if (AVISO_POR_MAIL_HABILITADO || !cuerpo || typeof cuerpo !== "object") return cuerpo;
   const copia = { ...(cuerpo as Record<string, unknown>) };
-  delete copia.autorEmail;
   delete copia.autorAvisos;
   return copia;
 }
@@ -141,9 +140,8 @@ export async function POST(request: Request) {
     return Response.json({ error: SIN_SESION }, { status: 401 });
   }
 
-  // Sin casilla marcada no hay consentimiento, y sin consentimiento no se
-  // guarda el contacto (el zod ya rechaza mail sin casilla). Con los avisos
-  // apagados `sinContacto` ya saco los dos campos; el interruptor se repite aca
+  // Sin casilla marcada no hay consentimiento de avisos. Con los avisos
+  // apagados `sinContacto` ya saco la casilla; el interruptor se repite aca
   // para que el insert no dependa de que esa limpieza siga existiendo.
   const quiereAvisos =
     AVISO_POR_MAIL_HABILITADO && Boolean(datos.autorAvisos && datos.autorEmail);
@@ -160,8 +158,9 @@ export async function POST(request: Request) {
         solucion: datos.solucion,
         beneficios: datos.beneficios,
         organizacion: datos.organizacion,
-        // Opcional y solo para el equipo: se borra al cerrar la edicion.
+        // Opcionales y solo para el equipo: se borran al cerrar el proceso.
         autorTelefono: datos.autorTelefono || null,
+        autorEmail: datos.autorEmail || null,
         lat: datos.lat,
         lon: datos.lon,
         canal: "web",
@@ -169,8 +168,8 @@ export async function POST(request: Request) {
         // cuerpo; en modo prueba sin sesion, el nombre escrito, como antes.
         autorNombre: sesion ? sesion.nombre : datos.autorNombre,
         votanteId: sesion?.votanteId ?? null,
-        // El contacto entra SOLO con la casilla marcada. Sin consentimiento el
-        // dato no se guarda, y queda registrada la version del texto aceptado.
+        // Los avisos, SOLO con la casilla marcada: queda registrada la version
+        // del texto aceptado.
         contacto:
           quiereAvisos && datos.autorEmail
             ? { email: datos.autorEmail, version: VERSION_CONSENTIMIENTO }

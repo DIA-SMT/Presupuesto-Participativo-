@@ -135,18 +135,45 @@ const PERSONA = {
 };
 
 test("desenvuelve usuarioSinContraseña, user y la forma plana", () => {
-  const esperado = { id: "4321", documento: "12345678", nombre: "Ana Pérez", barrio: "VILLA URQUIZA" };
+  const esperado = {
+    id: "4321",
+    documento: "12345678",
+    nombre: "Ana Pérez",
+    barrio: "VILLA URQUIZA",
+    email: "ana@example.com",
+    telefono: "3815550000",
+  };
   assert.deepEqual(personaDeRespuesta({ usuarioSinContraseña: PERSONA }), esperado);
   assert.deepEqual(personaDeRespuesta({ user: PERSONA }), esperado);
   assert.deepEqual(personaDeRespuesta(PERSONA), esperado);
 });
 
-test("no se lleva el contacto ni el domicilio: solo documento, nombre, id y barrio", () => {
-  // El barrio es solo para sugerirle el distrito (sugerenciaDeDistrito): no se
-  // guarda. La direccion no se lee.
+test("no se lleva el domicilio: solo documento, nombre, id, barrio y contacto", () => {
+  // El barrio es solo para sugerirle el distrito (sugerenciaDeDistrito), y el
+  // contacto para precargar el formulario de ideas: ninguno va al padron. La
+  // direccion no se lee.
   const persona = personaDeRespuesta({ usuarioSinContraseña: PERSONA });
-  assert.deepEqual(Object.keys(persona ?? {}).sort(), ["barrio", "documento", "id", "nombre"]);
+  assert.deepEqual(Object.keys(persona ?? {}).sort(), [
+    "barrio",
+    "documento",
+    "email",
+    "id",
+    "nombre",
+    "telefono",
+  ]);
   assert.equal(personaDeRespuesta({ ...PERSONA, nombre_barrio: null })?.barrio, null);
+});
+
+test("el contacto de CIDITUC se toma solo si el formulario lo aceptaria", () => {
+  const conContacto = (email: unknown, telefono: unknown) =>
+    personaDeRespuesta({ ...PERSONA, email_persona: email, telefono_persona: telefono });
+  assert.equal(conContacto("Ana@Example.com", null)?.email, "ana@example.com");
+  assert.equal(conContacto("sin arroba", null)?.email, null);
+  assert.equal(conContacto("", null)?.email, null);
+  assert.equal(conContacto(null, 3815550000)?.telefono, "3815550000");
+  assert.equal(conContacto(null, "381 555-0000")?.telefono, "381 555-0000");
+  assert.equal(conContacto(null, "123")?.telefono, null, "muy corto");
+  assert.equal(conContacto(null, "llamar a la tarde")?.telefono, null);
 });
 
 test("el documento se limpia de puntos y espacios", () => {

@@ -63,6 +63,12 @@ export type DatosIdeaNueva = {
   organizacion?: string | null;
   /** Telefono de contacto opcional, solo para el equipo. */
   autorTelefono?: string | null;
+  /**
+   * Correo de contacto opcional, solo para el equipo (como el telefono): el
+   * formulario lo precarga con el de CIDITUC y la persona decide si lo deja.
+   * No es un consentimiento de avisos: eso es `contacto`.
+   */
+  autorEmail?: string | null;
   lat: number;
   lon: number;
   /** true cuando quien carga no sabe el lugar exacto (un papel sin direccion). */
@@ -77,8 +83,9 @@ export type DatosIdeaNueva = {
    */
   votanteId?: number | null;
   /**
-   * El correo del autor, SOLO con consentimiento (la casilla de avisos del
-   * formulario publico). La carga del panel no lo pide nunca.
+   * El consentimiento de avisos por correo (la casilla del formulario
+   * publico, hoy apagada: src/lib/aviso-por-mail.ts), con el correo al que se
+   * avisa. La carga del panel no lo pide nunca.
    */
   contacto?: { email: string; version: string } | null;
   /** Quien la cargo en el backoffice. */
@@ -241,9 +248,10 @@ export async function crearIdea(
         autorNombre: datos.autorNombre || null,
         votanteId,
         autorTelefono,
-        // El contacto entra SOLO con consentimiento, y queda registrada la
-        // version del texto que la persona acepto.
-        autorEmail: datos.contacto?.email ?? null,
+        // El correo de contacto es el que la persona dejo en el formulario. Los
+        // avisos van SOLO con consentimiento, y queda registrada la version del
+        // texto que la persona acepto.
+        autorEmail: datos.contacto?.email ?? (datos.autorEmail?.trim() || null),
         autorAvisos: Boolean(datos.contacto),
         autorAvisosEn: datos.contacto ? new Date() : null,
         autorAvisosVersion: datos.contacto?.version ?? null,

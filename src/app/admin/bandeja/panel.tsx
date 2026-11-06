@@ -930,9 +930,9 @@ function Ficha({
           <DatoFicha etiqueta="En nombre de">{ficha.organizacion}</DatoFicha>
         )}
         {/*
-          El telefono es el unico contacto que la ficha muestra en claro: se
-          pidio para que el equipo llame. Como enlace tel:, para marcarlo desde
-          el celular del trabajo.
+          El telefono y el correo son para que el equipo consulte al autor: la
+          persona los dejo en el formulario (vienen precargados de su cuenta de
+          CIDITUC). Como enlaces, para llamar o escribir desde el trabajo.
         */}
         <DatoFicha etiqueta="Teléfono">
           {ficha.autorTelefono ? (
@@ -947,13 +947,26 @@ function Ficha({
             "No dejó"
           )}
         </DatoFicha>
-        {ficha.tieneContacto && (
-          <DatoFicha etiqueta="Mail del autor">
-            {ficha.autorAvisos
-              ? "Dejó mail y aceptó recibir avisos"
-              : "Dejó mail, sin consentimiento de avisos"}
-          </DatoFicha>
-        )}
+        <DatoFicha etiqueta="Correo">
+          {ficha.autorEmail ? (
+            <>
+              <a
+                href={`mailto:${ficha.autorEmail}`}
+                className="break-all underline"
+                style={{ color: "var(--marca-texto)" }}
+              >
+                {ficha.autorEmail}
+              </a>
+              {ficha.autorAvisos && (
+                <span className="block text-xs" style={{ color: "var(--texto-suave)" }}>
+                  Aceptó recibir avisos
+                </span>
+              )}
+            </>
+          ) : (
+            "No dejó"
+          )}
+        </DatoFicha>
         <DatoFicha etiqueta="Presupuesto estimado">
           {ficha.presupuestoEstimado === null
             ? "Sin estimar"
@@ -999,7 +1012,8 @@ function Ficha({
       </dl>
 
       <p className="mt-2 text-xs" style={{ color: "var(--texto-suave)" }}>
-        El mail del autor no sale de la base: el panel solo sabe si hay, nunca cuál es.
+        El teléfono y el correo son solo para consultarle algo de la propuesta: no se publican y
+        se borran cuando cierra el proceso.
       </p>
 
       {(ficha.problema || ficha.referenciasUbicacion || ficha.solucion || ficha.beneficios) && (
