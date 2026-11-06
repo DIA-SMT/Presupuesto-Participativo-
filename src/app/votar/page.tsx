@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import PanelVotacion from "@/components/PanelVotacion";
 import { indiceDeBarrios } from "@/lib/barrios";
-import { Aviso } from "@/components/ui";
+import { Aviso, Cartel } from "@/components/ui";
+import { PASOS_PARA_VOTAR } from "@/lib/contenido-del-programa";
 import { db } from "@/db";
 import { votos } from "@/db/schema";
 import { getDistritoEnPadron, getEdicionActiva, getTextos, listarIdeas } from "@/db/queries";
@@ -139,6 +140,26 @@ export default async function Votar() {
             </a>
             .
           </Aviso>
+
+          {/* Los mismos pasos que dicen Como participar y Migue. */}
+          <Cartel tono="info" icono="voto" titulo="Cómo se vota" className="mt-6">
+            <ol className="mt-3 space-y-3">
+              {PASOS_PARA_VOTAR.map((paso, indice) => (
+                <li key={paso.titulo} className="flex gap-3">
+                  <span
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
+                    style={{ background: "var(--color-marca-700)" }}
+                    aria-hidden="true"
+                  >
+                    {indice + 1}
+                  </span>
+                  <p className="text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+                    <strong style={{ color: "var(--texto)" }}>{paso.titulo}.</strong> {paso.texto}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </Cartel>
         </div>
       )}
     </div>

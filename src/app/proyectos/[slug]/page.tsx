@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Mapa from "@/components/Mapa";
-import { Chip, ChipEstado, TarjetaProyecto, Vacio } from "@/components/ui";
+import { Aviso, Cartel, Chip, ChipEstado, TarjetaProyecto, Vacio, type TonoCartel } from "@/components/ui";
+import { colorDeEtapaObra } from "@/lib/obras-en-mapa";
 import {
   getAvances,
   getEdicionParaVer,
@@ -190,10 +191,14 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
           )}
 
           {idea.motivoEstado && (
-            <section className="mt-10">
-              <h2 className="text-xl font-bold">Devolución del equipo técnico</h2>
-              <p className="mt-3 text-[0.9375rem] leading-relaxed">{idea.motivoEstado}</p>
-            </section>
+            <Cartel
+              tono={TONO_DEVOLUCION[idea.estado] ?? "info"}
+              icono="documento"
+              titulo="Devolución del equipo técnico"
+              className="mt-10"
+            >
+              <p className="mt-2 text-[0.9375rem] leading-relaxed">{idea.motivoEstado}</p>
+            </Cartel>
           )}
 
           {/*
@@ -252,7 +257,11 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
 
                   <ol className="mt-6 space-y-4">
                     {avances.map((avance) => (
-                      <li key={avance.id} className="superficie rounded-2xl p-5">
+                      <li
+                        key={avance.id}
+                        className="cartel flex-col gap-0 p-5"
+                        style={{ ["--tono" as string]: colorDeEtapaObra(avance.etapa) }}
+                      >
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
                           <h3 className="text-base font-semibold">{avance.titulo}</h3>
                           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
@@ -283,20 +292,19 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
                   </ol>
                 </>
               ) : (
-                <p
-                  className="mt-3 text-[0.9375rem] leading-relaxed"
-                  style={{ color: "var(--texto-suave)" }}
-                >
-                  Todavía no hay información sobre el avance de esta obra. Cuando el municipio la
-                  informe, va a aparecer acá con su fecha y su monto.
-                </p>
+                <div className="mt-3">
+                  <Aviso>
+                    Todavía no hay información sobre el avance de esta obra. Cuando el municipio la
+                    informe, va a aparecer acá con su fecha y su monto.
+                  </Aviso>
+                </div>
               )}
             </section>
           )}
 
           {/* --- Trazabilidad de la migración --------------------------- */}
           {idea.notasMigracion.length > 0 && (
-            <details className="superficie mt-12 rounded-2xl p-5">
+            <details className="cartel mt-12 p-5" data-tono="atencion" style={{ display: "block" }}>
               <summary className="cursor-pointer text-sm font-semibold">
                 Notas sobre el dato original ({idea.notasMigracion.length})
               </summary>
@@ -317,10 +325,8 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
 
         {/* --- Columna lateral -------------------------------------------- */}
         <aside className="space-y-5">
-          <div className="superficie rounded-2xl p-5">
-            <h2 className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--texto-suave)" }}>
-              Ficha
-            </h2>
+          <div className="cartel flex-col gap-0 p-5" data-tono="info">
+            <h2 className="cartel-titulo text-sm font-bold uppercase tracking-wider">Ficha</h2>
             <dl className="mt-3 space-y-3 text-sm">
               <Fila etiqueta="Distrito">
                 <Link href={conEdicion(`/distritos/${idea.distrito}`, anioEnEnlaces)} className="underline">
@@ -408,6 +414,17 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
     </div>
   );
 }
+
+/**
+ * El color de la devolucion del equipo tecnico segun lo que dice: la que deja
+ * la idea en carrera va en verde, la que la deja afuera en naranja.
+ */
+const TONO_DEVOLUCION: Record<string, TonoCartel> = {
+  factible: "consejo",
+  ganador: "consejo",
+  no_factible: "atencion",
+  integrado: "destacado",
+};
 
 function Fila({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
