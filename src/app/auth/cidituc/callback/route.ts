@@ -188,6 +188,8 @@ export async function GET(request: Request) {
       // Solo si todavia no tiene distrito: a quien ya lo declaro no se le
       // propone otro.
       sugerido: empadronado.distrito ? null : sugerenciaSinCortar(resultado.persona.barrio),
+      // Para precargar el contacto del formulario de ideas (ver SesionVotante).
+      contacto: { email: resultado.persona.email, telefono: resultado.persona.telefono },
     });
   } catch (causa) {
     // Resumen siempre: sin esto, una base caida se ve igual que un token

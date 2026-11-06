@@ -5,8 +5,10 @@
  * Lo que se fija aca:
  *  - la idea guarda lo minimo que se decidio: la organizacion, un telefono y
  *    las referencias escritas del lugar, sin categoria;
+ *  - el correo de contacto se guarda sin la casilla de avisos (es para el
+ *    equipo, como el telefono; viene precargado de CIDITUC);
  *  - la purga de contactos borra el telefono con el nombre y el mail;
- *  - el telefono nunca sale por una consulta publica;
+ *  - el telefono y el correo nunca salen por una consulta publica;
  *  - la bandeja encuentra una idea por el codigo del papel (D05-P012) y ordena
  *    por el presupuesto estimado con las que no lo tienen al final;
  *  - el codigo de la propuesta se arma igual en todos lados.
@@ -56,6 +58,7 @@ async function cargar(cambios: { titulo?: string; organizacion?: string | null }
       organizacion: cambios.organizacion === undefined ? "Centro Vecinal Villa Luján" : cambios.organizacion,
       autorNombre: "Juana Pérez",
       autorTelefono: "381 555-1234",
+      autorEmail: "juana@ejemplo.test",
       lat: D1.lat,
       lon: D1.lon,
       canal: "web",
@@ -91,6 +94,15 @@ test("guarda lo minimo: la organizacion, un telefono y las referencias, sin cate
   assert.equal(fila.referenciasUbicacion, "Frente a la escuela, en la esquina de la canchita.");
   assert.equal(fila.categoriaId, null, "la categoria la asigna quien evalua");
   assert.equal(fila.autorDniHash, null, "la columna del papel ya no se escribe");
+  assert.equal(fila.autorEmail, "juana@ejemplo.test", "el correo de contacto, sin casilla");
+  assert.equal(fila.autorAvisos, false, "dejar el correo no es pedir avisos");
+});
+
+test("la ficha del panel muestra el telefono y el correo", async () => {
+  const idea = await cargar({ titulo: "Una idea para ver su contacto" });
+  const ficha = await consultas.getIdeaAdmin(idea.id);
+  assert.equal(ficha?.autorTelefono, "381 555-1234");
+  assert.equal(ficha?.autorEmail, "juana@ejemplo.test");
 });
 
 test("la purga de contactos borra el telefono con el nombre", async () => {
@@ -101,6 +113,7 @@ test("la purga de contactos borra el telefono con el nombre", async () => {
   await purga.aplicarPurga(consultar, { anio, idea: idea.numero, edicionEntera: false });
   const fila = await filaDe(idea.id);
   assert.equal(fila.autorTelefono, null);
+  assert.equal(fila.autorEmail, null);
   assert.equal(fila.autorNombre, null);
   assert.ok(fila.contactoPurgadoEn);
 });
@@ -115,6 +128,7 @@ test("ninguna consulta publica devuelve el telefono ni la organizacion", async (
   const publica = await consultas.getIdea((await filaDe(idea.id)).slug);
   const texto = JSON.stringify(publica);
   assert.ok(!texto.includes("555-1234"), "el telefono no sale");
+  assert.ok(!texto.includes("juana@"), "el correo no sale");
   assert.ok(!texto.includes("Centro Vecinal"), "la organizacion no sale");
   assert.ok(texto.includes("Frente a la escuela"), "las referencias del lugar si");
 });

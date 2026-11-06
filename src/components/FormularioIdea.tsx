@@ -103,6 +103,12 @@ const LARGO_TELEFONO = 30;
  * idea-esquema.ts): numeros con espacios, guiones o parentesis, entre 6 y 15
  * digitos. Vacio vale: es opcional.
  */
+/** Vacio vale (es opcional); escrito, tiene que tener forma de correo. */
+function correoValido(valor: string): boolean {
+  const limpio = valor.trim();
+  return !limpio || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpio);
+}
+
 function telefonoValido(valor: string): boolean {
   const limpio = valor.trim();
   if (!limpio) return true;
@@ -223,7 +229,16 @@ export default function FormularioIdea({
    * nombre no se pide: el servidor lo toma de la sesion (y descarta el que
    * venga en el formulario), asi que pedirlo seria un campo que no se usa.
    */
-  autor: { nombre: string | null } | null;
+  autor: {
+    nombre: string | null;
+    /**
+     * El correo y el telefono de la cuenta de CIDITUC, si los tiene: precargan
+     * los campos de contacto. La persona los ve y los puede cambiar o borrar;
+     * se guarda lo que quede en el formulario al enviar.
+     */
+    email?: string | null;
+    telefono?: string | null;
+  } | null;
   /**
    * Si hay clave del modelo. Sin ella los botones de redaccion no se dibujan:
    * la regla del proyecto es que nada se rompe por falta de clave, y el aviso
@@ -295,9 +310,9 @@ export default function FormularioIdea({
     /** "" sin contestar, "si" o "no": "¿En nombre de una organización?". */
     conOrganizacion: "",
     organizacion: "",
-    autorTelefono: "",
+    autorTelefono: autor?.telefono ?? "",
     autorNombre: "",
-    autorEmail: "",
+    autorEmail: autor?.email ?? "",
   });
   const largos: Record<CampoLargo, number> = {
     problema: valores.problema.trim().length,
@@ -364,8 +379,11 @@ export default function FormularioIdea({
     if (!telefonoValido(valores.autorTelefono)) {
       return "Revisá el teléfono: entre 6 y 15 números, con espacios o guiones si querés. Es opcional.";
     }
+    if (!correoValido(valores.autorEmail)) {
+      return "Revisá el correo: le falta la arroba o el dominio. Es opcional.";
+    }
     if (avisos && !valores.autorEmail.trim()) {
-      return "Dejaste marcada la casilla del correo: escribilo o desmarcala.";
+      return "Dejaste marcada la casilla de avisos: escribí tu correo o desmarcala.";
     }
     return null;
   }
@@ -851,8 +869,9 @@ export default function FormularioIdea({
           lon: punto.lon,
           // Con sesion el servidor usa el nombre de la cuenta de CIDITUC.
           autorNombre: autor ? null : datos.get("autorNombre") || null,
-          // Sin la casilla marcada el correo no viaja: no hay consentimiento.
-          autorEmail: avisos ? datos.get("autorEmail") || null : null,
+          // El correo de contacto viaja siempre que lo deje; la casilla de
+          // avisos es aparte.
+          autorEmail: datos.get("autorEmail") || null,
           autorAvisos: avisos,
         }),
       });
@@ -1349,6 +1368,13 @@ export default function FormularioIdea({
             cuando quieras cómo sigue.
           </p>
 
+          {(autor?.email || autor?.telefono) && (
+            <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
+              Completamos el contacto con los datos de tu cuenta de CIDITUC. Revisalos: podés
+              corregirlos o borrarlos, y guardamos solo lo que quede escrito.
+            </p>
+          )}
+
           <Campo
             etiqueta="Teléfono de contacto (opcional)"
             ayuda="Por si el equipo necesita consultarte algo de la propuesta. Solo lo ve el equipo y se borra cuando cierra el proceso."
@@ -1357,10 +1383,29 @@ export default function FormularioIdea({
               name="autorTelefono"
               type="tel"
               autoComplete="tel"
+              defaultValue={autor?.telefono ?? undefined}
               maxLength={LARGO_TELEFONO}
               disabled={!abierta || ocupado}
               onInput={(evento) => anotarValor("autorTelefono", evento.currentTarget.value)}
               placeholder="381 555-1234"
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+              style={campoEstilo}
+            />
+          </Campo>
+
+          <Campo
+            etiqueta="Correo de contacto (opcional)"
+            ayuda="Para lo mismo que el teléfono: solo lo ve el equipo, no te vamos a mandar publicidad y se borra cuando cierra el proceso."
+          >
+            <input
+              name="autorEmail"
+              type="email"
+              autoComplete="email"
+              defaultValue={autor?.email ?? undefined}
+              maxLength={160}
+              onInput={(evento) => anotarValor("autorEmail", evento.currentTarget.value)}
+              disabled={!abierta || ocupado}
+              placeholder="tunombre@ejemplo.com"
               className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
               style={campoEstilo}
             />
@@ -1413,7 +1458,7 @@ export default function FormularioIdea({
                   className="mt-0.5"
                 />
                 <span className="text-sm font-medium">
-                  Quiero dejar mi correo para que me avisen cómo sigue mi idea.
+                  Quiero que me avisen a ese correo cómo sigue mi idea.
                 </span>
               </label>
               <p className="mt-2 text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
@@ -1428,22 +1473,6 @@ export default function FormularioIdea({
                 .
               </p>
 
-              {avisos && (
-                <div className="mt-4">
-                  <Campo etiqueta="Correo electrónico">
-                    <input
-                      name="autorEmail"
-                      type="email"
-                      maxLength={160}
-                      onInput={(evento) => anotarValor("autorEmail", evento.currentTarget.value)}
-                      disabled={!abierta || ocupado}
-                      placeholder="tunombre@ejemplo.com"
-                      className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
-                      style={campoEstilo}
-                    />
-                  </Campo>
-                </div>
-              )}
             </div>
           )}
         </section>

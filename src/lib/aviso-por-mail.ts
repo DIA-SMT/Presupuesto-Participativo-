@@ -11,10 +11,11 @@
  * devuelve el alta (/ideas/seguimiento), que no necesita ningun contacto.
  *
  * Apagado:
- *  - src/components/FormularioIdea.tsx no dibuja la casilla ni el campo;
- *  - POST /api/ideas descarta `autorEmail` y `autorAvisos` ANTES de validar,
- *    aunque lleguen (una pestaña vieja, un script): no se guardan ni se piden
- *    como validos.
+ *  - src/components/FormularioIdea.tsx no dibuja la casilla;
+ *  - POST /api/ideas descarta `autorAvisos` ANTES de validar, aunque llegue
+ *    (una pestaña vieja, un script): no queda un consentimiento de avisos.
+ * El correo SI se guarda desde noviembre de 2026, pero como contacto para el
+ * equipo (igual que el telefono, precargado desde CIDITUC), no para avisos.
  *
  * Para prenderlo, cuando exista el envio: poner `true` aca y revisar que la
  * politica de privacidad (/privacidad) y VERSION_CONSENTIMIENTO

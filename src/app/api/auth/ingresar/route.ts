@@ -78,6 +78,9 @@ export async function POST(request: Request) {
     votanteId: resultado.votanteId,
     distrito: resultado.distrito,
     nombre: resultado.nombre,
+    // Un contacto de ejemplo, para ver la precarga del formulario de ideas como
+    // la deja CIDITUC (src/app/auth/cidituc/callback/route.ts).
+    contacto: { email: "vecina@example.com", telefono: "381 555-0000" },
   });
 
   return Response.json({ ok: true, distrito: resultado.distrito });

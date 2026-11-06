@@ -84,14 +84,17 @@ export const altaIdea = contenidoIdea
       .max(LARGOS.autorEmail)
       .nullish()
       .or(z.literal("")),
-    /** Casilla de avisos: sin ella el mail no se guarda (ver el refine). */
+    /**
+     * Casilla de avisos. El correo solo es el contacto para el equipo, como el
+     * telefono; con la casilla, ademas, se le avisa ahi como sigue la idea.
+     */
     autorAvisos: z.coerce.boolean().optional(),
   })
-  // No se acepta un mail sin la casilla marcada: seria un dato personal sin
-  // consentimiento. El formulario no deja llegar hasta aca, esto es el cierre.
-  .refine((datos) => !datos.autorEmail || datos.autorAvisos, {
-    message: "Falta el consentimiento para guardar el correo.",
-    path: ["autorAvisos"],
+  // Avisos sin correo no se pueden cumplir: el formulario no deja llegar hasta
+  // aca, esto es el cierre.
+  .refine((datos) => !datos.autorAvisos || Boolean(datos.autorEmail), {
+    message: "Falta el correo para los avisos.",
+    path: ["autorEmail"],
   });
 
 /**

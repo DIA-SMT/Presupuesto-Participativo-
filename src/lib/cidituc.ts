@@ -193,7 +193,33 @@ export type PersonaCidituc = {
    * guarda en el padron ni en ningun registro.
    */
   barrio: string | null;
+  /**
+   * email_persona y telefono_persona de la cuenta, si son usables. Sirven SOLO
+   * para precargar los campos de contacto del formulario de ideas: viajan en la
+   * cookie de la sesion y llegan a la base unicamente si la persona los deja en
+   * el formulario al enviar su idea (puede corregirlos o borrarlos). No se
+   * guardan en el padron.
+   */
+  email: string | null;
+  telefono: string | null;
 };
+
+/** Un correo con forma de correo, del largo que acepta el formulario. */
+function correoUsable(valor: string | null): string | null {
+  if (!valor || valor.length > 160) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor) ? valor.toLowerCase() : null;
+}
+
+/**
+ * Un telefono que el formulario aceptaria (las mismas reglas que
+ * `telefonoValido` del formulario y el esquema del alta): si CIDITUC trae otra
+ * cosa, mejor el campo vacio que uno que la persona tenga que arreglar.
+ */
+function telefonoUsable(valor: string | null): string | null {
+  if (!valor || valor.length > 30 || !/^\+?[\d\s()\-/.]+$/.test(valor)) return null;
+  const digitos = valor.replace(/\D/g, "").length;
+  return digitos >= 6 && digitos <= 15 ? valor : null;
+}
 
 /**
  * Un campo de la persona, como texto.
@@ -216,9 +242,10 @@ export function texto(valor: unknown): string | null {
  * y tambien la forma plana, por si el backend cambia.
  *
  * De todo lo que trae la respuesta, que incluye permisos sobre otros sistemas,
- * se toma unicamente lo que el padron necesita: documento, nombre e id; y el
- * barrio, para sugerirle el distrito (no se guarda). El email y el telefono NO
- * se leen: el sitio no los usa, y lo que no se guarda no se puede filtrar.
+ * se toma unicamente lo que el padron necesita: documento, nombre e id; el
+ * barrio, para sugerirle el distrito (no se guarda); y el email y el telefono,
+ * para precargar el contacto del formulario de ideas (ver PersonaCidituc). El
+ * domicilio y los permisos no se leen.
  */
 export function personaDeRespuesta(cuerpo: unknown): PersonaCidituc | null {
   if (!cuerpo || typeof cuerpo !== "object") return null;
@@ -237,7 +264,14 @@ export function personaDeRespuesta(cuerpo: unknown): PersonaCidituc | null {
       .filter((parte): parte is string => parte !== null)
       .join(" ") || null;
 
-  return { id: texto(persona.id_persona), documento, nombre, barrio: texto(persona.nombre_barrio) };
+  return {
+    id: texto(persona.id_persona),
+    documento,
+    nombre,
+    barrio: texto(persona.nombre_barrio),
+    email: correoUsable(texto(persona.email_persona)),
+    telefono: telefonoUsable(texto(persona.telefono_persona)),
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -59,7 +59,9 @@ export function codigoValido(ideaId: number, ingresado: string): boolean {
  * Se guarda en `ideas.autor_avisos_version`: si el texto cambia, los datos
  * cargados con la version anterior no se pueden usar bajo el texto nuevo.
  */
-export const VERSION_CONSENTIMIENTO = "2026-08";
+// 2026-11: el correo pasa a ser un contacto para el equipo, como el telefono,
+// precargado desde la cuenta de CIDITUC (/privacidad).
+export const VERSION_CONSENTIMIENTO = "2026-11";
 
 /**
  * Version del aviso legal y las condiciones de uso que se muestran al pie del

@@ -42,6 +42,13 @@ export type SesionVotante = {
    * la base. Null o ausente si no hay sugerencia.
    */
   sugerido?: { distrito: number; barrio: string } | null;
+  /**
+   * El correo y el telefono de la cuenta de CIDITUC, para precargar los campos
+   * de contacto del formulario de ideas (la persona los ve y los puede cambiar o
+   * borrar). Como el barrio, viajan solo en esta cookie: a la base llegan
+   * unicamente con la idea, y solo si la persona los deja en el formulario.
+   */
+  contacto?: { email: string | null; telefono: string | null } | null;
 };
 
 async function firmar(datos: object, duracion: number): Promise<string> {

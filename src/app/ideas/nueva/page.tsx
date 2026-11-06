@@ -115,7 +115,16 @@ export default async function NuevaIdea() {
       <FormularioIdea
         abierta={abierta}
         conIA={hayClave() && !(await gastoDelDiaAgotado(getTokensUsadosHoy))}
-        autor={sesion ? { nombre: sesion.nombre } : null}
+        autor={
+          sesion
+            ? {
+                nombre: sesion.nombre,
+                // El contacto de su cuenta de CIDITUC, para precargar los campos.
+                email: sesion.contacto?.email ?? null,
+                telefono: sesion.contacto?.telefono ?? null,
+              }
+            : null
+        }
       />
     </div>
   );

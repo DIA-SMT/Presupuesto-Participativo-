@@ -1204,7 +1204,7 @@ export type DimensionBandeja =
   | "sinPublicar"
   | "conContacto";
 
-/** Hay un mail del autor para avisarle. El dato en si nunca sale de la base. */
+/** El autor dejo un correo de contacto. */
 const CON_CONTACTO = isNotNull(ideas.autorEmail);
 /** Todavia no se ve en el sitio. */
 const SIN_PUBLICAR = eq(ideas.publicada, false);
@@ -1428,14 +1428,15 @@ export type IdeaAdmin = IdeaVista & {
   /** La organizacion en cuyo nombre se presenta, o null. */
   organizacion: string | null;
   /**
-   * El telefono de contacto. Es el UNICO dato de contacto que la ficha muestra
-   * en claro, porque es para que el equipo llame: no sale en ninguna consulta
+   * El telefono y el correo de contacto, para que el equipo pueda consultarle
+   * algo al autor. Solo los muestra esta ficha: no salen en ninguna consulta
    * publica, ni en listados, ni en el chat. Null tambien despues de la purga.
    */
   autorTelefono: string | null;
+  autorEmail: string | null;
   /** Lo que estimo el equipo al evaluarla. */
   presupuestoEstimado: number | null;
-  /** Nunca el mail: solo si hay contacto para avisarle al autor. */
+  /** Si dejo correo (el filtro de la bandeja usa lo mismo). */
   tieneContacto: boolean;
   autorAvisos: boolean;
   autorAvisosVersion: string | null;
@@ -1470,6 +1471,7 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
         WHEN ${ideas.votanteId} IS NOT NULL THEN 1 ELSE 0 END`,
       organizacion: ideas.organizacion,
       autorTelefono: ideas.autorTelefono,
+      autorEmail: ideas.autorEmail,
       presupuestoEstimado: ideas.presupuestoEstimado,
       tieneContacto: sql<number>`CASE
         WHEN ${ideas.autorEmail} IS NOT NULL THEN 1 ELSE 0 END`,
@@ -1512,6 +1514,7 @@ export async function getIdeaAdmin(id: number): Promise<IdeaAdmin | null> {
     autorConCidituc: Number(fila.autorConCidituc) === 1,
     organizacion: fila.organizacion,
     autorTelefono: fila.autorTelefono,
+    autorEmail: fila.autorEmail,
     presupuestoEstimado:
       fila.presupuestoEstimado === null ? null : Number(fila.presupuestoEstimado),
     tieneContacto: Number(fila.tieneContacto) === 1,
