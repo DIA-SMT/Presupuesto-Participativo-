@@ -74,7 +74,7 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   Si la carpeta se corrompe, se borra y se recrea con `db:migrate` + `seed`.
 - `.env.local` **no lleva la URL de producción**: `DATABASE_URL` va vacía y el
   desarrollo usa PGlite. Los scripts que escriben (`db:migrate`, `seed`,
-  `crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`,
+  `crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`, `cambiar-fechas`,
   `aplicar-geografia --aplicar`, `ver-ideas-web --borrar … --confirmar`,
   `limpiar-pruebas --confirmar`, `cargar-obras-2025 --confirmar`) se
   niegan a correr contra una base remota salvo con `--produccion`
