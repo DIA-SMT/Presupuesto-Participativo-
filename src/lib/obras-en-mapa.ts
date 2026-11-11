@@ -2,14 +2,14 @@
  * Las obras de los proyectos ganadores como puntos de mapa: la portada las
  * muestra todas y la pagina de un distrito la suya. El color es el de la etapa
  * de la obra (los mismos tokens --obra-* que las tarjetas de Transparencia), y
- * la etapa sale del ultimo avance publicado: sin avances se dice que no hay
- * informacion, no se inventa una etapa.
+ * la etapa sale del ultimo avance publicado: sin avances se dice que esta en
+ * confeccion de expediente (el paso previo a la licitacion).
  */
 import type { PuntoMapa } from "@/components/Mapa";
 import type { ObraGanadora } from "@/db/queries";
-import { ETAPAS_PRESUPUESTO, ETIQUETA_PRESUPUESTO } from "@/lib/formato";
+import { ETAPAS_PRESUPUESTO, ETIQUETA_PRESUPUESTO, ETIQUETA_SIN_ETAPA_OBRA } from "@/lib/formato";
 
-export const SIN_ETAPA_OBRA = "Sin información todavía";
+export const SIN_ETAPA_OBRA = ETIQUETA_SIN_ETAPA_OBRA;
 
 function esEtapa(etapa: string | null): etapa is string {
   return etapa !== null && (ETAPAS_PRESUPUESTO as readonly string[]).includes(etapa);

@@ -40,8 +40,8 @@ export type PuntoMapa = {
   ganador: boolean;
   aproximada: boolean;
   /**
-   * La etapa de la obra, ya como texto ("En obra", "Sin información
-   * todavía"), para el mapa de ganadores de la portada. Sin ella el popup no
+   * La etapa de la obra, ya como texto ("En obra", "En confección
+   * de expediente"), para el mapa de ganadores de la portada. Sin ella el popup no
    * habla de obra.
    */
   obra?: string;

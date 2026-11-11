@@ -123,6 +123,13 @@ export function colorCategoria(
  * ETAPAS_PRESUPUESTO son las que carga el equipo desde 2026; preparacion y
  * contratacion siguen aca para nombrar avances viejos.
  */
+/**
+ * La etapa de una obra ganadora sin ningun avance publicado. El equipo del
+ * programa la nombra asi: es el paso previo a la licitacion, cuando se arma el
+ * expediente. Antes decia "Sin informacion todavia".
+ */
+export const ETIQUETA_SIN_ETAPA_OBRA = "En confección de expediente";
+
 export const ETIQUETA_PRESUPUESTO: Record<string, string> = {
   sin_asignar: "Sin presupuesto asignado",
   preparacion: "En preparación",
