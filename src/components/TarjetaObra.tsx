@@ -21,6 +21,7 @@ import {
   ETIQUETA_PRESUPUESTO,
   formatearFecha,
   formatearNumero,
+  ETIQUETA_SIN_ETAPA_OBRA,
 } from "@/lib/formato";
 
 /** Las etapas, con el nombre corto que entra debajo de cada tramo de la barra. */
@@ -65,7 +66,7 @@ export default function TarjetaObra({
 
       <span className="etiqueta-obra">
         <IconoEtapa etapa={conEtapa ? obra.etapa : null} />
-        {conEtapa ? ETIQUETA_PRESUPUESTO[obra.etapa as string] : "Sin información todavía"}
+        {conEtapa ? ETIQUETA_PRESUPUESTO[obra.etapa as string] : ETIQUETA_SIN_ETAPA_OBRA}
       </span>
 
       <h3 className="text-base font-semibold leading-snug">
@@ -141,7 +142,7 @@ function textoDelEnlace(enlace: string): string {
 
 /**
  * Un icono por etapa: un documento (se licita), un sello (se adjudica), un
- * casco (en obra), un tilde (terminada), y un reloj sin informacion.
+ * casco (en obra), un tilde (terminada), y un reloj en confeccion de expediente.
  * Decorativo: el nombre de la etapa va al lado.
  */
 function IconoEtapa({ etapa }: { etapa: string | null }) {

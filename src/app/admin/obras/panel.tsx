@@ -19,6 +19,7 @@ import {
   ETAPAS_PRESUPUESTO,
   ETIQUETA_PRESUPUESTO,
   formatearFecha,
+  ETIQUETA_SIN_ETAPA_OBRA,
 } from "@/lib/formato";
 import { conEdicion } from "@/lib/ediciones";
 import { borrarAvance, crearAvance } from "../acciones";
@@ -94,7 +95,7 @@ export default function PanelObras({
                 aria-current={filtro === valor ? "true" : undefined}
                 onClick={() => setFiltro(valor)}
               >
-                {valor === "sin-informacion" ? "Sin información" : ETIQUETA_PRESUPUESTO[valor]}{" "}
+                {valor === "sin-informacion" ? ETIQUETA_SIN_ETAPA_OBRA : ETIQUETA_PRESUPUESTO[valor]}{" "}
                 <span className="cuenta">{cuentas.get(valor)}</span>
               </button>
             </li>

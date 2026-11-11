@@ -279,7 +279,7 @@ function resumirIdea(idea: IdeaVista, anioEnEnlaces: number | null) {
 function etapaDeObra(ganador: GanadorEnObra): string {
   return ganador.estadoObra
     ? (ETIQUETA_PRESUPUESTO[ganador.estadoObra] ?? ganador.estadoObra)
-    : "no informada todavia: el municipio no publico ningun avance de esta obra";
+    : "en confeccion de expediente (el paso previo a la licitacion): el municipio todavia no publico ningun avance de esta obra";
 }
 
 function etiquetaEtapa(edicion: Edicion): string {
@@ -548,7 +548,7 @@ export async function ejecutarHerramienta(
              arriba: si no hay avance, se dice que no hay. */
           etapa_obra: avances.length
             ? (ETIQUETA_PRESUPUESTO[idea.estadoPresupuesto] ?? idea.estadoPresupuesto)
-            : "no informada todavia: el municipio no publico ningun avance de esta obra",
+            : "en confeccion de expediente (el paso previo a la licitacion): el municipio todavia no publico ningun avance de esta obra",
           avances: avances.length
             ? avances.map((a) => ({
                 fecha: a.fecha,

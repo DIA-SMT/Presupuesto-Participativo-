@@ -16,6 +16,7 @@ import {
   ETIQUETA_PRESUPUESTO,
   distritosConVerbo,
   formatearNumero,
+  ETIQUETA_SIN_ETAPA_OBRA,
 } from "@/lib/formato";
 
 /**
@@ -189,7 +190,7 @@ export default async function Transparencia({ searchParams }: Props) {
                       className="filtro-obra"
                       scroll={false}
                     >
-                      {valor === "sin-informacion" ? "Sin información" : ETIQUETA_PRESUPUESTO[valor]}{" "}
+                      {valor === "sin-informacion" ? ETIQUETA_SIN_ETAPA_OBRA : ETIQUETA_PRESUPUESTO[valor]}{" "}
                       <span className="cuenta">{cuentas.get(valor)}</span>
                     </Link>
                   </li>

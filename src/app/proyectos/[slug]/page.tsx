@@ -294,8 +294,9 @@ export default async function PaginaProyecto({ params, searchParams }: Props) {
               ) : (
                 <div className="mt-3">
                   <Aviso>
-                    Todavía no hay información sobre el avance de esta obra. Cuando el municipio la
-                    informe, va a aparecer acá con su fecha y su monto.
+                    La obra está en confección de expediente, el paso previo a la licitación.
+                    Cuando el municipio publique un avance, va a aparecer acá con su fecha y su
+                    monto.
                   </Aviso>
                 </div>
               )}
