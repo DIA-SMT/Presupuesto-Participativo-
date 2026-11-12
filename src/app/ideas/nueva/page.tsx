@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import FormularioIdea from "@/components/FormularioIdea";
-import { Aviso } from "@/components/ui";
+import { Aviso, Cartel } from "@/components/ui";
+import { NOTA_DE_RECEPCION } from "@/lib/contenido-del-programa";
 import { getEdicionActiva, getTextos, getTokensUsadosHoy } from "@/db/queries";
 import { ETIQUETA_ETAPA, formatearRango } from "@/lib/formato";
 import { gastoDelDiaAgotado, hayClave } from "@/lib/modelo";
@@ -101,6 +102,14 @@ export default async function NuevaIdea() {
           </Aviso>
         </div>
       )}
+
+      {/* La via presencial y la nota de recepcion (Centros Vecinales, 11/2026). */}
+      <Cartel tono="info" icono="documento" titulo="También la podés presentar en persona" nivelTitulo="h2" className="mt-6 max-w-3xl">
+        <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
+          En Ejército del Norte 410 (Dirección de Centros Vecinales) o en los Operativos Integrales
+          Municipales. {NOTA_DE_RECEPCION}
+        </p>
+      </Cartel>
 
       {/*
         Sin clave del modelo los botones de redaccion NO se dibujan, en lugar de

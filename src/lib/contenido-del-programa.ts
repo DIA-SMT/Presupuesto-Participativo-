@@ -12,29 +12,42 @@
  * cada pagina) NO va aca: vive en la base (tablas `textos`, `faq`, `novedades`).
  */
 import { normalizar } from "./texto";
+import { turnosEnTexto } from "./votacion-presencial";
 
 export type Explicacion = { titulo: string; texto: string };
 
 /**
- * Las reglas que /reglamento muestra mientras el reglamento oficial no esta
- * cargado. Son las que el programa ya tiene confirmadas; con el reglamento
- * publicado, la pagina (y el chat) pasan a decir lo que diga el reglamento.
+ * Como funciona el programa, en pocas reglas: lo que /reglamento muestra arriba
+ * del texto oficial (o en su lugar, si no esta cargado) y lo que Migue dice.
+ * Salen de la Ordenanza 5.027/19, del Decreto 0981/S.Gral./2024 y de lo que
+ * informo la Direccion de Centros Vecinales en noviembre de 2026 (prefactibilidad
+ * antes de votar, votacion presencial en urnas, nota de recepcion presencial).
  */
 export const REGLAS_CONFIRMADAS: Explicacion[] = [
   {
-    titulo: "Un voto por persona",
+    titulo: "Las ideas se presentan por la web o en persona",
     texto:
-      "Cada persona empadronada tiene un solo voto y lo usa en un único proyecto. El sistema lo verifica: no se puede votar dos veces.",
+      "Podés presentar tu idea desde este sitio, ingresando con CIDITUC, o en persona en Ejército del Norte 410 (Dirección de Centros Vecinales) o en los Operativos Integrales Municipales. Todas, incluso las que llegan por la web, se formalizan después con una nota de recepción presencial: el equipo del programa se contacta con cada vecino para hacerlo.",
   },
   {
-    titulo: "Se vota en el distrito donde se vive",
+    titulo: "Análisis de prefactibilidad antes de votar",
     texto:
-      "El voto solo puede aplicarse a un proyecto del distrito de residencia de la persona, que ella misma declara la primera vez que entra a votar. La ciudad tiene 20 distritos y cada uno elige su propio proyecto.",
+      "Antes de la votación, las propuestas pasan únicamente por un análisis de prefactibilidad a cargo del equipo del programa. Las que resultan prefactibles se publican y forman la nómina que se vota en cada distrito.",
   },
   {
-    titulo: "Empadronamiento con CIDITUC",
+    titulo: "La votación es presencial, en urnas",
     texto:
-      "La habilitación para votar se hace con la ciudadanía digital CIDITUC, de manera virtual desde la web municipal o presencial en las asambleas participativas.",
+      `Se vota en persona, en sedes distribuidas por distrito: ${turnosEnTexto()}. No se vota por internet y no hace falta CIDITUC.`,
+  },
+  {
+    titulo: "Quién puede votar",
+    texto:
+      "Toda persona mayor de 16 años que acredite con su DNI que vive dentro del distrito. Las personas extranjeras sin ciudadanía pueden votar si acreditan al menos 2 años de residencia efectiva en la ciudad.",
+  },
+  {
+    titulo: "Un vecino, un voto",
+    texto:
+      "Cada persona vota una sola vez, por un proyecto de su distrito, y solo por sí misma: no puede votar en nombre de otra.",
   },
   {
     titulo: "Tres categorías de proyecto",
@@ -42,9 +55,9 @@ export const REGLAS_CONFIRMADAS: Explicacion[] = [
       "Las propuestas se encuadran en espacio socio ambiental, espacio cultural deportivo o espacio de innovación urbana.",
   },
   {
-    titulo: "Evaluación técnica previa a la votación",
+    titulo: "Evaluación técnica después de la votación",
     texto:
-      "Toda idea pasa por una evaluación técnica y presupuestaria. Puede quedar como factible, no factible, o integrarse con otra propuesta parecida. Solo las factibles se votan.",
+      "La evaluación técnica, urbanística y presupuestaria (costo y alcance de la obra) se hace después de la votación, únicamente sobre la propuesta ganadora de cada distrito.",
   },
   {
     titulo: "El proyecto ganador entra al presupuesto municipal",
@@ -56,12 +69,21 @@ export const REGLAS_CONFIRMADAS: Explicacion[] = [
 ];
 
 /**
- * Con que se presenta una idea desde el sitio: el ingreso con CIDITUC que pide
- * /ideas/nueva (y exige /api/ideas). Lo dicen /acerca-de y el chat, con y sin
- * modelo. Si deja de pedirse, hay que cambiarlo aca.
+ * Toda idea, tambien la que llega por la web, se formaliza con una nota de
+ * recepcion presencial; el equipo contacta a cada vecino (Direccion de Centros
+ * Vecinales, 12/11/2026). Lo dicen el formulario, su confirmacion y el chat.
+ */
+export const NOTA_DE_RECEPCION =
+  "Todas las ideas, incluso las presentadas por la web, se formalizan después con una nota de recepción presencial: el equipo del programa se va a contactar con vos para hacerlo.";
+
+/**
+ * Como se presenta una idea: desde el sitio, con el ingreso con CIDITUC que
+ * pide /ideas/nueva (y exige /api/ideas), o en persona. Lo dicen /acerca-de y
+ * el chat, con y sin modelo. Si cambian las vias, hay que cambiarlo aca.
  */
 export const REQUISITO_PARA_PRESENTAR =
-  "Para presentar una idea ingresás con tu ciudadanía digital CIDITUC, la misma cuenta que usás para los trámites de la Municipalidad: la idea queda a tu nombre, que solo ve el equipo que la evalúa. Si todavía no tenés CIDITUC, la podés hacer desde la página de la Municipalidad o en una asamblea participativa.";
+  "Desde este sitio, ingresás con tu ciudadanía digital CIDITUC, la misma cuenta que usás para los trámites de la Municipalidad: la idea queda a tu nombre, que solo ve el equipo que la evalúa. También la podés presentar en persona en Ejército del Norte 410 (Dirección de Centros Vecinales) o en los Operativos Integrales Municipales. " +
+  NOTA_DE_RECEPCION;
 
 /**
  * Las preguntas del formulario de propuesta 2026, con las palabras del papel
@@ -112,25 +134,25 @@ export const ACLARACION_DE_LA_PROPUESTA =
   "Esta ficha recoge una primera propuesta. Luego será revisada por las áreas municipales competentes para analizar su factibilidad. Presentarla no significa que ya esté aprobada ni que su ejecución sea automática.";
 
 /**
- * Como se vota en el sitio, paso por paso: lo que hace de verdad /votar (y
- * /ingresar antes). Lo muestra /acerca-de y lo dice el chat. Si cambia el
- * circuito de votacion, hay que cambiarlo aca.
+ * Como se vota, paso por paso. La votacion es presencial (ver
+ * src/lib/votacion-presencial.ts): lo muestran /votar y /acerca-de y lo dice el
+ * chat. Si cambia el circuito de votacion, hay que cambiarlo aca.
  */
 export const PASOS_PARA_VOTAR: Explicacion[] = [
   {
-    titulo: "Ingresá con CIDITUC",
+    titulo: "Fijate qué día vota tu distrito",
     texto:
-      "Mientras la votación está abierta, entrá a Votar e ingresá con tu cuenta de ciudadanía digital CIDITUC. Si todavía no la tenés, la podés hacer desde la página de la Municipalidad o en una asamblea participativa.",
+      `Votan ${turnosEnTexto()}. Si no sabés cuál es tu distrito, buscá tu barrio en la página de Distritos.`,
   },
   {
-    titulo: "Declará en qué distrito vivís",
+    titulo: "Andá a la sede de tu distrito con tu DNI",
     texto:
-      "La primera vez, buscás tu barrio o marcás tu casa en el mapa, y confirmás que vivís en ese distrito. Solo se guarda el número de distrito, y lo podés cambiar hasta que votes.",
+      "Con el DNI acreditás que vivís dentro del distrito. No hace falta CIDITUC ni inscribirse antes. Las sedes se publican en este sitio cuando estén confirmadas.",
   },
   {
-    titulo: "Elegí un proyecto y confirmá",
+    titulo: "Votá en la urna",
     texto:
-      "La boleta muestra, en orden alfabético, los proyectos factibles de tu distrito. Tenés un solo voto: una vez confirmado queda registrado y no se puede votar otra vez en esta votación.",
+      "Elegís uno de los proyectos prefactibles de tu distrito. Tenés un solo voto y es personal: no se puede votar por otra persona.",
   },
 ];
 

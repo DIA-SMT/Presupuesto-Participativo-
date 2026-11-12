@@ -20,6 +20,7 @@
 import { z } from "zod";
 import { declararDistrito, type ResultadoDeclaracion } from "@/lib/empadronamiento";
 import { exigirMismoOrigen } from "@/lib/origen";
+import { VOTACION_ONLINE_HABILITADA } from "@/lib/votacion-presencial";
 import { consumirDelVecino } from "@/lib/rate-limit";
 import { cerrarSesionVotante, crearSesionVotante, getSesionVotante } from "@/lib/sesion";
 
@@ -42,6 +43,15 @@ export async function POST(request: Request) {
   // Primero, antes del rate limit, como en /api/votos.
   const rechazo = exigirMismoOrigen(request);
   if (rechazo) return rechazo;
+
+  // La votacion es presencial (src/lib/votacion-presencial.ts): no se recibe
+  // ningun voto ni distrito por el sitio, aunque llegue el pedido.
+  if (!VOTACION_ONLINE_HABILITADA) {
+    return Response.json(
+      { error: "La votación es presencial, en urnas: no se vota desde el sitio." },
+      { status: 410 },
+    );
+  }
 
   // Casi toda persona que entra con CIDITUC declara su distrito una vez antes
   // de votar: con un tope de 30 por hora por IP, en un punto de votacion con un

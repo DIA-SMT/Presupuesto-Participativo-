@@ -74,6 +74,7 @@ import type { PropuestaIA, RespuestaAsistente } from "@/app/api/ideas/asistente/
 import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 import {
   ACLARACION_DE_LA_PROPUESTA,
+  NOTA_DE_RECEPCION,
   PREGUNTAS_DE_LA_IDEA,
 } from "@/lib/contenido-del-programa";
 
@@ -918,8 +919,8 @@ export default function FormularioIdea({
         <h2 className="mt-2 text-2xl font-bold">Gracias por participar</h2>
         <p className="mt-3 max-w-prose text-[0.9375rem] leading-relaxed">
           Tu idea quedó registrada en el <strong>Distrito {estado.distrito}</strong>. El equipo del
-          Presupuesto Participativo la va a revisar y evaluar técnicamente. Cuando esté publicada vas
-          a poder verla en el listado de proyectos de tu distrito.
+          Presupuesto Participativo la va a revisar en el análisis de prefactibilidad. Cuando esté
+          publicada vas a poder verla en el listado de proyectos de tu distrito.
         </p>
 
         {/* Numero y codigo: los dos datos que se necesitan para el seguimiento. */}
@@ -955,7 +956,10 @@ export default function FormularioIdea({
         <p className="mt-1 max-w-prose text-sm leading-relaxed" style={{ color: "var(--texto-suave)" }}>
           El código de seguimiento no se vuelve a mostrar y no lo podés recuperar desde el sitio. Con
           los dos consultás cuando quieras en qué etapa está tu propuesta y leés la devolución del
-          equipo, sin depender de que te llamemos.
+          equipo.
+        </p>
+        <p className="cartel mt-4 max-w-prose text-sm leading-relaxed" data-tono="atencion" style={{ display: "block" }}>
+          <strong>Falta un paso:</strong> {NOTA_DE_RECEPCION}
         </p>
         <p className="mt-3 max-w-prose text-xs leading-relaxed" style={{ color: "var(--texto-suave)" }}>
           {ACLARACION_DE_LA_PROPUESTA}

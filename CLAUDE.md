@@ -62,7 +62,12 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
 - Los textos del sitio, el reglamento, las preguntas frecuentes, las novedades
   y el aviso urgente viven en la base (`textos`, `faq`, `novedades`) y el
   panel no los edita: no tiene pantalla de Contenido ni de consultas a Migue.
-  Se cambian en la base.
+  Se cambian en `data/contenido-sitio.json` (el texto oficial del reglamento,
+  en `data/reglamento.txt`) y se llevan a la base con
+  `scripts/aplicar-contenido.ts`.
+- La votación es presencial, en urnas (noviembre de 2026): el voto en línea
+  está apagado con `VOTACION_ONLINE_HABILITADA` (`src/lib/votacion-presencial.ts`),
+  donde también están el día de cada distrito y las sedes.
 - La limpieza de datos migrados es auditable: cualquier transformación nueva en
   el ETL debe registrarse en `notasMigracion` y en el reporte.
 
@@ -75,6 +80,7 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
 - `.env.local` **no lleva la URL de producción**: `DATABASE_URL` va vacía y el
   desarrollo usa PGlite. Los scripts que escriben (`db:migrate`, `seed`,
   `crear-admin`, `purgar-contactos --confirmar`, `cambiar-etapa`, `cambiar-fechas`,
+  `aplicar-contenido --confirmar`,
   `aplicar-geografia --aplicar`, `ver-ideas-web --borrar … --confirmar`,
   `limpiar-pruebas --confirmar`, `cargar-obras-2025 --confirmar`) se
   niegan a correr contra una base remota salvo con `--produccion`

@@ -152,11 +152,9 @@ export default async function AcercaDe() {
                 </li>
               ))}
             </ol>
-            {edicion?.etapa === "votacion" && (
-              <div className="mt-4">
-                <Boton href="/votar">Votar</Boton>
-              </div>
-            )}
+            <div className="mt-4">
+              <Boton href="/votar">Cuándo y dónde se vota</Boton>
+            </div>
           </Cartel>
 
           <Cartel tono="consejo" icono="telefono" titulo="Consultas">

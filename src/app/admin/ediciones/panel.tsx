@@ -77,12 +77,12 @@ export default function PanelInterruptores({
         <Tarjeta
           titulo="Votación"
           abierta={estado.votacionAbierta}
-          textoAbierta="Cada vecino con CIDITUC vota un proyecto factible y publicado de su distrito."
-          textoCerrada="No se aceptan votos. Al abrirla, se votan las propuestas factibles y publicadas."
+          textoAbierta="La votación presencial está en curso: el sitio la anuncia y la nómina de proyectos prefactibles publicados queda fija."
+          textoCerrada="Al abrirla, el sitio anuncia que la votación presencial está en curso. Se votan, en urnas, las propuestas prefactibles y publicadas."
           abrir="abrir-votacion"
           cerrar="cerrar-votacion"
-          confirmarAbrir="Se cierra la presentación de propuestas y los vecinos pueden votar desde ya. Revisá antes que las propuestas factibles estén publicadas."
-          confirmarCerrar="No se aceptan más votos. Después proclamás el ganador de cada distrito desde su ficha."
+          confirmarAbrir="Se cierra la presentación de propuestas y el sitio anuncia la votación presencial. Revisá antes que las propuestas prefactibles estén publicadas: la nómina queda fija."
+          confirmarCerrar="El sitio deja de anunciar la votación en curso. Con las actas de escrutinio cargadas, proclamás el ganador de cada distrito desde su ficha."
           bloqueada={false}
           puedeCambiar={puedeCambiar}
           accion={accion}

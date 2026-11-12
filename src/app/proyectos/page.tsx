@@ -18,7 +18,7 @@ import { estadoDeInterruptores } from "@/lib/etapas";
 import { ETIQUETA_ESTADO, colorCategoria, formatearNumero } from "@/lib/formato";
 
 const DESCRIPCION =
-  "Todas las ideas presentadas al Presupuesto Participativo de San Miguel de Tucumán, con su evaluación técnica y los proyectos ganadores de cada distrito.";
+  "Todas las ideas presentadas al Presupuesto Participativo de San Miguel de Tucumán, con su análisis de prefactibilidad y los proyectos ganadores de cada distrito.";
 
 const ESTADOS: EstadoIdea[] = ["ganador", "factible", "no_factible", "integrado", "pendiente"];
 

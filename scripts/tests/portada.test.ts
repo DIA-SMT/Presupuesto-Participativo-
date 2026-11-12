@@ -81,9 +81,9 @@ test("sin fechas cargadas, el momento se dice sin fecha", () => {
   assert.equal(portada("ideas", sinFechas).momento, "La presentación de propuestas está abierta.");
   assert.equal(
     portada("evaluacion", sinFechas).momento,
-    "El equipo técnico está evaluando las propuestas presentadas.",
+    "El equipo del programa está haciendo el análisis de prefactibilidad de las propuestas presentadas.",
   );
-  assert.match(portada("votacion", sinFechas).momento, /^La votación está abierta\. /);
+  assert.match(portada("votacion", sinFechas).momento, /^La votación está en curso\. Es presencial/);
 });
 
 // Se proclama de a un distrito y despues del escrutinio: toda edicion pasa un

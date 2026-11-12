@@ -31,6 +31,7 @@ import { cerrarSesionVotante, getSesionVotante } from "@/lib/sesion";
 import { resumenDeError } from "@/lib/errores-base";
 import { consumirDelVecino, hashearIp, ipDe } from "@/lib/rate-limit";
 import { exigirMismoOrigen } from "@/lib/origen";
+import { VOTACION_ONLINE_HABILITADA } from "@/lib/votacion-presencial";
 import { registrarVoto, type MotivoRechazo, type ResultadoVoto } from "./registrar";
 
 export const runtime = "nodejs";
@@ -56,6 +57,15 @@ export async function POST(request: Request) {
   // intentos a la conexion de la persona.
   const rechazo = exigirMismoOrigen(request);
   if (rechazo) return rechazo;
+
+  // La votacion es presencial (src/lib/votacion-presencial.ts): no se recibe
+  // ningun voto ni distrito por el sitio, aunque llegue el pedido.
+  if (!VOTACION_ONLINE_HABILITADA) {
+    return Response.json(
+      { error: "La votación es presencial, en urnas: no se vota desde el sitio." },
+      { status: 410 },
+    );
+  }
 
   // El tope es de la persona si tiene sesion (la cookie, sin base): en una
   // asamblea con varias tablets en el mismo Wi-Fi, la IP es una sola y un tope

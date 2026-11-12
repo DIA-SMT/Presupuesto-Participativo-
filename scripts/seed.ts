@@ -277,7 +277,13 @@ async function main() {
   // Contenido editable
   // -------------------------------------------------------------------------
   console.log("Cargando textos, preguntas frecuentes y cronograma...");
-  for (const [clave, valor] of Object.entries(contenido.textos)) {
+  // El texto oficial del reglamento (Ordenanza y Decreto) va en su propio archivo:
+  // es largo y se lee mejor renglon por renglon. Ver scripts/aplicar-contenido.ts.
+  const conReglamento = {
+    ...contenido.textos,
+    "reglamento-cuerpo": readFileSync("data/reglamento.txt", "utf8"),
+  };
+  for (const [clave, valor] of Object.entries(conReglamento)) {
     await db
       .insert(textos)
       .values({ clave, valor })

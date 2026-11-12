@@ -21,6 +21,7 @@ import {
 } from "@/lib/ingreso-vecino";
 import { puedeCargarFueraDeEtapa } from "@/lib/modo-prueba";
 import { getSesionVotante } from "@/lib/sesion";
+import { VOTACION_ONLINE_HABILITADA } from "@/lib/votacion-presencial";
 
 export const metadata: Metadata = {
   title: "Ingresar",
@@ -40,7 +41,9 @@ const TEXTOS_DEL_DESTINO: Record<
   votar: {
     titulo: "Ingresá para votar",
     para: "Para votar",
-    cerrada: "La votación no está abierta en este momento.",
+    cerrada: VOTACION_ONLINE_HABILITADA
+      ? "La votación no está abierta en este momento."
+      : "La votación es presencial, en urnas: no se vota desde el sitio. En Votar está qué día vota tu distrito y qué necesitás.",
     vuelta: "volvés acá para elegir tu proyecto",
     pregunta: "¿Venías a votar?",
   },

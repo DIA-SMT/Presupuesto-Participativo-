@@ -39,7 +39,7 @@ test("una factible sin publicar no se da por votada ni por estar en la boleta", 
 test("una etapa desconocida cae en la frase sin tiempo", () => {
   assert.equal(
     descripcionEstado("factible", null),
-    "Pasó la evaluación técnica y presupuestaria.",
+    "Pasó el análisis de prefactibilidad.",
   );
 });
 

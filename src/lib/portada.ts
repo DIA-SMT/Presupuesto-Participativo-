@@ -117,7 +117,7 @@ export function portadaSegunEtapa(
           ? `, y la votación empieza el ${formatearFecha(edicion.votacionDesde)}`
           : "";
       return {
-        momento: `El equipo técnico está evaluando las propuestas presentadas${votacion}.`,
+        momento: `El equipo del programa está haciendo el análisis de prefactibilidad de las propuestas presentadas${votacion}.`,
         principal: { href: "/proyectos", texto: "Ver las ideas presentadas" },
         secundaria: { href: "/ideas/seguimiento", texto: "Seguí tu idea" },
         yaVoto,
@@ -125,8 +125,8 @@ export function portadaSegunEtapa(
     }
     case "votacion":
       return {
-        momento: `La votación está abierta${hasta(edicion.votacionHasta, hoy)}. Cada vecino vota un proyecto de su distrito.`,
-        principal: { href: "/votar", texto: "Votá en tu distrito" },
+        momento: `La votación está en curso${hasta(edicion.votacionHasta, hoy)}. Es presencial: cada vecino vota un proyecto de su distrito, con su DNI, en la sede que le corresponde.`,
+        principal: { href: "/votar", texto: "Cuándo y dónde se vota" },
         secundaria: { href: "/proyectos", texto: "Ver los proyectos en votación" },
         yaVoto,
       };

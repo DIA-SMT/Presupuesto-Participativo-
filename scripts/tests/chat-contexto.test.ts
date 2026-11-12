@@ -55,7 +55,7 @@ async function reglamento(consulta: string) {
 
 test("el contexto dice el momento y las fechas de la edicion, como la portada", async () => {
   const ctx = await contexto.contextoDelSitio(await vigente());
-  assert.match(ctx.momento, /La votación está abierta hasta el 4 de diciembre de 2030/);
+  assert.match(ctx.momento, /La votación está en curso hasta el 4 de diciembre de 2030/);
   assert.equal(ctx.acciones[0].href, "/votar");
   assert.match(ctx.fechasVotacion ?? "", /2 de diciembre de 2030/);
   assert.equal(ctx.fechasIdeas, null, "sin fechas de ideas cargadas");
@@ -91,7 +91,7 @@ test("el aviso urgente llega al chat, y un aviso vacio es no tener aviso", async
 test("sin reglamento cargado, la herramienta trae las reglas confirmadas y avisa que falta", async () => {
   const { datos, sinDatos, referencias } = await reglamento("edad para votar");
   assert.equal(datos.publicado, false);
-  assert.ok(datos.reglas_confirmadas.some((r: { titulo: string }) => r.titulo === "Un voto por persona"));
+  assert.ok(datos.reglas_confirmadas.some((r: { titulo: string }) => r.titulo === "Un vecino, un voto"));
   assert.match(datos.aviso, /no deducirlo/);
   assert.equal(sinDatos, true, "la regla puntual le falta al sitio");
   assert.deepEqual(referencias, [{ titulo: "Reglamento", url: "/reglamento" }]);
