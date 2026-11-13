@@ -104,14 +104,17 @@ test("una pregunta frecuente con otras palabras contesta la del sitio, aunque di
 test("como votar dice si la votacion esta abierta, hasta cuando, y los pasos", () => {
   const abierta = responder("¿Cómo voto?", "votacion");
   assert.ok(abierta);
-  assert.match(abierta.texto, /está abierta hasta el 4 de diciembre de 2026/);
-  assert.match(abierta.texto, /Ingresá con CIDITUC/);
+  assert.match(abierta.texto, /está en curso hasta el 4 de diciembre de 2026/);
+  assert.match(abierta.texto, /Fijate qué día vota tu distrito/);
+  assert.doesNotMatch(abierta.texto, /Ingresá con CIDITUC/);
   assert.equal(abierta.referencias[0].url, "/votar");
 
+  // La votacion es presencial: /votar dice cuando y donde, tambien antes.
   const antes = responder("¿Hasta cuándo puedo votar?", "ideas");
   assert.ok(antes);
-  assert.match(antes.texto, /todavía no está abierta \(está prevista: 2 de diciembre de 2026/);
-  assert.ok(!antes.referencias.some((r) => r.url === "/votar"), "sin votacion no se manda a votar");
+  assert.match(antes.texto, /todavía no empezó \(está prevista: 2 de diciembre de 2026/);
+  assert.match(antes.texto, /presencial, en urnas/);
+  assert.equal(antes.referencias[0].url, "/votar");
 
   const despues = responder("¿Cuándo es la votación?", "seguimiento");
   assert.ok(despues);
@@ -122,7 +125,7 @@ test("como votar dice si la votacion esta abierta, hasta cuando, y los pasos", (
 test("una fecha de cierre que ya paso no se promete", () => {
   const respuesta = responder("¿Cómo voto?", "votacion", contexto(), { votacionHasta: "2026-10-10" });
   assert.ok(respuesta);
-  assert.match(respuesta.texto, /está abierta\./);
+  assert.match(respuesta.texto, /está en curso\./);
   assert.doesNotMatch(respuesta.texto, /hasta el/);
 });
 
@@ -152,7 +155,7 @@ test("sin reglamento publicado: las reglas confirmadas, y que lo demas no esta d
   const respuesta = responder("¿Quién puede votar?");
   assert.ok(respuesta);
   assert.match(respuesta.texto, /todavía no está publicado/);
-  assert.match(respuesta.texto, /Un voto por persona/);
+  assert.match(respuesta.texto, /Un vecino, un voto/);
   assert.match(respuesta.texto, /no está definido en el sitio/);
 });
 
@@ -165,6 +168,7 @@ test("con reglamento publicado: los parrafos que hablan de eso", () => {
         "Artículo 2. Pueden votar las personas mayores de 16 años que vivan en el distrito.",
         "Artículo 3. Las ideas se presentan durante la etapa de ideas.",
       ],
+      reglasConfirmadas: [],
     },
   });
   const respuesta = responder("¿Desde qué edad se puede votar?", "ideas", ctx);
@@ -186,6 +190,7 @@ test("pedir el reglamento en general no es 'no encontré eso': esta publicado y 
         "Artículo 4. Cada persona tiene un voto.",
         "Artículo 5. Gana la idea más votada de cada distrito.",
       ],
+      reglasConfirmadas: [],
     },
   });
   for (const pregunta of ["¿Dónde está el reglamento?", "¿Qué dice el reglamento?", "¿Cuáles son las reglas?"]) {

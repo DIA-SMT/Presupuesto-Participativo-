@@ -173,14 +173,14 @@ export function responderSobreElSitio(
     case "votar": {
       const estado =
         edicion.etapa === "votacion"
-          ? `La votación está abierta${hastaEl(edicion.votacionHasta, hoy)}.`
+          ? `La votación está en curso${hastaEl(edicion.votacionHasta, hoy)}. Es presencial, en urnas: no se vota desde el sitio.`
           : votacionTerminada(edicion.etapa)
             ? `La votación ya terminó${
                 contexto.fechasVotacion ? ` (fue ${contexto.fechasVotacion})` : ""
               }. Los resultados están en Transparencia.`
-            : `La votación todavía no está abierta${
+            : `La votación todavía no empezó${
                 contexto.fechasVotacion ? ` (está prevista: ${contexto.fechasVotacion})` : ""
-              }.`;
+              }. Es presencial, en urnas: no se vota desde el sitio.`;
       return {
         texto: conAviso(contexto, [
           estado,
@@ -189,12 +189,9 @@ export function responderSobreElSitio(
           "",
           ...contexto.pasosParaVotar.map((p, i) => `${i + 1}. **${p.titulo}.** ${p.texto}`),
         ]).join("\n"),
-        referencias:
-          edicion.etapa === "votacion"
-            ? [{ titulo: "Votar", url: "/votar" }, ACERCA_DE]
-            : votacionTerminada(edicion.etapa)
-              ? [{ titulo: "Transparencia", url: "/transparencia" }, ACERCA_DE]
-              : [ACERCA_DE],
+        referencias: votacionTerminada(edicion.etapa)
+          ? [{ titulo: "Transparencia", url: "/transparencia" }, ACERCA_DE]
+          : [{ titulo: "Cuándo y dónde se vota", url: "/votar" }, ACERCA_DE],
       };
     }
 

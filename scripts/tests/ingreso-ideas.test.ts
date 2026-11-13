@@ -48,11 +48,13 @@ test("el destino del ingreso es una lista blanca", () => {
 test("la etapa decide si hay ingreso, para cada destino", () => {
   const etapas = ["ideas", "evaluacion", "votacion", "seguimiento", "cerrada"] as const;
   for (const etapa of etapas) {
-    assert.equal(etapaDejaIngresar("votar", etapa), etapa === "votacion", `votar en ${etapa}`);
+    // La votacion es presencial (src/lib/votacion-presencial.ts): no hay
+    // ingreso para votar en ninguna etapa.
+    assert.equal(etapaDejaIngresar("votar", etapa), false, `votar en ${etapa}`);
     assert.equal(etapaDejaIngresar("ideas", etapa), etapa === "ideas", `ideas en ${etapa}`);
     // El modo prueba abre las ideas con la etapa cerrada, y nunca la votacion.
     assert.equal(etapaDejaIngresar("ideas", etapa, true), true, `ideas en ${etapa} en modo prueba`);
-    assert.equal(etapaDejaIngresar("votar", etapa, true), etapa === "votacion");
+    assert.equal(etapaDejaIngresar("votar", etapa, true), false);
   }
   assert.equal(etapaDejaIngresar("ideas", null), false, "sin edicion activa no se entra");
   assert.equal(etapaDejaIngresar("votar", undefined), false);
@@ -99,7 +101,8 @@ test("la otra puerta es la del otro destino, y esta abierta cuando la pedida no"
   assert.equal(etapaDejaIngresar("votar", "ideas"), false);
   assert.equal(etapaDejaIngresar(otroDestino("votar"), "ideas"), true);
   assert.equal(etapaDejaIngresar("ideas", "votacion"), false);
-  assert.equal(etapaDejaIngresar(otroDestino("ideas"), "votacion"), true);
+  // Con la votacion presencial, en la etapa de votacion ninguna puerta abre.
+  assert.equal(etapaDejaIngresar(otroDestino("ideas"), "votacion"), false);
 });
 
 let base: BaseDePrueba;

@@ -18,6 +18,7 @@
  * Sin dependencias de Node: lo usan rutas, paginas y pruebas.
  */
 import type { Etapa } from "@/lib/etapas";
+import { VOTACION_ONLINE_HABILITADA } from "./votacion-presencial";
 
 export type DestinoIngreso = "votar" | "ideas";
 
@@ -89,5 +90,7 @@ export function etapaDejaIngresar(
   fueraDeEtapa = false,
 ): boolean {
   if (destino === "ideas") return etapa === "ideas" || fueraDeEtapa;
-  return etapa === "votacion";
+  // La votacion es presencial (src/lib/votacion-presencial.ts): no se ingresa
+  // a votar por el sitio en ninguna etapa.
+  return VOTACION_ONLINE_HABILITADA && etapa === "votacion";
 }

@@ -5,8 +5,9 @@
  * texto que le pasan, en el servidor o en el cliente.
  *
  * El formato es el de siempre: cada renglon con texto es un parrafo. No
- * interpreta HTML ni markdown; lo que se pegue asi se ve tal cual, con los
- * signos.
+ * interpreta HTML ni markdown, con una sola excepcion: un renglon que empieza
+ * con "## " es un titulo (el nombre de cada norma). Lo demas se ve tal cual,
+ * con los signos.
  */
 
 /**
@@ -29,9 +30,15 @@ export function parrafosDelReglamento(texto: string | null | undefined): string[
 export default function CuerpoReglamento({ parrafos }: { parrafos: string[] }) {
   return (
     <div className="mt-6 max-w-3xl space-y-4 text-[0.9375rem] leading-relaxed">
-      {parrafos.map((parrafo, indice) => (
-        <p key={indice}>{parrafo}</p>
-      ))}
+      {parrafos.map((parrafo, indice) =>
+        parrafo.startsWith("## ") ? (
+          <h3 key={indice} className="pt-4 text-lg font-bold">
+            {parrafo.slice(3)}
+          </h3>
+        ) : (
+          <p key={indice}>{parrafo}</p>
+        ),
+      )}
     </div>
   );
 }

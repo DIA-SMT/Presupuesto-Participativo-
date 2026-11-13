@@ -685,9 +685,9 @@ test("al modelo no llegan vacios ni respuestas inventadas, y si la regla de alca
   // Lo que sabe del sitio sale del sitio: los pasos para votar que publica
   // /acerca-de y, sin reglamento cargado, las reglas confirmadas de /reglamento.
   assert.match(enviados[0].content, /Cómo se vota/);
-  assert.match(enviados[0].content, /Ingresá con CIDITUC/);
+  assert.match(enviados[0].content, /Fijate qué día vota tu distrito/);
   assert.match(enviados[0].content, /reglamento oficial todavía no está publicado/);
-  assert.match(enviados[0].content, /Un voto por persona/);
+  assert.match(enviados[0].content, /Un vecino, un voto/);
   assert.deepEqual(
     enviados.slice(1).map((m) => [m.role, m.content]),
     [

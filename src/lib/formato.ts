@@ -2,9 +2,11 @@
 
 export const ETIQUETA_ESTADO: Record<string, string> = {
   borrador: "Borrador",
-  pendiente: "En evaluación",
-  factible: "Factible",
-  no_factible: "No factible",
+  // Antes de votar solo hay un analisis de prefactibilidad; la evaluacion
+  // tecnica se hace despues, sobre la ganadora (Centros Vecinales, 11/2026).
+  pendiente: "En análisis",
+  factible: "Prefactible",
+  no_factible: "No prefactible",
   integrado: "Integrada con otra idea",
   ganador: "Proyecto ganador",
   // Solo lo ve el panel: una idea descartada queda despublicada.
@@ -16,8 +18,8 @@ export const ETIQUETA_ESTADO: Record<string, string> = {
  * porque "factible" no se dice igual en todas las etapas y por eso no esta aca.
  */
 const DESCRIPCION_ESTADO: Record<string, string> = {
-  pendiente: "Todavía está siendo evaluada por el equipo técnico.",
-  no_factible: "La evaluación técnica determinó que no puede ejecutarse como está presentada.",
+  pendiente: "Todavía está en el análisis de prefactibilidad del equipo del programa.",
+  no_factible: "El análisis de prefactibilidad determinó que no puede ejecutarse como está presentada.",
   integrado: "Se fusionó con otra propuesta parecida para presentarse como un solo proyecto.",
   ganador: "Fue el proyecto más votado de su distrito y se incorpora al presupuesto municipal.",
   // Solo en el panel: una descartada nunca se publica.
@@ -49,7 +51,7 @@ export function descripcionEstado(
   publicada = true,
 ): string | undefined {
   if (estado !== "factible") return DESCRIPCION_ESTADO[estado];
-  const paso = "Pasó la evaluación técnica y presupuestaria";
+  const paso = "Pasó el análisis de prefactibilidad";
   switch (etapa) {
     case "ideas":
     case "evaluacion":
@@ -151,8 +153,8 @@ export type EtapaObra = (typeof ETAPAS_PRESUPUESTO)[number];
 
 export const ETIQUETA_ETAPA: Record<string, string> = {
   ideas: "Presentación de ideas",
-  evaluacion: "Evaluación técnica",
-  votacion: "Votación abierta",
+  evaluacion: "Análisis de prefactibilidad",
+  votacion: "Votación en curso",
   seguimiento: "Seguimiento de obras",
   cerrada: "Edición cerrada",
 };

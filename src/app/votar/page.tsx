@@ -11,11 +11,13 @@ import { getDistritoEnPadron, getEdicionActiva, getTextos, listarIdeas } from "@
 import { getSesionVotante } from "@/lib/sesion";
 import { formatearRango } from "@/lib/formato";
 import { votacionTerminada } from "@/lib/ediciones";
+import { VOTACION_ONLINE_HABILITADA } from "@/lib/votacion-presencial";
+import VotacionPresencial from "./presencial";
 
 export const metadata: Metadata = {
   title: "Votar",
   description:
-    "Votación del Presupuesto Participativo de San Miguel de Tucumán: un voto por persona, en un proyecto del distrito donde vivís.",
+    "Votación del Presupuesto Participativo de San Miguel de Tucumán: presencial, en urnas, en sedes de cada distrito. Cuándo vota tu distrito y qué necesitás.",
 };
 
 export const dynamic = "force-dynamic";
@@ -29,6 +31,19 @@ export default async function Votar() {
       <div className="contenedor py-20">
         <Aviso tono="atencion">Todavía no hay datos cargados.</Aviso>
       </div>
+    );
+  }
+
+  // La votacion es presencial (src/lib/votacion-presencial.ts): ni boleta ni
+  // ingreso, solo cuando, donde y con que se vota.
+  if (!VOTACION_ONLINE_HABILITADA) {
+    return (
+      <VotacionPresencial
+        etapa={edicion.etapa}
+        votacionDesde={edicion.votacionDesde}
+        votacionHasta={edicion.votacionHasta}
+        titulo={textos["votacion-titulo"] ?? "Votación del Presupuesto Participativo"}
+      />
     );
   }
 

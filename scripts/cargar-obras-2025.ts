@@ -18,14 +18,14 @@
  *    Si aparece el numero, se corrige en la base. Lleva una nota en
  *    `notas_migracion` que dice de donde salio.
  *  - Un avance por obra informada, con la nota de prensa del municipio como
- *    link: doce en licitacion (con la fecha de la nota, el presupuesto
- *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras siete quedan
- *    sin avances, y su tarjeta dice "Sin información todavía".
+ *    link: catorce en licitacion (con la fecha de la nota, el presupuesto
+ *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras cinco quedan
+ *    sin avances, y su tarjeta dice "En confección de expediente".
  *
  * Es idempotente: el ganador del distrito 10 se crea solo si el distrito no
  * tiene uno, y un avance no se carga dos veces (mismo proyecto y mismo link).
  * Los datos salen de las notas que paso el equipo el 29/10/2026 y el
- * 06/11/2026 (distritos 5, 12 y 19); ninguna
+ * 06/11/2026 (distritos 5, 12 y 19), y las del 12/11/2026 (distritos 14 y 20); ninguna
  * confirma una adjudicacion, asi que ninguna obra se carga como adjudicada.
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
@@ -157,6 +157,25 @@ const AVANCES: AvanceACargar[] = [
     descripcion:
       "Se abrieron los sobres de la licitación. Presupuesto oficial: $198.816.773,08. Plazo de obra: tres meses.",
     enlace: `${NOTAS}/17769/presupuesto-participativo-licitan-el-proyecto-de-construccion-de-un-playon-depor`,
+  },
+  // Las dos que paso el equipo el 12/11/2026.
+  {
+    // La licitacion abarca el CAC N.º 11 (Larrea 1523) y la Plaza Almirante
+    // Brown, contigua: es una sola obra, la del ganador del distrito 14.
+    slug: "cac-n-11-inclusivo-2",
+    etapa: "licitacion",
+    fecha: "2026-11-11",
+    descripcion:
+      "Se abrieron los sobres de la licitación, que incluye la revalorización de la Plaza Almirante Brown, contigua al CAC. Presupuesto oficial: $413.321.062,34. Plazo de obra: cuatro meses.",
+    enlace: `${NOTAS}/17933/presupuesto-participativo-licitan-obras-de-revalorizacion-del-cac-n-11-y-de-la-p`,
+  },
+  {
+    slug: "centro-deportivo-san-miguel-barrio-cgt",
+    etapa: "licitacion",
+    fecha: "2026-11-11",
+    descripcion:
+      "Se abrieron los sobres de la licitación. Presupuesto oficial: $159.916.963,08. Plazo de obra: dos meses.",
+    enlace: `${NOTAS}/17929/presupuesto-participativo-licitan-la-creacion-de-un-espacio-deportivo-en-la-plaz`,
   },
   {
     slug: URQUIZA.slug,

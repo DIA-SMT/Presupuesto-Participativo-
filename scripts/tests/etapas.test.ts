@@ -469,7 +469,7 @@ test("se proclama solo con la votacion terminada", () => {
 
   // Antes de votar, el motivo dice en que etapa esta.
   assert.match(rechazado(puedeProclamar("ideas")), /Presentación de ideas/);
-  assert.match(rechazado(puedeProclamar("evaluacion")), /Evaluación técnica/);
+  assert.match(rechazado(puedeProclamar("evaluacion")), /Análisis de prefactibilidad/);
 });
 
 test("no se activa otra edicion con la activa en votacion", () => {

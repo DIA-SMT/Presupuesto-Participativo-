@@ -43,7 +43,7 @@ import { portadaSegunEtapa, type AccionPortada } from "./portada";
 const NOVEDADES = 5;
 
 export type ReglamentoDelSitio =
-  | { publicado: true; parrafos: string[] }
+  | { publicado: true; parrafos: string[]; reglasConfirmadas: Explicacion[] }
   | {
       publicado: false;
       /** Lo que muestra /reglamento en su lugar (clave `reglamento-aviso`). */
@@ -90,7 +90,10 @@ function cargado(valor: string | undefined): string | null {
 
 function reglamentoDe(textos: Record<string, string>): ReglamentoDelSitio {
   const parrafos = parrafosDelReglamento(textos["reglamento-cuerpo"]);
-  if (parrafos.length) return { publicado: true, parrafos };
+  // Las reglas de como funciona van tambien con el texto oficial: /reglamento
+  // las muestra arriba, y dicen cosas que la norma no (las fechas, la nota de
+  // recepcion).
+  if (parrafos.length) return { publicado: true, parrafos, reglasConfirmadas: REGLAS_CONFIRMADAS };
   return {
     publicado: false,
     aviso:
@@ -251,6 +254,9 @@ export function contextoParaElModelo(contexto: ContextoDelSitio): string {
           "# Reglamento",
           "",
           "El reglamento oficial está publicado en /reglamento. Ante cualquier pregunta sobre reglas (quién puede votar o presentar, requisitos, plazos, desempates, reclamos), usá consultar_reglamento antes de contestar y respondé con lo que dice. Si no lo dice, decí que el reglamento no lo menciona.",
+          "",
+          "Además, el programa informó cómo funciona esta convocatoria (también está en /reglamento):",
+          lista(contexto.reglamento.reglasConfirmadas),
         ].join("\n")
       : [
           "# Reglamento",

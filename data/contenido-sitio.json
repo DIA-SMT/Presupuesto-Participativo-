@@ -13,21 +13,21 @@
     "home-bloque1-titulo": "¿Qué es?",
     "home-bloque1-texto": "El Presupuesto Participativo es una herramienta de participación ciudadana que permite a vecinos y vecinas de San Miguel de Tucumán proponer, debatir y decidir de manera directa cómo se invierte una parte del presupuesto municipal.",
     "home-bloque2-titulo": "¿Cómo puedo participar?",
-    "home-bloque2-texto": "Presentá tu idea para tu barrio durante la etapa de ideas y después votá el proyecto de tu distrito que más te interese. Para votar necesitás estar empadronado como ciudadano digital (CIDITUC).",
+    "home-bloque2-texto": "Presentá tu idea para tu barrio durante la etapa de ideas, por la web o en persona, y después votá en tu distrito el proyecto que más te interese. La votación es presencial, en urnas: solo necesitás tu DNI.",
     "home-bloque3-titulo": "¿Y después qué pasa?",
-    "home-bloque3-texto": "Cerrada la etapa de ideas, las propuestas se evalúan técnica y presupuestariamente. Las que resultan factibles pasan a la votación abierta y el proyecto más votado de cada distrito se incorpora al presupuesto municipal del año siguiente.",
+    "home-bloque3-texto": "Antes de la votación, las propuestas pasan por un análisis de prefactibilidad del equipo del programa: las prefactibles se publican y se votan en cada distrito. Después, la propuesta ganadora de cada distrito pasa por la evaluación técnica, urbanística y presupuestaria y se incorpora al presupuesto municipal del año siguiente.",
     "home-mapa-titulo": "Los 20 distritos",
     "home-mapa-texto": "Cada distrito elige su propio proyecto. Tocá tu distrito en el mapa para ver las ideas presentadas y el proyecto ganador.",
     "home-novedades-titulo": "Novedades y próximos encuentros",
     "home-novedades-texto": "Agendate la reunión de tu barrio y presentá tus ideas.",
     "proyectos-titulo": "Proyectos e ideas",
-    "proyectos-subtitulo": "Todas las ideas presentadas por los vecinos, su evaluación técnica y los proyectos ganadores de cada distrito.",
+    "proyectos-subtitulo": "Todas las ideas presentadas por los vecinos, su análisis de prefactibilidad y los proyectos ganadores de cada distrito.",
     "distritos-titulo": "Distritos",
     "distritos-subtitulo": "San Miguel de Tucumán está dividida en 20 distritos. Cada uno elige su propio proyecto.",
     "transparencia-titulo": "Transparencia y ejecución",
     "transparencia-subtitulo": "En qué etapa está cada proyecto ganador y cuánto se ejecutó de su presupuesto.",
     "votacion-titulo": "Votación del Presupuesto Participativo",
-    "votacion-subtitulo": "Tenés 1 voto disponible y podés votar un proyecto del distrito donde vivís.",
+    "votacion-subtitulo": "La votación es presencial, en urnas, en sedes de cada distrito.",
     "ideas-nueva-titulo": "Presentá tu idea",
     "ideas-nueva-subtitulo": "Contanos qué problema querés resolver en tu barrio y cómo lo resolverías. Marcá el lugar en el mapa: el distrito se completa solo.",
     "chat-titulo": "Consultas",
@@ -35,7 +35,7 @@
     "contacto-organismo": "Municipalidad de San Miguel de Tucumán",
     "contacto-direccion": "9 de Julio 570, San Miguel de Tucumán, Tucumán T4000IHL, Argentina",
     "contacto-telefono": "381 451 6500 int. 6517",
-    "reglamento-aviso": "El reglamento general del Presupuesto Participativo todavía no está publicado en este sitio. En el sitio anterior la página figuraba vacía; hay que conseguir el texto oficial y cargarlo desde el backoffice."
+    "reglamento-aviso": "El texto oficial del reglamento todavía no está publicado en este sitio."
   },
   "faq": [
     {
@@ -48,23 +48,23 @@
     },
     {
       "pregunta": "¿Cómo puedo participar?",
-      "respuesta": "De dos maneras. **Acercando tu idea**: presentás una propuesta para tu barrio, que después puede transformarse en proyecto. **Eligiendo**: participás de la votación de los proyectos que pasaron la evaluación técnica en tu distrito."
+      "respuesta": "De dos maneras. **Acercando tu idea**: presentás una propuesta para tu barrio, por la web o en persona, que después puede transformarse en proyecto. **Eligiendo**: votás en tu distrito, en forma presencial, entre los proyectos que pasaron el análisis de prefactibilidad."
     },
     {
-      "pregunta": "¿Cómo me empadrono para votar?",
-      "respuesta": "De manera virtual, haciéndote ciudadano digital (CIDITUC) a través de la página oficial de la Municipalidad; o de manera presencial en las asambleas participativas, donde el equipo te ayuda a inscribirte al CIDITUC."
+      "pregunta": "¿Qué necesito para votar?",
+      "respuesta": "Ser mayor de 16 años y llevar tu DNI, con el que acreditás que vivís en el distrito. La votación es presencial, en urnas, y no hace falta CIDITUC. Las personas extranjeras sin ciudadanía pueden votar si acreditan al menos 2 años de residencia efectiva en la ciudad."
     },
     {
       "pregunta": "¿Cuántas veces puedo votar?",
-      "respuesta": "Tenés un solo voto y lo usás en un proyecto del distrito donde vivís. El sistema no permite votar dos veces ni votar en un distrito que no sea el tuyo."
+      "respuesta": "Tenés un solo voto y lo usás en un proyecto del distrito donde vivís. El voto es personal: no se puede votar en nombre de otra persona."
     },
     {
       "pregunta": "¿Qué pasa con las ideas que no ganan?",
-      "respuesta": "Quedan publicadas en el sitio con su evaluación técnica. Una idea puede ser declarada factible o no factible, o integrarse con otra propuesta parecida para presentarse como un solo proyecto. Todas las ideas de cada edición quedan en el archivo del sitio."
+      "respuesta": "Quedan publicadas en el sitio con el resultado de su análisis: prefactible, no prefactible, o integrada con otra propuesta parecida. Si hay crédito suficiente, los proyectos menos votados pueden ejecutarse total o parcialmente, como prevé el Decreto 0981/S.Gral./2024."
     },
     {
       "pregunta": "¿Cómo sé si la obra de mi barrio se está haciendo?",
-      "respuesta": "Todavía no se puede: el municipio no informó los montos ni el avance de ninguna obra. La ficha de cada proyecto ganador ya tiene el lugar donde se van a publicar la etapa, el monto y el historial de avance en cuanto los informe. En **Cómo participar** está explicado por qué todavía no hay montos publicados."
+      "respuesta": "En **Transparencia** y en la ficha de cada proyecto ganador está la etapa de su obra y las novedades que publicó el municipio, como las licitaciones. Las obras que todavía no tienen novedades figuran en confección de expediente, el paso previo a la licitación."
     }
   ],
   "cronograma2025": [

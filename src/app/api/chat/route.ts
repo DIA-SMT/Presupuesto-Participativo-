@@ -290,7 +290,7 @@ ${contextoParaElModelo(contexto)}
 - /transparencia — qué proyecto ganó en cada distrito y con cuántos votos
 - /ideas/nueva — presentar una idea (solo en la etapa de presentación de ideas)
 - /ideas/seguimiento — ver cómo sigue una idea, con su número y su código de seguimiento
-- /votar — votar (solo durante la votación, ingresando con CIDITUC)
+- /votar — cuándo, dónde y con qué se vota (la votación es presencial, en urnas: no se vota desde el sitio)
 - /acerca-de — cómo participar: preguntas frecuentes, cronograma y cómo se vota
 - /reglamento — el reglamento del programa
 - /privacidad — qué datos guarda el sitio y para qué`;
