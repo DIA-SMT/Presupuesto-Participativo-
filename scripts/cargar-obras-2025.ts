@@ -18,14 +18,16 @@
  *    Si aparece el numero, se corrige en la base. Lleva una nota en
  *    `notas_migracion` que dice de donde salio.
  *  - Un avance por obra informada, con la nota de prensa del municipio como
- *    link: catorce en licitacion (con la fecha de la nota, el presupuesto
- *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras cinco quedan
+ *    link: dieciseis en licitacion (con la fecha de la nota, el presupuesto
+ *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras tres quedan
  *    sin avances, y su tarjeta dice "En confección de expediente".
  *
  * Es idempotente: el ganador del distrito 10 se crea solo si el distrito no
- * tiene uno, y un avance no se carga dos veces (mismo proyecto y mismo link).
+ * tiene uno, y un avance no se carga dos veces (mismo proyecto y mismo link;
+ * sin link, mismo proyecto, etapa y fecha).
  * Los datos salen de las notas que paso el equipo el 29/10/2026 y el
- * 06/11/2026 (distritos 5, 12 y 19), y las del 12/11/2026 (distritos 14 y 20); ninguna
+ * 06/11/2026 (distritos 5, 12 y 19), las del 12/11/2026 (distritos 14 y 20) y los datos que mando
+ * el equipo por mensaje el 13/11/2026, sin nota de prensa (distritos 9 y 13); ninguna
  * confirma una adjudicacion, asi que ninguna obra se carga como adjudicada.
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
@@ -57,7 +59,8 @@ type AvanceACargar = {
   etapa: "licitacion" | "ejecucion";
   fecha: string;
   descripcion: string;
-  enlace: string;
+  /** La nota de prensa. Sin nota (datos que paso el equipo por mensaje), null. */
+  enlace: string | null;
 };
 
 const AVANCES: AvanceACargar[] = [
@@ -177,6 +180,23 @@ const AVANCES: AvanceACargar[] = [
       "Se abrieron los sobres de la licitación. Presupuesto oficial: $159.916.963,08. Plazo de obra: dos meses.",
     enlace: `${NOTAS}/17929/presupuesto-participativo-licitan-la-creacion-de-un-espacio-deportivo-en-la-plaz`,
   },
+  // Las dos que paso el equipo por mensaje el 13/11/2026, sin nota de prensa.
+  {
+    slug: "puesta-en-valor-de-la-plaza-pedro-cossio-paz-de-barrio-padilla",
+    etapa: "licitacion",
+    fecha: "2026-10-30",
+    descripcion:
+      "Se abrieron los sobres de la licitación. Presupuesto oficial: $215.733.316,31. Plazo de obra: tres meses.",
+    enlace: null,
+  },
+  {
+    slug: "plaza-de-juegos-y-pista-de-salud-barrio-lincoln",
+    etapa: "licitacion",
+    fecha: "2026-10-28",
+    descripcion:
+      "Se abrieron los sobres de la licitación. Presupuesto oficial: $261.895.281,71. Plazo de obra: tres meses.",
+    enlace: null,
+  },
   {
     slug: URQUIZA.slug,
     etapa: "ejecucion",
@@ -293,7 +313,15 @@ async function main() {
       const [repetido] = await tx
         .select({ id: avances.id })
         .from(avances)
-        .where(and(eq(avances.ideaId, idea.id), eq(avances.enlace, avance.enlace)))
+        .where(
+          avance.enlace
+            ? and(eq(avances.ideaId, idea.id), eq(avances.enlace, avance.enlace))
+            : and(
+                eq(avances.ideaId, idea.id),
+                eq(avances.etapa, avance.etapa),
+                eq(avances.fecha, avance.fecha),
+              ),
+        )
         .limit(1);
       if (repetido) {
         console.log(`  ya estaba · ${idea.titulo}`);
@@ -325,7 +353,7 @@ async function main() {
         entidadId: creado.id,
         entidadEtiqueta: `${ETIQUETA[avance.etapa]} — ${idea.titulo}`,
         valorAnterior: null,
-        valorNuevo: `${ETIQUETA[avance.etapa]} desde ${avance.fecha} · ${avance.descripcion} · ${avance.enlace}`,
+        valorNuevo: `${ETIQUETA[avance.etapa]} desde ${avance.fecha} · ${avance.descripcion}${avance.enlace ? ` · ${avance.enlace}` : ""}`,
       });
     }
   });
