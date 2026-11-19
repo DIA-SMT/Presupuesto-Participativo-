@@ -23,7 +23,7 @@ import { getEdicionActiva } from "@/db/queries";
 import { crearIdea } from "@/lib/alta-idea";
 import { codigoSeguimiento, VERSION_CONSENTIMIENTO } from "@/lib/avisos";
 import { consumirDelVecino } from "@/lib/rate-limit";
-import { altaIdea } from "@/lib/idea-esquema";
+import { altaIdea, MENSAJE_FALTA_CONTACTO } from "@/lib/idea-esquema";
 import { cargaFueraDeEtapa } from "@/lib/modo-prueba";
 import { AVISO_POR_MAIL_HABILITADO } from "@/lib/aviso-por-mail";
 import { exigirMismoOrigen } from "@/lib/origen";
@@ -104,6 +104,13 @@ export async function POST(request: Request) {
   try {
     datos = esquema.parse(sinContacto(await request.json()));
   } catch (causa) {
+    // Sin telefono ni correo se dice con todas las letras, no como un campo.
+    if (
+      causa instanceof z.ZodError &&
+      causa.issues.some((i) => i.message === MENSAJE_FALTA_CONTACTO)
+    ) {
+      return Response.json({ error: MENSAJE_FALTA_CONTACTO }, { status: 400 });
+    }
     const detalle =
       causa instanceof z.ZodError
         ? causa.issues.map((i) => i.path.join(".")).join(", ")

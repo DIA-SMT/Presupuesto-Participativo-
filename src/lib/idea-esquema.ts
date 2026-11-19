@@ -67,7 +67,19 @@ export const contenidoIdea = z.object({
 
 export type ContenidoIdea = z.infer<typeof contenidoIdea>;
 
-/** El alta completa: contenido + ubicacion + contacto opcional. */
+/** Lo que dice el formulario y el servidor cuando no hay telefono ni correo. */
+export const MENSAJE_FALTA_CONTACTO =
+  "Dejanos un teléfono o un correo: el equipo te va a contactar para formalizar la idea.";
+
+/** Si hay telefono o correo escritos (con algo mas que espacios). */
+export function tieneContacto(
+  telefono: string | null | undefined,
+  correo: string | null | undefined,
+): boolean {
+  return Boolean(telefono?.trim() || correo?.trim());
+}
+
+/** El alta completa: contenido + ubicacion + contacto (telefono o correo, al menos uno). */
 export const altaIdea = contenidoIdea
   .extend({
     lat: z.number().min(-90).max(90),
@@ -75,7 +87,7 @@ export const altaIdea = contenidoIdea
     autorNombre: z.string().trim().max(LARGOS.autorNombre).nullish(),
     /** La organizacion en cuyo nombre se presenta; vacio o null, ninguna. */
     organizacion: z.string().trim().max(LARGOS.organizacion).nullish(),
-    /** Opcional. Solo lo ve el equipo, y se borra al cerrar la edicion. */
+    /** Telefono o correo, al menos uno. Solo lo ve el equipo, y se borra al cerrar la edicion. */
     autorTelefono: z.literal("").or(telefono).nullish(),
     autorEmail: z
       .string()
@@ -95,6 +107,13 @@ export const altaIdea = contenidoIdea
   .refine((datos) => !datos.autorAvisos || Boolean(datos.autorEmail), {
     message: "Falta el correo para los avisos.",
     path: ["autorEmail"],
+  })
+  // Al menos un contacto: el equipo llama a cada autor para la nota de
+  // recepcion presencial (decision de noviembre de 2026). Antes los dos eran
+  // opcionales y quedaron ideas sin forma de ubicar a quien las presento.
+  .refine((datos) => tieneContacto(datos.autorTelefono, datos.autorEmail), {
+    message: MENSAJE_FALTA_CONTACTO,
+    path: ["autorTelefono"],
   });
 
 /**
