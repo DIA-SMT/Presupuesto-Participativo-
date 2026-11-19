@@ -14,8 +14,9 @@
  * el nombre de la propuesta, la organizacion y un telefono opcional. La
  * categoria ya no se pide: la asigna el equipo al evaluar.
  *
- * Datos personales: el telefono volvio con el formulario 2026, opcional, solo
- * para el equipo y borrado al cerrar la edicion. El correo HOY NO se pide: la
+ * Datos personales: telefono o correo, al menos uno (desde noviembre de 2026,
+ * para la nota de recepcion), solo para el equipo y borrados al cerrar la
+ * edicion. El correo HOY NO se pide: la
  * casilla "Quiero dejar mi correo..." esta apagada con
  * AVISO_POR_MAIL_HABILITADO (src/lib/aviso-por-mail.ts) porque el envio de
  * avisos no existe todavia. El codigo de la casilla queda, listo para cuando
@@ -102,9 +103,9 @@ const LARGO_TELEFONO = 30;
 /**
  * El telefono, con la misma regla que el servidor (`telefono` en
  * idea-esquema.ts): numeros con espacios, guiones o parentesis, entre 6 y 15
- * digitos. Vacio vale: es opcional.
+ * digitos. Vacio vale: alcanza con que haya telefono o correo.
  */
-/** Vacio vale (es opcional); escrito, tiene que tener forma de correo. */
+/** Vacio vale (alcanza con el telefono); escrito, tiene que tener forma de correo. */
 function correoValido(valor: string): boolean {
   const limpio = valor.trim();
   return !limpio || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpio);
@@ -128,6 +129,13 @@ type CampoLargo = "problema" | "solucion" | "beneficios";
  * servidor; esto es para poder avisar antes de enviar.
  */
 const MINIMOS = { titulo: 8, problema: 30, solucion: 30 } as const;
+
+/**
+ * Telefono o correo, al menos uno: copiado de MENSAJE_FALTA_CONTACTO en
+ * idea-esquema.ts por la misma razon. Cada uno solo, vacio vale.
+ */
+const MENSAJE_FALTA_CONTACTO =
+  "Dejanos un teléfono o un correo: el equipo te va a contactar para formalizar la idea.";
 
 /**
  * Los cinco pasos, en el orden en que se preguntan.
@@ -377,11 +385,14 @@ export default function FormularioIdea({
     if (valores.conOrganizacion === "si" && !valores.organizacion.trim()) {
       return "Escribí el nombre de la organización, o marcá que no la presentás en nombre de una.";
     }
+    if (!valores.autorTelefono.trim() && !valores.autorEmail.trim()) {
+      return MENSAJE_FALTA_CONTACTO;
+    }
     if (!telefonoValido(valores.autorTelefono)) {
-      return "Revisá el teléfono: entre 6 y 15 números, con espacios o guiones si querés. Es opcional.";
+      return "Revisá el teléfono: entre 6 y 15 números, con espacios o guiones si querés.";
     }
     if (!correoValido(valores.autorEmail)) {
-      return "Revisá el correo: le falta la arroba o el dominio. Es opcional.";
+      return "Revisá el correo: le falta la arroba o el dominio.";
     }
     if (avisos && !valores.autorEmail.trim()) {
       return "Dejaste marcada la casilla de avisos: escribí tu correo o desmarcala.";
@@ -1365,9 +1376,11 @@ export default function FormularioIdea({
             )}
           </fieldset>
 
-          <h3 className="pt-2 text-base font-bold">{autor ? "Tus datos" : "Tus datos (opcionales)"}</h3>
+          <h3 className="pt-2 text-base font-bold">Tus datos</h3>
           <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
-            Ninguno de estos datos se publica. Al enviar la idea te vamos a dar un{" "}
+            Dejanos <strong>al menos un teléfono o un correo</strong>: el equipo del programa te va a
+            contactar para formalizar la idea con la nota de recepción. Ninguno de estos datos se
+            publica. Al enviar la idea te vamos a dar un{" "}
             <strong>código de seguimiento</strong>: con ese código y el de tu propuesta podés ver
             cuando quieras cómo sigue.
           </p>
@@ -1375,13 +1388,13 @@ export default function FormularioIdea({
           {(autor?.email || autor?.telefono) && (
             <p className="text-sm" style={{ color: "var(--texto-suave)" }}>
               Completamos el contacto con los datos de tu cuenta de CIDITUC. Revisalos: podés
-              corregirlos o borrarlos, y guardamos solo lo que quede escrito.
+              corregirlos o borrar uno, y guardamos solo lo que quede escrito.
             </p>
           )}
 
           <Campo
-            etiqueta="Teléfono de contacto (opcional)"
-            ayuda="Por si el equipo necesita consultarte algo de la propuesta. Solo lo ve el equipo y se borra cuando cierra el proceso."
+            etiqueta="Teléfono de contacto"
+            ayuda="Para que el equipo te contacte por la nota de recepción o te consulte algo de la propuesta. Solo lo ve el equipo y se borra cuando cierra el proceso."
           >
             <input
               name="autorTelefono"
@@ -1398,7 +1411,7 @@ export default function FormularioIdea({
           </Campo>
 
           <Campo
-            etiqueta="Correo de contacto (opcional)"
+            etiqueta="Correo de contacto"
             ayuda="Para lo mismo que el teléfono: solo lo ve el equipo, no te vamos a mandar publicidad y se borra cuando cierra el proceso."
           >
             <input

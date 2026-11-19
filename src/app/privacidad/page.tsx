@@ -104,27 +104,32 @@ export default async function Privacidad() {
         </Bloque>
 
         {/* --- Caracter facultativo del contacto --------------------------- */}
-        <Bloque titulo="3. El teléfono y el correo son facultativos: qué pasa si no los dejás">
+        <Bloque titulo="3. Para presentar una idea por la web hace falta un teléfono o un correo">
           <p>
-            Dejar tu teléfono y tu correo es <strong>opcional</strong>. Si ingresaste con CIDITUC,
-            el formulario los muestra completos con los datos de tu cuenta: los podés corregir o
-            borrar, y guardamos solo lo que quede escrito al enviar la idea.{" "}
-            <strong>No dejarlos no afecta en nada la evaluación</strong> de tu propuesta: tu idea se
-            evalúa con los mismos criterios que todas las demás y puede ser votada y ganar igual.
+            Para presentar una idea desde este sitio tenés que dejar{" "}
+            <strong>al menos uno de los dos</strong>: tu teléfono o tu correo. Toda idea se
+            formaliza después con una nota de recepción presencial, y el equipo del programa te
+            contacta por ese medio para hacerla. Si ingresaste con CIDITUC, el formulario los
+            muestra completos con los datos de tu cuenta: los podés corregir o borrar uno, y
+            guardamos solo lo que quede escrito al enviar la idea.
           </p>
           <p>
-            Si no los dejás, el equipo no te va a poder consultar nada de tu propuesta. Para saber
-            cómo sigue está el{" "}
-            <strong>código de seguimiento</strong> que te damos al enviar la idea: con ese código y
-            el número de tu idea entrás a{" "}
+            Si no querés dejar ninguno, podés presentar la idea en persona, en Ejército del Norte 410
+            (Dirección de Centros Vecinales) o en los Operativos Integrales Municipales. El dato que
+            dejes no cambia la evaluación: tu idea se evalúa con los mismos criterios que todas las
+            demás.
+          </p>
+          <p>
+            Para saber cómo sigue tu idea está el <strong>código de seguimiento</strong> que te damos
+            al enviarla: con ese código y el número de tu idea entrás a{" "}
             <Link href="/ideas/seguimiento" className="font-semibold underline">
               Seguí tu idea
             </Link>{" "}
             y ves en qué etapa está y la devolución del equipo, cuantas veces quieras.
           </p>
           <p>
-            Si los dejás y después cambiás de idea, podés pedir que los borremos y los borramos: la
-            idea sigue su curso sin ningún cambio.
+            Si después querés que borremos tu contacto, lo borramos cuando la idea ya esté
+            formalizada: la idea sigue su curso sin ningún cambio.
           </p>
           <p>
             Un dato inexacto (por ejemplo un correo mal escrito) solo tiene una consecuencia: no
@@ -327,10 +332,10 @@ const DATOS: Array<{ dato: string; caracter: string; finalidad: string; color: s
   },
   {
     dato: "Tu teléfono y tu correo de contacto",
-    caracter: "Facultativo",
+    caracter: "Obligatorio uno de los dos para presentar una idea por la web",
     color: "var(--acento-texto)",
     finalidad:
-      "El formulario los trae completos desde tu cuenta de CIDITUC y los podés corregir o borrar. Si los dejás, los usa solo el equipo que evalúa la propuesta, para consultarte algo que no se entienda. No se publican, no se comparten y no se usan para ninguna otra comunicación. Se borran cuando cierra el proceso.",
+      "El formulario los trae completos desde tu cuenta de CIDITUC y los podés corregir o borrar uno. Los usa solo el equipo del programa, para contactarte por la nota de recepción que formaliza tu idea y para consultarte algo que no se entienda. No se publican, no se comparten y no se usan para ninguna otra comunicación. Se borran cuando cierra el proceso.",
   },
   {
     dato: "Tu identidad de CIDITUC, al presentar una idea",
