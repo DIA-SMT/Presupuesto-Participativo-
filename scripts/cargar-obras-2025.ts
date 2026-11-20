@@ -18,8 +18,8 @@
  *    Si aparece el numero, se corrige en la base. Lleva una nota en
  *    `notas_migracion` que dice de donde salio.
  *  - Un avance por obra informada, con la nota de prensa del municipio como
- *    link: dieciseis en licitacion (con la fecha de la nota, el presupuesto
- *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras tres quedan
+ *    link: diecisiete en licitacion (con la fecha de la nota, el presupuesto
+ *    oficial y el plazo) y la Plaza Urquiza en obra. Las otras dos quedan
  *    sin avances, y su tarjeta dice "En confección de expediente".
  *
  * Es idempotente: el ganador del distrito 10 se crea solo si el distrito no
@@ -27,7 +27,8 @@
  * sin link, mismo proyecto, etapa y fecha).
  * Los datos salen de las notas que paso el equipo el 29/10/2026 y el
  * 06/11/2026 (distritos 5, 12 y 19), las del 12/11/2026 (distritos 14 y 20) y los datos que mando
- * el equipo por mensaje el 13/11/2026, sin nota de prensa (distritos 9 y 13); ninguna
+ * el equipo por mensaje el 13/11/2026, sin nota de prensa (distritos 9 y 13), y la
+ * nota del 18/11/2026 (distrito 16); ninguna
  * confirma una adjudicacion, asi que ninguna obra se carga como adjudicada.
  */
 // Primero el entorno: ver scripts/cargar-env.ts (el orden de imports importa).
@@ -196,6 +197,15 @@ const AVANCES: AvanceACargar[] = [
     descripcion:
       "Se abrieron los sobres de la licitación. Presupuesto oficial: $261.895.281,71. Plazo de obra: tres meses.",
     enlace: null,
+  },
+  // La nota del 18/11/2026: dos oferentes, sin adjudicacion todavia.
+  {
+    slug: "proyecto-de-puesta-en-valor-club-social-y-deportivo-barrio-20-de-junio",
+    etapa: "licitacion",
+    fecha: "2026-11-18",
+    descripcion:
+      "Se abrieron los sobres de la licitación, con dos ofertas. Presupuesto oficial: $263.143.285,10. Plazo de obra: tres meses.",
+    enlace: `${NOTAS}/18114/presupuesto-participativo-licitan-obras-de-puesta-en-valor-del-club-social-y-dep`,
   },
   {
     slug: URQUIZA.slug,
