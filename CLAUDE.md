@@ -85,7 +85,9 @@ través de `src/lib/modelo.ts`. Leer el `README.md` para el mapa completo del pr
   `limpiar-pruebas --confirmar`, `cargar-obras-2025 --confirmar`) se
   niegan a correr contra una base remota salvo con `--produccion`
   (`npm run x -- --produccion`: sin el `--` npm se queda el flag), y con el
-  flag muestran el host y esperan 5 s antes de escribir. El candado es
+  flag muestran el host y esperan 5 s antes de escribir. En un servidor con la
+  base de produccion en la misma maquina (la VPS, `127.0.0.1`), su `.env` lleva
+  `BASE_DE_PRODUCCION=1` y los candados la tratan igual que una remota. El candado es
   `scripts/produccion.ts`: todo script nuevo que escriba en la base lo llama
   antes de la primera consulta. `setup` se niega siempre con una base remota, y
   `seed -- --produccion` solo corre sobre una base vacía y no crea cuentas del

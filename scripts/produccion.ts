@@ -32,12 +32,37 @@ export const FLAG_PRODUCCION = "--produccion";
  */
 const HOSTS_LOCALES = new Set(["localhost", "127.0.0.1", "::1"]);
 
+/**
+ * La variable que marca la base de ESTA maquina como la de produccion.
+ *
+ * En la VPS el Postgres de produccion esta en el mismo servidor (127.0.0.1):
+ * por el host solo, el candado la tomaria por una base de desarrollo, y
+ * `npm run setup` o `seed` correrian sobre el padron de verdad sin pedir nada.
+ * Con BASE_DE_PRODUCCION=1 en el .env del servidor, una URL local cuenta como
+ * produccion para todos los candados (los scripts, setup, escenario y
+ * drizzle-kit): tipo "remota", con el mismo flag y la misma espera.
+ *
+ * A diferencia de DRIZZLE_KIT_PRODUCCION, esta SI va escrita en el archivo:
+ * no habilita nada, al reves, exige el flag. Solo vale "1".
+ */
+export const VARIABLE_BASE_DE_PRODUCCION = "BASE_DE_PRODUCCION";
+
+/** Si el entorno marca la base local como la de produccion. */
+export function baseMarcadaComoProduccion(
+  valor: string | undefined = process.env[VARIABLE_BASE_DE_PRODUCCION],
+): boolean {
+  return valor?.trim() === "1";
+}
+
 export type DestinoBase =
   /** PGlite embebido: sin DATABASE_URL, o con `pglite:<carpeta>`. */
   | { tipo: "pglite"; descripcion: string }
   /** Un Postgres en esta maquina (localhost). */
   | { tipo: "postgres-local"; descripcion: string }
-  /** Un Postgres en otra maquina. Supabase cae aca. */
+  /**
+   * La base de produccion: un Postgres en otra maquina (Supabase cae aca), o
+   * uno local marcado con BASE_DE_PRODUCCION=1 (la VPS).
+   */
   | { tipo: "remota"; descripcion: string }
   /**
    * Un valor que no se sabe a donde va: un esquema que src/db no reconoce, o
@@ -58,8 +83,23 @@ export type DestinoBase =
  * migrar.ts, que decide igual) escribiria en la PGlite local mientras quien lo
  * corrio cree haber tocado produccion.
  */
-export function destinoDeLaBase(urlCruda: string | undefined): DestinoBase {
+export function destinoDeLaBase(
+  urlCruda: string | undefined,
+  marcadaComoProduccion: boolean = baseMarcadaComoProduccion(),
+): DestinoBase {
   const url = (urlCruda ?? "").trim();
+
+  // Marcada como produccion pero sin un Postgres: algo falta en el .env del
+  // servidor. Escribir en una PGlite ahi seria hacerle creer a quien corre el
+  // script que toco produccion.
+  if (marcadaComoProduccion && (!url || url.startsWith("pglite:"))) {
+    return {
+      tipo: "desconocida",
+      descripcion:
+        `${VARIABLE_BASE_DE_PRODUCCION}=1 pero DATABASE_URL no apunta a un Postgres` +
+        " (falta en el .env del servidor, o es pglite:)",
+    };
+  }
 
   if (!url) return { tipo: "pglite", descripcion: "PGlite en ./data/pg" };
   if (url.startsWith("pglite:")) {
@@ -100,9 +140,13 @@ export function destinoDeLaBase(urlCruda: string | undefined): DestinoBase {
     `${host || "(sin host)"}${leida.port ? `:${leida.port}` : ""}` +
     (base ? `/${base}` : "");
 
-  return HOSTS_LOCALES.has(host.toLowerCase())
-    ? { tipo: "postgres-local", descripcion: `Postgres local en ${descripcion}` }
-    : { tipo: "remota", descripcion };
+  if (!HOSTS_LOCALES.has(host.toLowerCase())) return { tipo: "remota", descripcion };
+  return marcadaComoProduccion
+    ? {
+        tipo: "remota",
+        descripcion: `${descripcion} (Postgres de produccion en este servidor: ${VARIABLE_BASE_DE_PRODUCCION}=1)`,
+      }
+    : { tipo: "postgres-local", descripcion: `Postgres local en ${descripcion}` };
 }
 
 /** `new URL` devuelve las IPv6 entre corchetes (`[::1]`); la lista no los lleva. */
@@ -247,7 +291,7 @@ export async function exigirPermisoDeEscritura(comando: string): Promise<{
 
   if (veredicto.produccion) {
     console.log(
-      `\n>>> BASE REMOTA: ${veredicto.destino.descripcion}` +
+      `\n>>> BASE DE PRODUCCION: ${veredicto.destino.descripcion}` +
         `\n>>> ${comando} va a escribir ahi. Ctrl+C en los proximos ` +
         `${SEGUNDOS_PARA_CANCELAR} segundos para cancelar.\n`,
     );
