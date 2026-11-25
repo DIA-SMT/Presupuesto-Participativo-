@@ -15,6 +15,7 @@
  * no puede mandar application/json. Sacar a alguien de su sesion desde otra
  * pagina seria una molestia y no un robo, pero no cuesta nada impedirlo.
  */
+import { urlDelPedido } from "@/lib/sitio";
 import { NextResponse } from "next/server";
 import { destinoDeIngreso, puertaDeIngreso } from "@/lib/ingreso-vecino";
 import { exigirMismoOrigen } from "@/lib/origen";
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
 
   // Sobre la URL con la que llego el pedido, como la vuelta de CIDITUC: asi la
   // persona sigue en el mismo sitio (desarrollo, vista previa o produccion).
-  const destino = new URL(puertaDeIngreso(para), request.url);
+  const destino = new URL(puertaDeIngreso(para), urlDelPedido(request));
   destino.searchParams.set("salida", "1");
   // 303: la respuesta a un POST se sigue con un GET. Con el 307 que Next usa
   // por defecto, el navegador repetiria el POST contra /ingresar.

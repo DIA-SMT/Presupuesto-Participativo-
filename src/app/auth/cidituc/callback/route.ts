@@ -8,6 +8,7 @@
  * Todo lo que sabe de CIDITUC vive en src/lib/cidituc.ts; aca estan las reglas
  * del sitio: quien puede abrir sesion, que se guarda y como se vuelve.
  */
+import { urlDelPedido } from "@/lib/sitio";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { COOKIE_DESTINO, COOKIE_ESTADO, consultarPerfil, mismoEstado } from "@/lib/cidituc";
@@ -46,7 +47,7 @@ function volver(request: Request, destino: DestinoIngreso, motivo?: string): Nex
   // 3000, y un despliegue de vista previa la sacaba a produccion.
   const vuelta = new URL(
     motivo ? puertaDeIngreso(destino) : PANTALLA_DEL_DESTINO[destino],
-    request.url,
+    urlDelPedido(request),
   );
   if (motivo) vuelta.searchParams.set("error", motivo);
   const respuesta = NextResponse.redirect(vuelta);

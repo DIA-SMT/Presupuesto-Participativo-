@@ -11,6 +11,7 @@
  * src/lib/ingreso-vecino.ts). Sin el parametro, el destino sale de la etapa: en
  * la de ideas es presentar una idea, en cualquier otra es votar.
  */
+import { urlDelPedido } from "@/lib/sitio";
 import { NextResponse } from "next/server";
 import { getEdicionActiva, type Edicion } from "@/db/queries";
 import {
@@ -34,7 +35,7 @@ export const runtime = "nodejs";
 
 /** Vuelta a la puerta del destino, con el motivo para que /ingresar lo explique. */
 function volverALaPuerta(request: Request, destino: DestinoIngreso, motivo: string) {
-  const vuelta = new URL(puertaDeIngreso(destino), request.url);
+  const vuelta = new URL(puertaDeIngreso(destino), urlDelPedido(request));
   vuelta.searchParams.set("error", motivo);
   return NextResponse.redirect(vuelta);
 }

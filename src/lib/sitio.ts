@@ -25,3 +25,28 @@ export function urlDelSitio(): string {
 
   return "http://localhost:3000";
 }
+
+/**
+ * La URL con la que llego el pedido, vista desde afuera: la base de las
+ * redirecciones que tienen que dejar a la persona en el mismo sitio del que
+ * salio (la vuelta de CIDITUC, la salida).
+ *
+ * Detras de nginx (la VPS, desde el 25/11/2026) Next escucha en 127.0.0.1 y
+ * `request.url` dice http://localhost:3011: la vuelta de CIDITUC mandaba a la
+ * persona a su propio celular. nginx pisa X-Forwarded-Host y -Proto con los
+ * verdaderos (no agrega a lo que mande el cliente), y Vercel hace lo mismo; en
+ * `npm run dev` no vienen y queda `request.url`, con su puerto.
+ */
+export function urlDelPedido(request: Request): URL {
+  const url = new URL(request.url);
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const protocolo = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (!host || !/^[a-z0-9.-]+(:\d+)?$/i.test(host)) return url;
+  // Se arma de cero: asignar solo `host` deja el puerto de adentro (:3011)
+  // cuando el de afuera no trae uno.
+  const esquema = protocolo === "https" || protocolo === "http" ? protocolo : url.protocol.slice(0, -1);
+  const afuera = new URL(`${esquema}://${host}`);
+  afuera.pathname = url.pathname;
+  afuera.search = url.search;
+  return afuera;
+}
