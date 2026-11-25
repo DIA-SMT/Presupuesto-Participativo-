@@ -314,6 +314,15 @@ function crear(): BaseDatos {
   // PGlite escribe en ./data/pg: solo sirve en una maquina local. En Vercel
   // sin DATABASE_URL conviene fallar con un mensaje claro antes que con un
   // error criptico del filesystem de solo lectura.
+  // Lo mismo en la VPS: BASE_DE_PRODUCCION=1 (scripts/produccion.ts) dice que
+  // este servidor es el de produccion, y ahi una PGlite seria una base vacia
+  // atendiendo el sitio sin que nadie se entere.
+  if (process.env.BASE_DE_PRODUCCION?.trim() === "1") {
+    throw new Error(
+      "BASE_DE_PRODUCCION=1 pero DATABASE_URL no apunta a un Postgres. " +
+        "Revisar el .env del servidor (compartido/.env).",
+    );
+  }
   if (process.env.VERCEL) {
     throw new Error(
       "Falta DATABASE_URL en las variables de entorno del despliegue. " +
