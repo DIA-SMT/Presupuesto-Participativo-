@@ -151,6 +151,8 @@ export async function empadronar(datos: DatosEmpadronamiento): Promise<{
   const dniHash = hashearDni(datos.dni);
   const dniCola = datos.dni.replace(/\D/g, "").slice(-3);
 
+  await reclavarSiCambioLaPimienta({ ...datos, dniHash, dniCola });
+
   let fila: { id: number; distritoId: number | null; nombre: string | null };
   try {
     [fila] = await db
@@ -194,6 +196,49 @@ export async function empadronar(datos: DatosEmpadronamiento): Promise<{
   }
 
   return { votanteId: fila.id, distrito: fila.distritoId, nombre: fila.nombre };
+}
+
+/**
+ * Si la cuenta verificada ya esta en el padron con un hash que no es el de hoy,
+ * le pone el de hoy. Es el caso de un cambio de DNI_PEPPER: la mudanza de
+ * Vercel a la VPS (25/11/2026) obligo a generar una pimienta nueva, porque la
+ * de Vercel estaba guardada como "sensible" y la cuenta quedo bloqueada.
+ *
+ * Sin esto, cada persona del padron que volviera a entrar rebotaba contra
+ * `votantes_proveedor_sub_idx` (CuentaYaEmpadronada) y no podia entrar nunca
+ * mas. Con esto conserva su fila, y con ella sus ideas, su distrito y su voto.
+ *
+ * Solo con una identidad verificada (CIDITUC con su `persona.id`), y solo si
+ * coinciden los tres ultimos digitos del documento: si CIDITUC le cambio el
+ * documento a la cuenta, la cola cambia y se sigue revisando a mano. Y nunca
+ * si el hash nuevo ya tiene su propia fila: ahi son dos lugares y no se unen
+ * solos.
+ */
+async function reclavarSiCambioLaPimienta(datos: {
+  dniHash: string;
+  dniCola: string;
+  proveedor: string;
+  proveedorSub: string | null;
+  verificado: boolean;
+}): Promise<void> {
+  if (!datos.verificado || !datos.proveedorSub) return;
+  const proveedorSub = datos.proveedorSub;
+  await db.transaction(async (tx) => {
+    const [deLaCuenta] = await tx
+      .select({ id: votantes.id, dniHash: votantes.dniHash, dniCola: votantes.dniCola })
+      .from(votantes)
+      .where(and(eq(votantes.proveedor, datos.proveedor), eq(votantes.proveedorSub, proveedorSub)))
+      .limit(1);
+    if (!deLaCuenta || deLaCuenta.dniHash === datos.dniHash) return;
+    if (deLaCuenta.dniCola !== datos.dniCola) return;
+    const [ocupado] = await tx
+      .select({ id: votantes.id })
+      .from(votantes)
+      .where(eq(votantes.dniHash, datos.dniHash))
+      .limit(1);
+    if (ocupado) return;
+    await tx.update(votantes).set({ dniHash: datos.dniHash }).where(eq(votantes.id, deLaCuenta.id));
+  });
 }
 
 /**

@@ -263,3 +263,57 @@ test("una falla de la base que no es la cuenta repetida no se confunde con ella"
     },
   );
 });
+
+// --- Cambio de DNI_PEPPER (mudanza a la VPS, 25/11/2026) -----------------------
+
+test("tras un cambio de pimienta, la misma cuenta y documento conserva su lugar", async () => {
+  // La fila como la dejo la pimienta vieja: otro hash, la misma cola.
+  const [vieja] = await base.db
+    .insert(base.schema.votantes)
+    .values({
+      dniHash: "a1".repeat(32),
+      dniCola: "333",
+      nombre: "Vecina",
+      distritoId: null,
+      proveedor: "cidituc",
+      proveedorSub: "cuenta-pimienta-vieja",
+      verificado: true,
+    })
+    .returning({ id: base.schema.votantes.id });
+  const entrada = await empadronar({
+    dni: "23000333",
+    nombre: "Vecina",
+    distrito: null,
+    proveedor: "cidituc",
+    proveedorSub: "cuenta-pimienta-vieja",
+    verificado: true,
+  });
+  assert.equal(entrada.votanteId, vieja.id, "es la misma fila: conserva sus ideas");
+  const [cuenta] = await base.consultar<{ n: number; hash: string }>(
+    base.sql`SELECT count(*)::int AS n, max(dni_hash) AS hash FROM votantes WHERE proveedor_sub = 'cuenta-pimienta-vieja'`,
+  );
+  assert.equal(cuenta.n, 1);
+  assert.notEqual(cuenta.hash, "a1".repeat(32), "quedo con el hash de la pimienta de hoy");
+});
+
+test("si la cola no coincide, no se reclava: se sigue revisando a mano", async () => {
+  await base.db.insert(base.schema.votantes).values({
+    dniHash: "b2".repeat(32),
+    dniCola: "444",
+    proveedor: "cidituc",
+    proveedorSub: "cuenta-otra-cola",
+    verificado: true,
+  });
+  await assert.rejects(
+    () =>
+      empadronar({
+        dni: "23000555",
+        nombre: null,
+        distrito: null,
+        proveedor: "cidituc",
+        proveedorSub: "cuenta-otra-cola",
+        verificado: true,
+      }),
+    (error: unknown) => error instanceof CuentaYaEmpadronada,
+  );
+});

@@ -333,6 +333,12 @@ export type ExtrasFicha = {
   /** En que distrito cae el punto guardado, segun la geometria oficial. */
   distritoDelPunto: number | null;
   limites: Limites;
+  /**
+   * El codigo con el que el autor sigue su idea en /ideas/seguimiento. Sale de
+   * SESSION_SECRET: cuando cambio (la mudanza a la VPS, 25/11/2026) cambiaron
+   * todos, y el equipo se lo vuelve a dar a quien lo pida.
+   */
+  codigoSeguimiento: string;
 };
 
 export default function PanelBandeja({
@@ -934,6 +940,11 @@ function Ficha({
           persona los dejo en el formulario (vienen precargados de su cuenta de
           CIDITUC). Como enlaces, para llamar o escribir desde el trabajo.
         */}
+        {extras && (
+          <DatoFicha etiqueta="Código de seguimiento">
+            <span className="font-mono font-semibold">{extras.codigoSeguimiento}</span>
+          </DatoFicha>
+        )}
         <DatoFicha etiqueta="Teléfono">
           {ficha.autorTelefono ? (
             <a

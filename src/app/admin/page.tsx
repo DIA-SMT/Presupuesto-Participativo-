@@ -20,6 +20,7 @@ import {
 import { getSesionAdmin } from "@/lib/sesion";
 import PanelBandeja, { type ExtrasFicha } from "./bandeja/panel";
 import { limitesDeLaIdea } from "./ideas/limites";
+import { codigoSeguimiento } from "@/lib/avisos";
 
 /**
  * Pantalla principal del panel: la bandeja de revision, el listado de trabajo
@@ -182,6 +183,7 @@ export default async function AdminIdeas({ searchParams }: Props) {
       candidatas,
       distritoDelPunto,
       limites: limitesDeLaIdea(),
+      codigoSeguimiento: codigoSeguimiento(ficha.id),
     };
   }
 
